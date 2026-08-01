@@ -2,7 +2,7 @@ import type { FileDiff } from "@shared/types";
 import { cx } from "../util";
 
 const GLYPH: Record<FileDiff["status"], { g: string; cls: string }> = {
-  modified: { g: "M", cls: "text-accent" },
+  modified: { g: "M", cls: "text-mute" },
   added: { g: "A", cls: "text-add" },
   deleted: { g: "D", cls: "text-del" },
   renamed: { g: "R", cls: "text-agent" },
@@ -36,7 +36,7 @@ export function FileNav({
           <div
             key={f.path}
             className={cx(
-              "group flex items-center gap-2 border-l-2 py-1 pl-2 pr-2",
+              "group flex items-center gap-2 border-l py-1 pl-2 pr-2",
               current
                 ? "border-accent bg-raise"
                 : "border-transparent hover:bg-raise/50",

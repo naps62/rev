@@ -228,13 +228,17 @@ export function Review() {
         </Link>
         <span className="text-faint">/</span>
         <span className="max-w-48 truncate text-[13px] font-medium text-fg" title={dir}>
-          {basename(dir || "?")}
+          {dir ? basename(dir) : "review"}
         </span>
         <span className="hidden items-center gap-1.5 font-mono text-[12px] text-mute sm:flex">
-          <span className="max-w-44 truncate" title={diffQ.data?.branch ?? undefined}>
-            {diffQ.data?.branch ?? (diffQ.data ? `detached @ ${shortSha(diffQ.data.head)}` : "…")}
-          </span>
-          <span className="text-faint">→</span>
+          {diffQ.data && (
+            <>
+              <span className="max-w-44 truncate" title={diffQ.data.branch ?? undefined}>
+                {diffQ.data.branch ?? `detached @ ${shortSha(diffQ.data.head)}`}
+              </span>
+              <span className="text-faint">→</span>
+            </>
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -257,6 +261,20 @@ export function Review() {
             </span>
           )}
         </span>
+        {files.length > 0 && (
+          <select
+            value={currentPath ?? ""}
+            onChange={(e) => jumpTo(e.target.value)}
+            aria-label="Jump to file"
+            className="max-w-36 rounded-sm border border-edge bg-bg px-1 py-0.5 font-mono text-[11px] text-fg md:hidden"
+          >
+            {files.map((f) => (
+              <option key={f.path} value={f.path}>
+                {f.path}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="ml-auto flex items-center gap-3">
           {files.length > 0 && (
             <>
@@ -363,7 +381,6 @@ export function Review() {
               <DiffFile
                 key={f.path}
                 dir={dir}
-                base={base}
                 file={f}
                 threadsByLine={byFile.get(f.path) ?? new Map()}
                 detached={detachedByFile.get(f.path) ?? []}

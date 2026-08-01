@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { cx } from "../util";
 
+const MOD_KEY =
+  typeof navigator !== "undefined" && /Mac|iP/.test(navigator.platform)
+    ? "⌘"
+    : "Ctrl+";
+
 interface ComposerProps {
   placeholder: string;
   submitLabel?: string;
@@ -67,7 +72,7 @@ export function Composer({
             Cancel
           </button>
         )}
-        <span className="ml-auto text-[11px] text-faint">⌘↵ to send</span>
+        <span className="ml-auto text-[11px] text-faint">{MOD_KEY}↵ to send</span>
       </div>
     </div>
   );

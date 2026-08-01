@@ -8,7 +8,7 @@
   --color-edge-soft: #1c222b;
   --color-fg: #d5dbe4;
   --color-mute: #8d97a5;
-  --color-faint: #5f6975;
+  --color-faint: #7b8694; /* ≥4.5:1 on bg and panel — carries placeholders */
   --color-accent: #e2b45c;
   --color-accent-soft: rgb(226 180 92 / 0.13);
   --color-add: #5cc576;

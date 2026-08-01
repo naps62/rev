@@ -14,8 +14,9 @@ import { cx, lineKey, type Thread } from "../util";
 import { CommentThread } from "./CommentThread";
 import { Composer } from "./Composer";
 
+// "M" stays neutral so amber only ever means attention (stale, open, current).
 const STATUS_GLYPH: Record<FileDiff["status"], { glyph: string; cls: string; label: string }> = {
-  modified: { glyph: "M", cls: "text-accent", label: "modified" },
+  modified: { glyph: "M", cls: "text-mute", label: "modified" },
   added: { glyph: "A", cls: "text-add", label: "added" },
   deleted: { glyph: "D", cls: "text-del", label: "deleted" },
   renamed: { glyph: "R", cls: "text-agent", label: "renamed" },
@@ -24,7 +25,6 @@ const STATUS_GLYPH: Record<FileDiff["status"], { glyph: string; cls: string; lab
 
 interface DiffFileProps {
   dir: string;
-  base: string;
   file: FileDiff;
   /** lineKey("side:line") → threads anchored there. */
   threadsByLine: Map<string, Thread[]>;
@@ -40,7 +40,6 @@ interface DiffFileProps {
 
 export function DiffFile({
   dir,
-  base,
   file,
   threadsByLine,
   detached,
@@ -283,12 +282,7 @@ export function DiffFile({
 
       <div className="overflow-hidden rounded-b-[5px]">
       {editing ? (
-        <QuickEditPanel
-          dir={dir}
-          base={base}
-          path={file.path}
-          onClose={() => setEditing(false)}
-        />
+        <QuickEditPanel dir={dir} path={file.path} onClose={() => setEditing(false)} />
       ) : !expanded || !canExpand ? (
         canExpand ? (
           <button
@@ -407,16 +401,13 @@ type EditState =
 
 function QuickEditPanel({
   dir,
-  base,
   path,
   onClose,
 }: {
   dir: string;
-  base: string;
   path: string;
   onClose: () => void;
 }) {
-  void base;
   const [state, setState] = useState<EditState>({ phase: "loading" });
 
   const load = useCallback(async () => {

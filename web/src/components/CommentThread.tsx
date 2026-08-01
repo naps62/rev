@@ -72,13 +72,13 @@ export function CommentThread({
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
             <path
               d="M3 8.5 6.5 12 13 4.5"
-              stroke="var(--color-add)"
+              stroke="currentColor"
               strokeWidth="1.8"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
           </svg>
-          <span className="text-add">resolved</span>
+          <span>resolved</span>
           <span className="min-w-0 flex-1 truncate">{root.body}</span>
           <span className="shrink-0 text-faint">
             {replies.length > 0 && `${replies.length} repl${replies.length === 1 ? "y" : "ies"} · `}
@@ -118,10 +118,7 @@ export function CommentThread({
           type="button"
           disabled={busy}
           onClick={() => onResolve(!resolved)}
-          className={cx(
-            "text-[12px] transition-colors duration-150 disabled:text-faint",
-            resolved ? "text-mute hover:text-fg" : "text-add hover:text-add/80",
-          )}
+          className="text-[12px] text-mute transition-colors duration-150 hover:text-fg disabled:text-faint"
         >
           {resolved ? "Unresolve" : "Resolve"}
         </button>

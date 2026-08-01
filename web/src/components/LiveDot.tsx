@@ -25,7 +25,8 @@ export function LiveDot({ status }: { status: WsStatus }) {
           "size-1.5 rounded-full",
           status === "live" && "bg-add",
           status === "fixture" && "bg-agent",
-          (status === "connecting" || status === "reconnecting") && "bg-del",
+          status === "connecting" && "bg-mute",
+          status === "reconnecting" && "bg-del",
         )}
       />
       {LABEL[status]}
