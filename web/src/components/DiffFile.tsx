@@ -199,12 +199,14 @@ export function DiffFile({
       ref={sectionRef}
       data-path={file.path}
       className={cx(
-        "overflow-hidden rounded-md border bg-panel",
+        // No overflow-hidden here: it would turn the section into the sticky
+        // header's scrollport and pin it 48px into the card.
+        "rounded-md border bg-panel",
         isCurrent ? "border-accent/50" : "border-edge",
         flash && "stale-flash",
       )}
     >
-      <header className="sticky top-12 z-10 flex min-w-0 items-center gap-2.5 border-b border-edge-soft bg-raise px-2 py-1.5">
+      <header className="sticky top-12 z-10 flex min-w-0 items-center gap-2.5 rounded-t-[5px] border-b border-edge-soft bg-raise px-2 py-1.5">
         <button
           type="button"
           onClick={() => canExpand && setExpanded((e) => !e)}
@@ -279,6 +281,7 @@ export function DiffFile({
         </div>
       </header>
 
+      <div className="overflow-hidden rounded-b-[5px]">
       {editing ? (
         <QuickEditPanel
           dir={dir}
@@ -329,6 +332,7 @@ export function DiffFile({
           ))}
         </div>
       )}
+      </div>
     </section>
   );
 }
