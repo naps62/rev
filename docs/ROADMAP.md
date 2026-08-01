@@ -27,9 +27,22 @@ ARCHITECTURE.md for the design and rejected options.
         changes are hunkless "modified"; reply-to-reply flattens to root;
         nested independent repos undiscovered; WATCH_IGNORE matches names
         anywhere in a path.
-  - [ ] frontend: in progress
-- [ ] M2 — integration: live end-to-end against real repos on this machine
-- [ ] M3 — polish (impeccable pass), quick-edit, agent docs, systemd unit
+  - [x] frontend: both routes, diff renderer with inline threads, seen/stale,
+        quick edit with 409 handling, shiki async highlight, `?fixture` mode.
+        Impeccable finish review ran (its fix batch applied); DESIGN.md
+        skipped by the agent (outside its file ownership) — direction notes
+        live in web/index.html.
+- [x] M2 — integration, all against the live production server on this box:
+        real-repo diff (pm-signer, 22 files) rendered correctly (screenshot),
+        repo list with real worktrees (screenshot), WS diff-invalidated fired
+        on live file write, comment long-poll woke on POST, agent reply +
+        resolve worked, seen→stale flipped after an edit, SPA fallback served.
+        Found live: discovery's git status bumped every index mtime (all
+        repos "2m ago") → --no-optional-locks; basename collisions
+        (pm-signer × 2) → root-relative names. Both fixed, tests still green.
+- [x] M3 — DECISIONS.md, agent docs, systemd unit. Service installed and
+        running on this machine (http://10.7.10.2:7373); kill -9 on the
+        process was restarted by systemd within seconds (verified).
 - [ ] M4 — gate, push, PR
 
 ## Contract debt (deliberate, for after the spike)
