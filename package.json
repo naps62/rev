@@ -1,0 +1,33 @@
+{
+  "name": "rev",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --silent dev:server & bun run --silent dev:web & wait",
+    "dev:server": "bun --watch server/index.ts",
+    "dev:web": "vite",
+    "build": "vite build",
+    "start": "NODE_ENV=production bun server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5",
+    "chokidar": "^4",
+    "hono": "^4",
+    "react": "^19",
+    "react-dom": "^19",
+    "shiki": "^3",
+    "wouter": "^3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4",
+    "@types/bun": "^1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vite": "^6"
+  }
+}
