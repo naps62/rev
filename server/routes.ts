@@ -29,8 +29,9 @@ import {
   seenHashes,
   setSeen,
 } from "./db";
+import { resolveComments } from "./anchor";
 import { isKnownRepo, listRepos, rescan } from "./discovery";
-import { computeDiff, GitError, hashContent, readFile } from "./git";
+import { baseBehind, computeDiff, fetchBase, GitError, hashContent, readFile } from "./git";
 
 /**
  * Resolve a repo-relative path inside `dir`, or null when it escapes
@@ -184,6 +185,7 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     if (c.req.query("wait") === "1" && res.comments.length === 0) {
       res = await waitForComments(dir, base, since ?? res.cursor);
     }
+    await resolveComments(dir, res.comments);
     return c.json(res);
   });
 
@@ -242,6 +244,16 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     broadcast({ type: "comments-changed", dir: comment.dir, seq: comment.seq });
     notifyWaiters(comment.dir);
     return c.json(comment);
+  });
+
+  app.post("/fetch", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as { dir?: unknown; base?: unknown } | null;
+    if (!b || typeof b.dir !== "string" || typeof b.base !== "string") {
+      return c.json({ error: "dir and base are required" }, 400);
+    }
+    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    await fetchBase(b.dir, b.base);
+    return c.json({ ok: true, baseBehind: await baseBehind(b.dir, b.base) });
   });
 
   app.put("/seen", async (c) => {

@@ -104,6 +104,12 @@ export interface DiffResponse {
   files: FileDiff[];
   /** Server time the diff was computed; clients treat it as a version marker. */
   computedAt: number;
+  /**
+   * Commits the local base ref is behind its upstream (e.g. main..origin/main),
+   * so the UI can offer "fetch base". Null when base has no upstream or the
+   * count failed; 0 when up to date.
+   */
+  baseBehind: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +155,12 @@ export interface CommentAnchor {
    * re-anchoring fails.
    */
   snippet: string;
+  /**
+   * Trimmed neighbor lines at comment time (up to 3 each way), used to
+   * disambiguate when the snippet matches several lines. Optional — old
+   * comments and terse API callers omit it.
+   */
+  context?: { before: string[]; after: string[] };
 }
 
 export interface Comment {
@@ -166,6 +178,14 @@ export interface Comment {
   resolvedAt: number | null;
   /** Monotonic per-server sequence, the `since` cursor for agent polling. */
   seq: number;
+  /**
+   * Where the anchored line lives in the CURRENT working tree, re-located by
+   * the server at read time ("new"-side anchors only). Equal to anchor.line
+   * when the file hasn't moved, a different line after edits above it, null
+   * when the line no longer exists (orphaned). Absent on replies and
+   * review-level notes; "old"-side anchors echo anchor.line.
+   */
+  resolvedLine?: number | null;
 }
 
 export interface CommentCreateRequest {
@@ -240,6 +260,9 @@ export type ServerMessage =
 // POST   /api/comments                       ← CommentCreateRequest → Comment
 // PATCH  /api/comments/:id                   ← CommentPatchRequest  → Comment
 // PUT    /api/seen                           ← SeenRequest → { ok: true }
+// POST   /api/fetch                          ← { dir, base } → { ok, baseBehind }
+//        Runs `git fetch` for base's upstream remote so the review can be
+//        re-based against origin's truth without leaving the page.
 //
 // The review page URL agents hand to the user:
 //   /review?dir=<abs path>&base=<ref>

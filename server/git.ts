@@ -125,11 +125,12 @@ async function untrackedFileDiff(dir: string, path: string): Promise<FileDiff> {
  */
 export async function computeDiff(dir: string, base: string): Promise<DiffResponse> {
   const mergeBase = (await run(dir, ["merge-base", base, "HEAD"])).trim();
-  const [diffText, statusZ, hi] = await Promise.all([
+  const [diffText, statusZ, hi, behind] = await Promise.all([
     // no second rev: diff merge-base against the working tree, catching uncommitted edits
     run(dir, ["diff", mergeBase, "--find-renames", "--no-color", `-U${TUNING.DIFF_CONTEXT_LINES}`]),
     run(dir, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"]),
     headInfo(dir),
+    baseBehind(dir, base),
   ]);
 
   const files: FileDiff[] = [];
@@ -149,6 +150,7 @@ export async function computeDiff(dir: string, base: string): Promise<DiffRespon
     branch: hi.branch,
     files,
     computedAt: Date.now(),
+    baseBehind: behind,
   };
 }
 
@@ -197,6 +199,49 @@ export async function defaultBase(dir: string): Promise<string | null> {
     }
   }
   return null;
+}
+
+/**
+ * Upstream counterpart of `base`: its configured upstream when it's a local
+ * branch, itself when it's already remote-tracking (origin/x), null otherwise.
+ */
+async function baseUpstream(dir: string, base: string): Promise<string | null> {
+  try {
+    return (await run(dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", `${base}@{upstream}`])).trim();
+  } catch {
+    // no upstream configured
+  }
+  const remotes = (await run(dir, ["remote"])).split("\n").filter(Boolean);
+  const prefix = base.split("/")[0];
+  if (prefix && remotes.includes(prefix)) return base;
+  for (const r of remotes) {
+    try {
+      await run(dir, ["rev-parse", "--verify", "--quiet", `${r}/${base}^{commit}`]);
+      return `${r}/${base}`;
+    } catch {
+      // try next remote
+    }
+  }
+  return null;
+}
+
+/** Commits `base` is behind its upstream; null when no upstream / count fails; 0 when current. */
+export async function baseBehind(dir: string, base: string): Promise<number | null> {
+  const up = await baseUpstream(dir, base);
+  if (up === null || up === base) return up === base ? 0 : null;
+  try {
+    return Number((await run(dir, ["rev-list", "--count", `${base}..${up}`])).trim());
+  } catch {
+    return null;
+  }
+}
+
+/** `git fetch` the remote behind `base`'s upstream. Throws GitError when base has no remote. */
+export async function fetchBase(dir: string, base: string): Promise<void> {
+  const up = await baseUpstream(dir, base);
+  if (up === null) throw new GitError(`base ${base} has no upstream remote to fetch`, "fetch");
+  const remote = up.split("/")[0]!;
+  await run(dir, ["fetch", remote]);
 }
 
 /** `git worktree list` from any checkout: absolute paths of all linked checkouts (main first). */

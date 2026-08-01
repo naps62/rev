@@ -266,3 +266,32 @@ describe("listWorktrees / resolveGitDir / changedFileCount", () => {
     expect(await changedFileCount(dir, "nope")).toBeNull();
   });
 });
+
+describe("baseBehind / fetchBase", () => {
+  test("clone behind its origin: counts, fetch updates", async () => {
+    const { baseBehind, fetchBase } = await import("./git");
+    const { git, tmpdir } = await import("./testutil");
+    const origin = makeRepo("origin");
+    const clone = tmpdir("clone");
+    git(clone, "clone", origin, ".");
+    git(clone, "config", "user.email", "t@t");
+    git(clone, "config", "user.name", "t");
+    expect(await baseBehind(clone, "main")).toBe(0);
+
+    writeFileSync(join(origin, "b.txt"), "new\n");
+    git(origin, "add", "-A");
+    git(origin, "commit", "-m", "upstream moved");
+
+    // local still doesn't know until fetch
+    expect(await baseBehind(clone, "main")).toBe(0);
+    await fetchBase(clone, "main");
+    expect(await baseBehind(clone, "main")).toBe(1);
+  });
+
+  test("no remote: baseBehind null, fetchBase throws GitError", async () => {
+    const { baseBehind, fetchBase } = await import("./git");
+    const dir = makeRepo("noremote");
+    expect(await baseBehind(dir, "main")).toBeNull();
+    await expect(fetchBase(dir, "main")).rejects.toBeInstanceOf(GitError);
+  });
+});
