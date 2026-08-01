@@ -1,0 +1,155 @@
+import { useState } from "react";
+import type { Comment } from "@shared/types";
+import { cx, relativeTime, type Thread } from "../util";
+import { Composer } from "./Composer";
+
+function AuthorChip({ author }: { author: Comment["author"] }) {
+  const user = author === "user";
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center gap-1.5 text-[12px] font-medium",
+        user ? "text-accent" : "text-agent",
+      )}
+    >
+      <span
+        aria-hidden
+        className={cx(
+          "inline-block size-[7px]",
+          user ? "rounded-[1px] bg-accent" : "rounded-full bg-agent",
+        )}
+      />
+      {user ? "you" : "agent"}
+    </span>
+  );
+}
+
+function CommentBody({ comment }: { comment: Comment }) {
+  return (
+    <div className="px-3 py-2">
+      <div className="flex items-baseline gap-2">
+        <AuthorChip author={comment.author} />
+        <span className="text-[11px] text-faint">
+          {relativeTime(comment.createdAt)}
+        </span>
+      </div>
+      <p className="mt-1 whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-fg">
+        {comment.body}
+      </p>
+    </div>
+  );
+}
+
+interface CommentThreadProps {
+  thread: Thread;
+  /** Shown for threads whose anchor no longer matches a diff line. */
+  anchorNote?: string;
+  onReply: (body: string) => void;
+  onResolve: (resolved: boolean) => void;
+  busy?: boolean;
+}
+
+export function CommentThread({
+  thread,
+  anchorNote,
+  onReply,
+  onResolve,
+  busy,
+}: CommentThreadProps) {
+  const { root, replies } = thread;
+  const resolved = root.resolvedAt != null;
+  const [expanded, setExpanded] = useState(!resolved);
+  const [replying, setReplying] = useState(false);
+
+  if (resolved && !expanded) {
+    return (
+      <div className="border-y border-edge-soft bg-panel font-sans">
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-mute transition-colors duration-150 hover:text-fg"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path
+              d="M3 8.5 6.5 12 13 4.5"
+              stroke="var(--color-add)"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span className="text-add">resolved</span>
+          <span className="min-w-0 flex-1 truncate">{root.body}</span>
+          <span className="shrink-0 text-faint">
+            {replies.length > 0 && `${replies.length} repl${replies.length === 1 ? "y" : "ies"} · `}
+            expand
+          </span>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-y border-edge-soft bg-panel font-sans">
+      {anchorNote && (
+        <div className="border-b border-edge-soft px-3 py-1.5 font-mono text-[11px] text-faint">
+          {anchorNote}
+        </div>
+      )}
+      <div className="divide-y divide-edge-soft">
+        <CommentBody comment={root} />
+        {replies.map((r) => (
+          <div key={r.id} className="pl-4">
+            <CommentBody comment={r} />
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-3 border-t border-edge-soft px-3 py-1.5">
+        {!replying && (
+          <button
+            type="button"
+            onClick={() => setReplying(true)}
+            className="text-[12px] text-mute transition-colors duration-150 hover:text-fg"
+          >
+            Reply
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onResolve(!resolved)}
+          className={cx(
+            "text-[12px] transition-colors duration-150 disabled:text-faint",
+            resolved ? "text-mute hover:text-fg" : "text-add hover:text-add/80",
+          )}
+        >
+          {resolved ? "Unresolve" : "Resolve"}
+        </button>
+        {resolved && (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="ml-auto text-[12px] text-faint transition-colors duration-150 hover:text-mute"
+          >
+            Collapse
+          </button>
+        )}
+      </div>
+      {replying && (
+        <div className="border-t border-edge-soft">
+          <Composer
+            placeholder="Reply…"
+            submitLabel="Reply"
+            autoFocus
+            busy={busy}
+            onSubmit={(body) => {
+              onReply(body);
+              setReplying(false);
+            }}
+            onCancel={() => setReplying(false)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}

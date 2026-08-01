@@ -1,0 +1,653 @@
+/**
+ * In-memory fixture backing the `?fixture` URL flag. Lets the UI run without
+ * the server: api.ts routes every call here when the flag is present.
+ * Mutations (comments, seen, edits) mutate this module's state so the whole
+ * review flow is exercisable offline.
+ */
+
+import type {
+  Comment,
+  CommentCreateRequest,
+  CommentPatchRequest,
+  DiffLine,
+  DiffResponse,
+  FileContentResponse,
+  FileDiff,
+  FileWriteRequest,
+  RepoInfo,
+  SeenRequest,
+} from "@shared/types";
+
+const now = Date.now();
+const min = 60_000;
+
+// ---------------------------------------------------------------------------
+// Repos
+// ---------------------------------------------------------------------------
+
+export const fixtureRepos: RepoInfo[] = [
+  {
+    dir: "/home/naps62/tea/rev",
+    name: "rev",
+    branch: "spike/always-on-review",
+    head: "9c2f41a",
+    isWorktree: false,
+    mainDir: "/home/naps62/tea/rev",
+    defaultBase: "main",
+    dirty: true,
+    changedFiles: 8,
+    openComments: 3,
+    lastActivity: now - 2 * min,
+  },
+  {
+    dir: "/home/naps62/tea/maestro/fix-auth",
+    name: "maestro/fix-auth",
+    branch: "fix-auth",
+    head: "1b7d902",
+    isWorktree: true,
+    mainDir: "/home/naps62/tea/maestro",
+    defaultBase: "main",
+    dirty: true,
+    changedFiles: 3,
+    openComments: 1,
+    lastActivity: now - 34 * min,
+  },
+  {
+    dir: "/home/naps62/tea/maestro",
+    name: "maestro",
+    branch: "main",
+    head: "e04c7f3",
+    isWorktree: false,
+    mainDir: "/home/naps62/tea/maestro",
+    defaultBase: "main",
+    dirty: false,
+    changedFiles: 0,
+    openComments: 0,
+    lastActivity: now - 26 * 60 * min,
+  },
+  {
+    dir: "/home/naps62/tea/dotfiles",
+    name: "dotfiles",
+    branch: null,
+    head: "77aa10c",
+    isWorktree: false,
+    mainDir: "/home/naps62/tea/dotfiles",
+    defaultBase: "master",
+    dirty: false,
+    changedFiles: null,
+    openComments: 0,
+    lastActivity: now - 4 * 24 * 60 * min,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Diff
+// ---------------------------------------------------------------------------
+
+let ln = 0;
+const ctx = (oldLine: number, newLine: number, text: string): DiffLine => ({
+  kind: "context",
+  oldLine,
+  newLine,
+  text,
+});
+const add = (newLine: number, text: string): DiffLine => ({
+  kind: "add",
+  newLine,
+  text,
+});
+const del = (oldLine: number, text: string): DiffLine => ({
+  kind: "del",
+  oldLine,
+  text,
+});
+void ln;
+
+const routesFile: FileDiff = {
+  path: "server/routes.ts",
+  status: "modified",
+  binary: false,
+  additions: 14,
+  deletions: 5,
+  contentHash: "f31a9c04",
+  seen: false,
+  stale: false,
+  hunks: [
+    {
+      oldStart: 12,
+      oldLines: 9,
+      newStart: 12,
+      newLines: 14,
+      header: "app.get(\"/api/diff\")",
+      lines: [
+        ctx(12, 12, "app.get(\"/api/diff\", async (c) => {"),
+        ctx(13, 13, "  const dir = c.req.query(\"dir\");"),
+        ctx(14, 14, "  const base = c.req.query(\"base\");"),
+        del(15, "  if (!dir) return c.json({ error: \"dir required\" }, 400);"),
+        add(15, "  if (!dir || !base) {"),
+        add(16, "    return c.json({ error: \"dir and base are required\" }, 400);"),
+        add(17, "  }"),
+        add(18, "  if (!(await isRepo(dir))) {"),
+        add(19, "    return c.json({ error: `not a git repo: ${dir}` }, 404);"),
+        add(20, "  }"),
+        ctx(16, 21, "  const diff = await computeDiff(dir, base);"),
+        ctx(17, 22, "  return c.json(diff);"),
+        ctx(18, 23, "});"),
+      ],
+    },
+    {
+      oldStart: 41,
+      oldLines: 10,
+      newStart: 46,
+      newLines: 14,
+      header: "app.put(\"/api/file\")",
+      lines: [
+        ctx(41, 46, "app.put(\"/api/file\", async (c) => {"),
+        ctx(42, 47, "  const body = (await c.req.json()) as FileWriteRequest;"),
+        del(43, "  await Bun.write(join(body.dir, body.path), body.content);"),
+        del(44, "  return c.json({ ok: true });"),
+        add(48, "  const current = await hashWorkingTree(body.dir, body.path);"),
+        add(49, "  if (current !== body.baseHash) {"),
+        add(50, "    return c.json({ error: \"file changed underneath you\" }, 409);"),
+        add(51, "  }"),
+        add(52, "  await Bun.write(join(body.dir, body.path), body.content);"),
+        add(53, "  return c.json(await readFileContent(body.dir, body.path));"),
+        ctx(45, 54, "});"),
+      ],
+    },
+    {
+      oldStart: 88,
+      oldLines: 6,
+      newStart: 97,
+      newLines: 7,
+      header: "app.put(\"/api/seen\")",
+      lines: [
+        ctx(88, 97, "app.put(\"/api/seen\", async (c) => {"),
+        ctx(89, 98, "  const body = (await c.req.json()) as SeenRequest;"),
+        del(90, "  db.markSeen(body.dir, body.path, body.contentHash);"),
+        add(99, "  db.markSeen(body.dir, body.base, body.path, body.contentHash, body.seen);"),
+        add(100, "  broadcast({ type: \"comments-changed\", dir: body.dir, seq: db.seq() });"),
+        ctx(91, 101, "  return c.json({ ok: true });"),
+        ctx(92, 102, "});"),
+      ],
+    },
+  ],
+};
+
+const watcherFile: FileDiff = {
+  path: "server/watcher.ts",
+  status: "added",
+  binary: false,
+  additions: 24,
+  deletions: 0,
+  contentHash: "a80be112",
+  seen: false,
+  stale: false,
+  hunks: [
+    {
+      oldStart: 0,
+      oldLines: 0,
+      newStart: 1,
+      newLines: 24,
+      header: "",
+      lines: [
+        add(1, "import { watch, type FSWatcher } from \"chokidar\";"),
+        add(2, "import { TUNING } from \"@shared/tuning\";"),
+        add(3, ""),
+        add(4, "const watchers = new Map<string, FSWatcher>();"),
+        add(5, "const timers = new Map<string, ReturnType<typeof setTimeout>>();"),
+        add(6, ""),
+        add(7, "export function ensureWatch(dir: string, onInvalidate: (paths: string[]) => void) {"),
+        add(8, "  if (watchers.has(dir)) return;"),
+        add(9, "  const pending = new Set<string>();"),
+        add(10, "  const w = watch(dir, {"),
+        add(11, "    ignored: TUNING.WATCH_IGNORE.map((d) => `**/${d}/**`),"),
+        add(12, "    ignoreInitial: true,"),
+        add(13, "  });"),
+        add(14, "  w.on(\"all\", (_event, path) => {"),
+        add(15, "    pending.add(path);"),
+        add(16, "    clearTimeout(timers.get(dir));"),
+        add(17, "    timers.set(dir, setTimeout(() => {"),
+        add(18, "      onInvalidate([...pending]);"),
+        add(19, "      pending.clear();"),
+        add(20, "    }, TUNING.WATCH_DEBOUNCE_MS));"),
+        add(21, "  });"),
+        add(22, "  watchers.set(dir, w);"),
+        add(23, "}"),
+        add(24, ""),
+      ],
+    },
+  ],
+};
+
+const dbFile: FileDiff = {
+  path: "server/db.ts",
+  status: "modified",
+  binary: false,
+  additions: 7,
+  deletions: 2,
+  contentHash: "77e02c9d",
+  seen: false,
+  stale: true,
+  hunks: [
+    {
+      oldStart: 30,
+      oldLines: 7,
+      newStart: 30,
+      newLines: 12,
+      header: "export function markSeen",
+      lines: [
+        ctx(30, 30, "export function markSeen("),
+        ctx(31, 31, "  dir: string,"),
+        add(32, "  base: string,"),
+        ctx(32, 33, "  path: string,"),
+        ctx(33, 34, "  contentHash: string,"),
+        add(35, "  seen: boolean,"),
+        ctx(34, 36, ") {"),
+        del(35, "  insertSeen.run(dir, path, contentHash);"),
+        add(37, "  if (seen) {"),
+        add(38, "    insertSeen.run(dir, base, path, contentHash);"),
+        add(39, "  } else {"),
+        add(40, "    deleteSeen.run(dir, base, path);"),
+        add(41, "  }"),
+        ctx(36, 42, "}"),
+      ],
+    },
+  ],
+};
+
+const renamedFile: FileDiff = {
+  path: "server/job-queue.ts",
+  oldPath: "server/queue.ts",
+  status: "renamed",
+  binary: false,
+  additions: 2,
+  deletions: 2,
+  contentHash: "0d99c1b6",
+  seen: false,
+  stale: false,
+  hunks: [
+    {
+      oldStart: 4,
+      oldLines: 5,
+      newStart: 4,
+      newLines: 5,
+      header: "export class JobQueue",
+      lines: [
+        ctx(4, 4, "export class JobQueue<T> {"),
+        del(5, "  private items: T[] = [];"),
+        del(6, "  private draining = false;"),
+        add(5, "  #items: T[] = [];"),
+        add(6, "  #draining = false;"),
+        ctx(7, 7, ""),
+        ctx(8, 8, "  push(item: T) {"),
+      ],
+    },
+  ],
+};
+
+const deletedFile: FileDiff = {
+  path: "server/poller.ts",
+  status: "deleted",
+  binary: false,
+  additions: 0,
+  deletions: 12,
+  contentHash: "",
+  seen: false,
+  stale: false,
+  hunks: [
+    {
+      oldStart: 1,
+      oldLines: 12,
+      newStart: 0,
+      newLines: 0,
+      header: "",
+      lines: [
+        del(1, "/** Replaced by the chokidar watcher; polling burned CPU for nothing. */"),
+        del(2, "export function startPolling(dir: string, intervalMs: number) {"),
+        del(3, "  const timer = setInterval(async () => {"),
+        del(4, "    const head = await gitHead(dir);"),
+        del(5, "    if (head !== lastHead.get(dir)) {"),
+        del(6, "      lastHead.set(dir, head);"),
+        del(7, "      invalidate(dir);"),
+        del(8, "    }"),
+        del(9, "  }, intervalMs);"),
+        del(10, "  timers.set(dir, timer);"),
+        del(11, "  return () => clearInterval(timer);"),
+        del(12, "}"),
+      ],
+    },
+  ],
+};
+
+const untrackedFile: FileDiff = {
+  path: "scripts/seed-db.ts",
+  status: "untracked",
+  binary: false,
+  additions: 13,
+  deletions: 0,
+  contentHash: "5be00c31",
+  seen: false,
+  stale: false,
+  hunks: [
+    {
+      oldStart: 0,
+      oldLines: 0,
+      newStart: 1,
+      newLines: 13,
+      header: "",
+      lines: [
+        add(1, "#!/usr/bin/env bun"),
+        add(2, "/** Seeds a throwaway comments DB for local UI work. */"),
+        add(3, "import { Database } from \"bun:sqlite\";"),
+        add(4, ""),
+        add(5, "const db = new Database(process.env.REV_DB ?? \"/tmp/rev-seed.db\");"),
+        add(6, "db.run(`CREATE TABLE IF NOT EXISTS comments ("),
+        add(7, "  id TEXT PRIMARY KEY, dir TEXT, base TEXT, body TEXT,"),
+        add(8, "  author TEXT, created_at INTEGER, resolved_at INTEGER"),
+        add(9, ")`);"),
+        add(10, ""),
+        add(11, "for (let i = 0; i < 20; i++) {"),
+        add(12, "  db.run(\"INSERT INTO comments VALUES (?, ?, ?, ?, ?, ?, NULL)\", [crypto.randomUUID(), \"/tmp/repo\", \"main\", `note ${i}`, i % 2 ? \"agent\" : \"user\", Date.now()]);"),
+        add(13, "}"),
+      ],
+    },
+  ],
+};
+
+const binaryFile: FileDiff = {
+  path: "web/public/favicon.png",
+  status: "modified",
+  binary: true,
+  additions: 0,
+  deletions: 0,
+  contentHash: "9a11f0d2",
+  seen: false,
+  stale: false,
+  hunks: [],
+};
+
+const seenFile: FileDiff = {
+  path: "shared/tuning.ts",
+  status: "modified",
+  binary: false,
+  additions: 1,
+  deletions: 1,
+  contentHash: "c4d1a77e",
+  seen: true,
+  stale: false,
+  hunks: [
+    {
+      oldStart: 27,
+      oldLines: 3,
+      newStart: 27,
+      newLines: 3,
+      header: "export const TUNING",
+      lines: [
+        ctx(27, 27, "  /** Files above this many changed lines render collapsed by default. */"),
+        del(28, "  COLLAPSE_THRESHOLD_LINES: 200,"),
+        add(28, "  COLLAPSE_THRESHOLD_LINES: 400,"),
+        ctx(29, 29, ""),
+      ],
+    },
+  ],
+};
+
+/** A generated file large enough to cross COLLAPSE_THRESHOLD_LINES. */
+function makeGeneratedFile(): FileDiff {
+  const lines: DiffLine[] = [];
+  lines.push(ctx(1, 1, "/* AUTO-GENERATED by scripts/gen-schema.ts — do not edit. */"));
+  lines.push(ctx(2, 2, "import { z } from \"zod\";"));
+  lines.push(ctx(3, 3, ""));
+  for (let i = 0; i < 12; i++) {
+    lines.push(del(4 + i, `export const LegacyRow${i} = z.object({ id: z.string() });`));
+  }
+  let n = 4;
+  const entities = ["Repo", "Diff", "Hunk", "Line", "Comment", "Anchor", "Seen", "Session", "Event", "Cursor"];
+  for (let e = 0; e < entities.length; e++) {
+    for (let f = 0; f < 42; f++) {
+      const name = `${entities[e]}Field${f}`;
+      lines.push(add(n++, `export const ${name} = z.object({`));
+      lines.push(add(n++, `  id: z.string().uuid(),`));
+      lines.push(add(n++, `  value: z.number().int().min(0).max(${(f + 1) * 100}),`));
+      lines.push(add(n++, `});`));
+    }
+  }
+  const additions = lines.filter((l) => l.kind === "add").length;
+  const deletions = lines.filter((l) => l.kind === "del").length;
+  return {
+    path: "shared/generated/schema.ts",
+    status: "modified",
+    binary: false,
+    additions,
+    deletions,
+    contentHash: "e5f60b88",
+    seen: false,
+    stale: false,
+    hunks: [
+      {
+        oldStart: 1,
+        oldLines: 3 + deletions,
+        newStart: 1,
+        newLines: 3 + additions,
+        header: "",
+        lines,
+      },
+    ],
+  };
+}
+
+const state = {
+  diff: {
+    dir: "/home/naps62/tea/rev",
+    base: "main",
+    mergeBase: "4f0a9e2c1d773605",
+    head: "9c2f41a",
+    branch: "spike/always-on-review",
+    files: [
+      routesFile,
+      watcherFile,
+      dbFile,
+      renamedFile,
+      deletedFile,
+      untrackedFile,
+      binaryFile,
+      seenFile,
+      makeGeneratedFile(),
+    ],
+    computedAt: now,
+  } as DiffResponse,
+  comments: [] as Comment[],
+  seq: 0,
+};
+
+// ---------------------------------------------------------------------------
+// Comments
+// ---------------------------------------------------------------------------
+
+function seedComment(
+  c: Omit<Comment, "id" | "seq" | "dir" | "base"> & { id?: string },
+): Comment {
+  const full: Comment = {
+    id: c.id ?? `fx-${state.seq + 1}`,
+    dir: state.diff.dir,
+    base: state.diff.base,
+    seq: ++state.seq,
+    anchor: c.anchor,
+    parentId: c.parentId,
+    author: c.author,
+    body: c.body,
+    createdAt: c.createdAt,
+    resolvedAt: c.resolvedAt,
+  };
+  state.comments.push(full);
+  return full;
+}
+
+const t1 = seedComment({
+  anchor: {
+    file: "server/routes.ts",
+    side: "new",
+    line: 50,
+    snippet: "return c.json({ error: \"file changed underneath you\" }, 409);",
+  },
+  parentId: null,
+  author: "user",
+  body: "409 body should include the current hash so the client can offer a three-way view later. Not blocking for the spike.",
+  createdAt: now - 42 * min,
+  resolvedAt: null,
+});
+seedComment({
+  anchor: null,
+  parentId: t1.id,
+  author: "agent",
+  body: "Good call — added `currentHash` to the 409 payload in the follow-up commit. The client can ignore it for now.",
+  createdAt: now - 38 * min,
+  resolvedAt: null,
+});
+
+seedComment({
+  anchor: {
+    file: "server/watcher.ts",
+    side: "new",
+    line: 11,
+    snippet: "ignored: TUNING.WATCH_IGNORE.map((d) => `**/${d}/**`),",
+  },
+  parentId: null,
+  author: "user",
+  body: "This glob won't match a top-level `node_modules` (no leading segment). Use `**/{${list}}/**` or pass a function matcher.",
+  createdAt: now - 20 * min,
+  resolvedAt: null,
+});
+
+const resolved = seedComment({
+  anchor: {
+    file: "server/job-queue.ts",
+    side: "new",
+    line: 5,
+    snippet: "#items: T[] = [];",
+  },
+  parentId: null,
+  author: "agent",
+  body: "Renamed queue.ts to job-queue.ts and switched to native private fields while touching it — flagging in case the rename churn is unwanted.",
+  createdAt: now - 3 * 60 * min,
+  resolvedAt: now - 50 * min,
+});
+seedComment({
+  anchor: null,
+  parentId: resolved.id,
+  author: "user",
+  body: "Rename is fine, keep it.",
+  createdAt: now - 55 * min,
+  resolvedAt: null,
+});
+
+seedComment({
+  anchor: null,
+  parentId: null,
+  author: "agent",
+  body: "Review scope: watcher + seen-state plumbing. schema.ts is generated churn — safe to mark seen without reading.",
+  createdAt: now - 60 * min,
+  resolvedAt: null,
+});
+
+// ---------------------------------------------------------------------------
+// Fixture "API"
+// ---------------------------------------------------------------------------
+
+const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
+
+export function fxGetRepos(): RepoInfo[] {
+  return clone(fixtureRepos);
+}
+
+export function fxGetDiff(dir: string, base: string): DiffResponse {
+  if (dir !== state.diff.dir) {
+    throw Object.assign(new Error(`not a git repo: ${dir}`), { status: 404 });
+  }
+  if (base !== state.diff.base) {
+    throw Object.assign(new Error(`unknown ref: ${base}`), { status: 400 });
+  }
+  return clone(state.diff);
+}
+
+export function fxGetComments(dir: string): { comments: Comment[]; cursor: number } {
+  void dir;
+  return { comments: clone(state.comments), cursor: state.seq };
+}
+
+export function fxPostComment(req: CommentCreateRequest): Comment {
+  const c: Comment = {
+    id: `fx-${state.seq + 1}`,
+    dir: req.dir,
+    base: req.base,
+    anchor: req.anchor ?? null,
+    parentId: req.parentId ?? null,
+    author: req.author,
+    body: req.body,
+    createdAt: Date.now(),
+    resolvedAt: null,
+    seq: ++state.seq,
+  };
+  state.comments.push(c);
+  return clone(c);
+}
+
+export function fxPatchComment(id: string, patch: CommentPatchRequest): Comment {
+  const c = state.comments.find((x) => x.id === id);
+  if (!c) throw Object.assign(new Error(`no such comment: ${id}`), { status: 404 });
+  if (patch.body !== undefined) c.body = patch.body;
+  if (patch.resolved !== undefined) c.resolvedAt = patch.resolved ? Date.now() : null;
+  state.seq++;
+  return clone(c);
+}
+
+export function fxPutSeen(req: SeenRequest): { ok: true } {
+  const f = state.diff.files.find((x) => x.path === req.path);
+  if (f) {
+    f.seen = req.seen;
+    f.stale = false;
+  }
+  return { ok: true };
+}
+
+const fileContents = new Map<string, string>([
+  [
+    "server/watcher.ts",
+    (watcherFile.hunks[0]?.lines ?? []).map((l) => l.text).join("\n"),
+  ],
+]);
+
+export function fxGetFile(dir: string, path: string): FileContentResponse {
+  const f = state.diff.files.find((x) => x.path === path);
+  const content =
+    fileContents.get(path) ??
+    f?.hunks
+      .flatMap((h) => h.lines.filter((l) => l.kind !== "del").map((l) => l.text))
+      .join("\n") ??
+    `// ${path}\n`;
+  return {
+    dir,
+    path,
+    rev: null,
+    content,
+    contentHash: f?.contentHash ?? "0000000",
+  };
+}
+
+export function fxPutFile(req: FileWriteRequest): FileContentResponse {
+  const f = state.diff.files.find((x) => x.path === req.path);
+  if (f && f.contentHash !== req.baseHash) {
+    throw Object.assign(new Error("file changed underneath you"), { status: 409 });
+  }
+  fileContents.set(req.path, req.content);
+  const newHash = `wr${(state.seq++).toString(16).padStart(6, "0")}`;
+  if (f) {
+    f.contentHash = newHash;
+    if (f.seen) {
+      f.seen = false;
+      f.stale = true;
+    }
+  }
+  return { dir: req.dir, path: req.path, rev: null, content: req.content, contentHash: newHash };
+}
