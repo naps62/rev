@@ -128,7 +128,7 @@ export async function computeDiff(dir: string, base: string): Promise<DiffRespon
   const [diffText, statusZ, hi] = await Promise.all([
     // no second rev: diff merge-base against the working tree, catching uncommitted edits
     run(dir, ["diff", mergeBase, "--find-renames", "--no-color", `-U${TUNING.DIFF_CONTEXT_LINES}`]),
-    run(dir, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+    run(dir, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"]),
     headInfo(dir),
   ]);
 
@@ -178,7 +178,9 @@ export async function headInfo(dir: string): Promise<{ branch: string | null; he
 
 /** True when the working tree differs from HEAD (tracked files only). */
 export async function isDirty(dir: string): Promise<boolean> {
-  return (await run(dir, ["status", "--porcelain", "-uno"])).trim().length > 0;
+  // --no-optional-locks: status must not rewrite the index — discovery reads
+  // its mtime as lastActivity, and a plain status would bump it on every scan.
+  return (await run(dir, ["--no-optional-locks", "status", "--porcelain", "-uno"])).trim().length > 0;
 }
 
 /**

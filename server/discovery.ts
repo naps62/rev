@@ -85,6 +85,22 @@ async function discover(): Promise<Map<string, string>> {
   return map;
 }
 
+/** Path relative to the containing root ("bullish/mvp"), so equal basenames stay distinguishable. */
+function nameFor(dir: string, mainDir: string, isWorktree: boolean): string {
+  if (isWorktree) return `${basename(mainDir)}/${basename(dir)}`;
+  for (const root of config.roots) {
+    const real = (() => {
+      try {
+        return realpathSync(root);
+      } catch {
+        return root;
+      }
+    })();
+    if (dir.startsWith(real + sep)) return dir.slice(real.length + 1);
+  }
+  return basename(dir);
+}
+
 async function enrich(dir: string, mainDir: string, openMap: Map<string, number>): Promise<RepoInfo> {
   const isWorktree = dir !== mainDir;
   const [hi, base, dirty] = await Promise.all([headInfo(dir), defaultBase(dir), isDirty(dir)]);
@@ -105,7 +121,7 @@ async function enrich(dir: string, mainDir: string, openMap: Map<string, number>
 
   return {
     dir,
-    name: isWorktree ? `${basename(mainDir)}/${basename(dir)}` : basename(dir),
+    name: nameFor(dir, mainDir, isWorktree),
     branch: hi.branch,
     head: hi.head,
     isWorktree,
