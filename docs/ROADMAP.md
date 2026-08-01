@@ -21,9 +21,23 @@ ARCHITECTURE.md for the design and rejected options.
 - [x] M0 — architecture, contract, tuning, scaffold (typechecks clean)
 - [ ] M1 — backend (git/discovery/watcher/db/routes/WS) + frontend
       (pages, diff renderer, comments UI) in parallel, disjoint files
+  - [x] backend: 44 tests green (verified by architect re-run), live curl
+        evidence for the whole REST/WS surface. Accepted deviations:
+        /api/health added; isKnownRepo allows home ∪ roots; mode-only
+        changes are hunkless "modified"; reply-to-reply flattens to root;
+        nested independent repos undiscovered; WATCH_IGNORE matches names
+        anywhere in a path.
+  - [ ] frontend: in progress
 - [ ] M2 — integration: live end-to-end against real repos on this machine
 - [ ] M3 — polish (impeccable pass), quick-edit, agent docs, systemd unit
 - [ ] M4 — gate, push, PR
+
+## Contract debt (deliberate, for after the spike)
+
+- `FileDiff` needs a `skipped`/`size` marker: oversize untracked files are
+  listed with no hunks and `contentHash: ""`, indistinguishable from empty.
+- Repos where `node_modules`/artifacts are untracked but not gitignored will
+  flood the untracked list; only the per-file size cap protects us.
 
 ## Corrections
 
