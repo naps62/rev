@@ -15,14 +15,22 @@ import type {
 import * as api from "../api";
 import { CommentThread } from "../components/CommentThread";
 import { Composer } from "../components/Composer";
-import { DiffFile } from "../components/DiffFile";
+import { DiffFile, type DiffMode } from "../components/DiffFile";
 import { FileNav } from "../components/FileNav";
 import { HelpOverlay } from "../components/HelpOverlay";
 import { LiveDot } from "../components/LiveDot";
-import { basename, buildThreads, lineKey, shortSha, type Thread } from "../util";
+import { buildFileTree, flattenTree } from "../tree";
+import { basename, buildThreads, cx, lineKey, shortSha, type Thread } from "../util";
 import { useRevSocket } from "../ws";
 
 const HEADER_PX = 48;
+const MODE_KEY = "rev.diffMode";
+
+function initialMode(params: URLSearchParams): DiffMode {
+  const p = params.get("mode");
+  if (p === "split" || p === "unified") return p;
+  return localStorage.getItem(MODE_KEY) === "split" ? "split" : "unified";
+}
 
 export function Review() {
   const search = useSearch();
@@ -86,7 +94,16 @@ export function Review() {
   const resolve = (root: Comment, resolved: boolean) =>
     patchMut.mutate({ id: root.id, patch: { resolved } });
 
-  const files = diffQ.data?.files ?? [];
+  const [mode, setModeState] = useState<DiffMode>(() => initialMode(params));
+  const setMode = (m: DiffMode) => {
+    setModeState(m);
+    localStorage.setItem(MODE_KEY, m);
+  };
+
+  // Tree (visual) order drives everything: the rail, the diff pane, scroll-spy
+  // and j/k all agree on it.
+  const tree = useMemo(() => buildFileTree(diffQ.data?.files ?? []), [diffQ.data]);
+  const files = useMemo(() => flattenTree(tree), [tree]);
 
   // Route every thread: to its diff line, to its file's detached list, or to
   // the review-level panel (unanchored, or file absent from this diff).
@@ -281,6 +298,26 @@ export function Review() {
           </select>
         )}
         <div className="ml-auto flex items-center gap-3">
+          <div
+            role="radiogroup"
+            aria-label="Diff layout"
+            className="hidden overflow-hidden rounded-sm border border-edge sm:flex"
+          >
+            {(["unified", "split"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                aria-pressed={mode === m}
+                className={cx(
+                  "px-2 py-0.5 font-mono text-[11px] transition-colors duration-150",
+                  mode === m ? "bg-raise text-fg" : "text-faint hover:bg-raise/40 hover:text-mute",
+                )}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
           {files.length > 0 && (
             <>
               <span className="hidden font-mono text-[11.5px] tabular-nums text-mute sm:inline">
@@ -349,7 +386,7 @@ export function Review() {
           </div>
         </CenterPanel>
       ) : diffQ.isPending ? (
-        <div className="mx-auto w-full max-w-[1400px] px-4 py-4">
+        <div className="w-full px-4 py-4">
           <div className="animate-pulse space-y-3">
             {[0, 1, 2].map((i) => (
               <div key={i} className="rounded-md border border-edge bg-panel">
@@ -367,13 +404,13 @@ export function Review() {
           </p>
         </CenterPanel>
       ) : (
-        <div className="mx-auto flex w-full max-w-[1400px] items-start gap-4 px-4 py-4">
+        <div className="flex w-full items-start gap-4 px-4 py-4">
           <aside
             className="sticky hidden w-72 shrink-0 overflow-y-auto rounded-md border border-edge bg-panel md:block"
             style={{ top: HEADER_PX + 12, maxHeight: `calc(100vh - ${HEADER_PX + 24}px)` }}
           >
             <FileNav
-              files={files}
+              tree={tree}
               unresolvedByFile={unresolvedByFile}
               currentPath={currentPath}
               onSelect={jumpTo}
@@ -387,6 +424,7 @@ export function Review() {
                 key={f.path}
                 dir={dir}
                 file={f}
+                mode={mode}
                 threadsByLine={byFile.get(f.path) ?? new Map()}
                 detached={detachedByFile.get(f.path) ?? []}
                 isCurrent={currentPath === f.path}

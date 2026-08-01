@@ -456,6 +456,7 @@ const state = {
       makeGeneratedFile(),
     ],
     computedAt: now,
+    baseBehind: null,
   } as DiffResponse,
   comments: [] as Comment[],
   seq: 0,

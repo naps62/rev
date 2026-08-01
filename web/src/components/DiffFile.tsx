@@ -23,9 +23,12 @@ const STATUS_GLYPH: Record<FileDiff["status"], { glyph: string; cls: string; lab
   untracked: { glyph: "U", cls: "text-add", label: "untracked" },
 };
 
+export type DiffMode = "unified" | "split";
+
 interface DiffFileProps {
   dir: string;
   file: FileDiff;
+  mode: DiffMode;
   /** lineKey("side:line") → threads anchored there. */
   threadsByLine: Map<string, Thread[]>;
   /** Threads anchored to this file whose line no longer exists in the diff. */
@@ -41,6 +44,7 @@ interface DiffFileProps {
 export function DiffFile({
   dir,
   file,
+  mode,
   threadsByLine,
   detached,
   isCurrent,
@@ -117,79 +121,158 @@ export function DiffFile({
           ? `large diff · ${changed.toLocaleString()} changed lines`
           : "collapsed";
 
+  const toggleComposer = (side: "old" | "new", line: DiffLine) => {
+    const num = (side === "old" ? line.oldLine : line.newLine) ?? 0;
+    const key = lineKey(side, num);
+    setComposerAt((cur) =>
+      cur?.key === key
+        ? null
+        : { key, anchor: { file: file.path, side, line: num, snippet: line.text.trim() } },
+    );
+  };
+
+  const composerNode = (key: string) =>
+    composerAt?.key === key ? (
+      <div className="border-y border-edge-soft bg-panel">
+        <Composer
+          placeholder={`Comment on ${file.path}:${composerAt.anchor.line}`}
+          autoFocus
+          onSubmit={(body) => {
+            onCreateComment(composerAt.anchor, body);
+            setComposerAt(null);
+          }}
+          onCancel={() => setComposerAt(null)}
+        />
+      </div>
+    ) : null;
+
+  const threadNodes = (key: string | null): ReactNode[] =>
+    key == null
+      ? []
+      : (threadsByLine.get(key) ?? []).map((thread) => (
+          <CommentThread
+            key={thread.root.id}
+            thread={thread}
+            onReply={(body) => onReply(thread.root, body)}
+            onResolve={(resolved) => onResolve(thread.root, resolved)}
+          />
+        ));
+
   // Rows are built imperatively so comment threads and the composer can be
-  // spliced in directly under their anchored line.
+  // spliced in directly under their anchored line (in the right pane when split).
+  const split = mode === "split";
   const rows: ReactNode[] = [];
   if (expanded && !editing) {
     let flatIdx = 0;
     file.hunks.forEach((hunk, hi) => {
       rows.push(
-        <tr key={`h${hi}`}>
-          <td colSpan={2} className="select-none border-r border-edge-soft bg-raise/50" />
-          <td className="bg-raise/50 py-1 pl-7 font-mono text-[11px] text-faint">
-            @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
-            {hunk.header ? <span className="text-mute"> {hunk.header}</span> : null}
-          </td>
-        </tr>,
+        split ? (
+          <tr key={`h${hi}`}>
+            <td colSpan={4} className="bg-raise/50 py-1 pl-7 font-mono text-[11px] text-faint">
+              @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
+              {hunk.header ? <span className="text-mute"> {hunk.header}</span> : null}
+            </td>
+          </tr>
+        ) : (
+          <tr key={`h${hi}`}>
+            <td colSpan={2} className="select-none border-r border-edge-soft bg-raise/50" />
+            <td className="bg-raise/50 py-1 pl-7 font-mono text-[11px] text-faint">
+              @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
+              {hunk.header ? <span className="text-mute"> {hunk.header}</span> : null}
+            </td>
+          </tr>
+        ),
       );
-      hunk.lines.forEach((line, li) => {
-        const idx = flatIdx++;
-        const side: "old" | "new" = line.kind === "del" ? "old" : "new";
-        const num = (side === "old" ? line.oldLine : line.newLine) ?? 0;
-        const key = lineKey(side, num);
-        rows.push(
-          <LineRow
-            key={`l${hi}.${li}`}
-            line={line}
-            tokens={tokens?.[idx] ?? null}
-            onComment={() =>
-              setComposerAt((cur) =>
-                cur?.key === key
-                  ? null
-                  : { key, anchor: { file: file.path, side, line: num, snippet: line.text.trim() } },
-              )
-            }
-          />,
-        );
-        const keys =
-          line.kind === "context" && line.oldLine != null
-            ? [key, lineKey("old", line.oldLine)]
-            : [key];
-        for (const k of keys) {
-          for (const thread of threadsByLine.get(k) ?? []) {
+
+      if (split) {
+        type Slot = { line: DiffLine; idx: number };
+        const pairs: Array<{ l: Slot | null; r: Slot | null }> = [];
+        let dels: Slot[] = [];
+        let adds: Slot[] = [];
+        const flush = () => {
+          const n = Math.max(dels.length, adds.length);
+          for (let i = 0; i < n; i++) pairs.push({ l: dels[i] ?? null, r: adds[i] ?? null });
+          dels = [];
+          adds = [];
+        };
+        for (const line of hunk.lines) {
+          const idx = flatIdx++;
+          if (line.kind === "del") dels.push({ line, idx });
+          else if (line.kind === "add") adds.push({ line, idx });
+          else {
+            flush();
+            pairs.push({ l: { line, idx }, r: { line, idx } });
+          }
+        }
+        flush();
+
+        pairs.forEach((p, pi) => {
+          rows.push(
+            <SplitRow
+              key={`s${hi}.${pi}`}
+              left={p.l}
+              right={p.r}
+              tokens={tokens}
+              onCommentLeft={p.l ? () => toggleComposer("old", p.l!.line) : undefined}
+              onCommentRight={p.r ? () => toggleComposer("new", p.r!.line) : undefined}
+            />,
+          );
+          const leftKey = p.l?.line.oldLine != null ? lineKey("old", p.l.line.oldLine) : null;
+          const rightKey = p.r?.line.newLine != null ? lineKey("new", p.r.line.newLine) : null;
+          const leftNodes = [
+            ...threadNodes(leftKey),
+            leftKey != null ? composerNode(leftKey) : null,
+          ].filter(Boolean);
+          const rightNodes = [
+            ...threadNodes(rightKey),
+            rightKey != null ? composerNode(rightKey) : null,
+          ].filter(Boolean);
+          if (leftNodes.length > 0 || rightNodes.length > 0) {
             rows.push(
-              <tr key={`t${thread.root.id}`}>
-                <td colSpan={3} className="p-0">
-                  <CommentThread
-                    thread={thread}
-                    onReply={(body) => onReply(thread.root, body)}
-                    onResolve={(resolved) => onResolve(thread.root, resolved)}
-                  />
+              <tr key={`x${hi}.${pi}`}>
+                <td colSpan={2} className="border-r border-edge-soft p-0 align-top">
+                  {leftNodes}
+                </td>
+                <td colSpan={2} className="p-0 align-top">
+                  {rightNodes}
                 </td>
               </tr>,
             );
           }
-        }
-        if (composerAt?.key === key) {
+        });
+      } else {
+        hunk.lines.forEach((line, li) => {
+          const idx = flatIdx++;
+          const side: "old" | "new" = line.kind === "del" ? "old" : "new";
+          const num = (side === "old" ? line.oldLine : line.newLine) ?? 0;
+          const key = lineKey(side, num);
           rows.push(
-            <tr key={`c${key}`}>
-              <td colSpan={3} className="p-0">
-                <div className="border-y border-edge-soft bg-panel">
-                  <Composer
-                    placeholder={`Comment on ${file.path}:${num}`}
-                    autoFocus
-                    onSubmit={(body) => {
-                      onCreateComment(composerAt.anchor, body);
-                      setComposerAt(null);
-                    }}
-                    onCancel={() => setComposerAt(null)}
-                  />
-                </div>
-              </td>
-            </tr>,
+            <LineRow
+              key={`l${hi}.${li}`}
+              line={line}
+              tokens={tokens?.[idx] ?? null}
+              onComment={() => toggleComposer(side, line)}
+            />,
           );
-        }
-      });
+          const keys =
+            line.kind === "context" && line.oldLine != null
+              ? [key, lineKey("old", line.oldLine)]
+              : [key];
+          const extras = [
+            ...keys.flatMap((k) => threadNodes(k)),
+            composerNode(key),
+          ].filter(Boolean);
+          if (extras.length > 0) {
+            rows.push(
+              <tr key={`x${hi}.${li}`}>
+                <td colSpan={3} className="p-0">
+                  {extras}
+                </td>
+              </tr>,
+            );
+          }
+        });
+      }
     });
   }
 
@@ -296,12 +379,21 @@ export function DiffFile({
           <p className="px-4 py-2 font-mono text-[12px] text-faint">{collapsedReason}</p>
         )
       ) : (
-        <table className="w-full border-collapse">
-          <colgroup>
-            <col className="w-11" />
-            <col className="w-11" />
-            <col />
-          </colgroup>
+        <table className={cx("w-full border-collapse", split && "table-fixed")}>
+          {split ? (
+            <colgroup>
+              <col className="w-11" />
+              <col />
+              <col className="w-11" />
+              <col />
+            </colgroup>
+          ) : (
+            <colgroup>
+              <col className="w-11" />
+              <col className="w-11" />
+              <col />
+            </colgroup>
+          )}
           <tbody>{rows}</tbody>
         </table>
       )}
@@ -383,6 +475,91 @@ function LineRow({
           : line.text || " "}
       </td>
     </tr>
+  );
+}
+
+function SplitRow({
+  left,
+  right,
+  tokens,
+  onCommentLeft,
+  onCommentRight,
+}: {
+  left: { line: DiffLine; idx: number } | null;
+  right: { line: DiffLine; idx: number } | null;
+  tokens: TokenLine[] | null;
+  onCommentLeft?: () => void;
+  onCommentRight?: () => void;
+}) {
+  return (
+    <tr>
+      <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+        {left?.line.oldLine ?? ""}
+      </td>
+      <SplitCell slot={left} isLeft tokens={tokens} onComment={onCommentLeft} />
+      <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+        {right?.line.newLine ?? ""}
+      </td>
+      <SplitCell slot={right} isLeft={false} tokens={tokens} onComment={onCommentRight} />
+    </tr>
+  );
+}
+
+function SplitCell({
+  slot,
+  isLeft,
+  tokens,
+  onComment,
+}: {
+  slot: { line: DiffLine; idx: number } | null;
+  isLeft: boolean;
+  tokens: TokenLine[] | null;
+  onComment?: () => void;
+}) {
+  if (!slot) {
+    // Padding cell keeping the panes aligned when one side has no counterpart.
+    return <td className={cx("bg-raise/30", isLeft && "border-r border-edge-soft")} />;
+  }
+  const { line, idx } = slot;
+  const marker = line.kind === "add" ? "+" : line.kind === "del" ? "−" : "";
+  const toks = tokens?.[idx] ?? null;
+  return (
+    <td
+      className={cx(
+        "group/cell relative whitespace-pre-wrap break-all py-0 pl-7 pr-3 align-top font-mono text-[12.5px] leading-[1.7] text-fg",
+        line.kind === "add" && "bg-add-soft",
+        line.kind === "del" && "bg-del-soft",
+        isLeft && "border-r border-edge-soft",
+      )}
+    >
+      {onComment && (
+        <button
+          type="button"
+          onClick={onComment}
+          title="Comment on this line"
+          aria-label="Comment on this line"
+          className="absolute left-0.5 top-[3px] hidden size-4 place-items-center rounded-sm bg-accent font-sans text-[13px] font-bold leading-none text-bg group-hover/cell:grid"
+        >
+          +
+        </button>
+      )}
+      <span
+        aria-hidden
+        className={cx(
+          "absolute left-[18px] select-none",
+          line.kind === "add" ? "text-add" : line.kind === "del" ? "text-del" : "text-faint",
+        )}
+      >
+        {marker}
+      </span>
+      {toks
+        ? toks.map((t, i) => (
+            <span key={i} style={t.color ? { color: t.color } : undefined}>
+              {t.content}
+            </span>
+          ))
+        : line.text || " "}
+    </td>
   );
 }
 
