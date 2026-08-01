@@ -1,0 +1,176 @@
+import { beforeAll, describe, expect, test } from "bun:test";
+import { symlinkSync } from "node:fs";
+import { join } from "node:path";
+import type { Comment, CommentListResponse, DiffResponse, ServerMessage } from "@shared/types";
+import { config } from "./config";
+import { closeDb, openDb } from "./db";
+import { hashContent } from "./git";
+import { buildApi, resolveInRepo } from "./routes";
+import { git, makeRepo, SCRATCH, tmpdir, write } from "./testutil";
+
+// Fixture repos live in the scratchpad (outside $HOME); make it the only root
+// so rescans never touch the user's real repos.
+config.roots.length = 0;
+config.roots.push(SCRATCH);
+
+const sent: ServerMessage[] = [];
+const app = buildApi((msg) => sent.push(msg));
+
+const json = (method: string, path: string, body: unknown) =>
+  app.request(path, {
+    method,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+beforeAll(() => {
+  closeDb();
+  openDb(join(tmpdir("routes-db"), "rev.db"));
+});
+
+describe("resolveInRepo", () => {
+  test("rejects traversal, absolute paths, symlink escapes", () => {
+    const dir = makeRepo("safe");
+    expect(resolveInRepo(dir, "a.txt")).toBe(join(dir, "a.txt"));
+    expect(resolveInRepo(dir, "sub/new-file.txt")).toBe(join(dir, "sub/new-file.txt"));
+    expect(resolveInRepo(dir, "../outside.txt")).toBeNull();
+    expect(resolveInRepo(dir, "sub/../../outside.txt")).toBeNull();
+    expect(resolveInRepo(dir, "/etc/passwd")).toBeNull();
+    expect(resolveInRepo(dir, "")).toBeNull();
+    symlinkSync("/etc", join(dir, "esc"));
+    expect(resolveInRepo(dir, "esc/passwd")).toBeNull();
+  });
+});
+
+describe("routes", () => {
+  test("GET /health", async () => {
+    const res = await app.request("/health");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, version: "spike" });
+  });
+
+  test("unknown dir is rejected everywhere", async () => {
+    const res = await app.request(`/diff?dir=${encodeURIComponent("/etc")}&base=main`);
+    expect(res.status).toBe(400);
+    const res2 = await app.request(`/diff?dir=${encodeURIComponent(tmpdir("notrepo"))}&base=main`);
+    expect(res2.status).toBe(400);
+  });
+
+  test("GET /diff: bad base → 400, good base → files with seen/stale join", async () => {
+    const dir = makeRepo("routes-diff");
+    git(dir, "checkout", "-b", "f");
+    write(dir, "a.txt", "edited\n");
+    const q = `dir=${encodeURIComponent(dir)}&base=main`;
+
+    const bad = await app.request(`/diff?dir=${encodeURIComponent(dir)}&base=nope`);
+    expect(bad.status).toBe(400);
+    expect(((await bad.json()) as { error: string }).error).toBeString();
+
+    const res = await app.request(`/diff?${q}`);
+    expect(res.status).toBe(200);
+    const diff = (await res.json()) as DiffResponse;
+    const file = diff.files.find((f) => f.path === "a.txt")!;
+    expect(file.seen).toBe(false);
+    expect(file.stale).toBe(false);
+
+    // mark seen at current hash → seen: true
+    const seenRes = await json("PUT", "/seen", {
+      dir,
+      base: "main",
+      path: "a.txt",
+      contentHash: file.contentHash,
+      seen: true,
+    });
+    expect(await seenRes.json()).toEqual({ ok: true });
+    const diff2 = (await (await app.request(`/diff?${q}`)).json()) as DiffResponse;
+    expect(diff2.files.find((f) => f.path === "a.txt")!.seen).toBe(true);
+
+    // file changes → stale: true
+    write(dir, "a.txt", "edited more\n");
+    const diff3 = (await (await app.request(`/diff?${q}`)).json()) as DiffResponse;
+    const f3 = diff3.files.find((f) => f.path === "a.txt")!;
+    expect(f3.seen).toBe(false);
+    expect(f3.stale).toBe(true);
+  });
+
+  test("GET/PUT /file: roundtrip, 409 on hash mismatch, traversal 400", async () => {
+    const dir = makeRepo("routes-file", { "a.txt": "v1\n" });
+    const q = `dir=${encodeURIComponent(dir)}&path=a.txt`;
+    const got = await app.request(`/file?${q}`);
+    expect(got.status).toBe(200);
+    const body = (await got.json()) as { content: string; contentHash: string };
+    expect(body.content).toBe("v1\n");
+
+    const conflict = await json("PUT", "/file", { dir, path: "a.txt", content: "v2\n", baseHash: "wrong" });
+    expect(conflict.status).toBe(409);
+
+    const ok = await json("PUT", "/file", { dir, path: "a.txt", content: "v2\n", baseHash: body.contentHash });
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as { contentHash: string }).contentHash).toBe(hashContent("v2\n"));
+    expect(await Bun.file(join(dir, "a.txt")).text()).toBe("v2\n");
+
+    const esc = await json("PUT", "/file", { dir, path: "../esc.txt", content: "x", baseHash: "" });
+    expect(esc.status).toBe(400);
+    const escRead = await app.request(`/file?dir=${encodeURIComponent(dir)}&path=..%2Fesc.txt`);
+    expect(escRead.status).toBe(400);
+  });
+
+  test("comments: create, reply, patch, list, broadcast", async () => {
+    const dir = makeRepo("routes-comments");
+    sent.length = 0;
+
+    const created = await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "user",
+      body: "please rename this",
+      anchor: { file: "a.txt", side: "new", line: 1, snippet: "one" },
+    });
+    expect(created.status).toBe(201);
+    const root = (await created.json()) as Comment;
+    expect(sent).toContainEqual({ type: "comments-changed", dir, seq: root.seq });
+
+    const badAuthor = await json("POST", "/comments", { dir, base: "main", author: "bot", body: "x" });
+    expect(badAuthor.status).toBe(400);
+    const badParent = await json("POST", "/comments", { dir, base: "main", author: "user", body: "x", parentId: "nope" });
+    expect(badParent.status).toBe(400);
+
+    const replied = await json("POST", "/comments", { dir, base: "main", author: "agent", body: "done", parentId: root.id });
+    const reply = (await replied.json()) as Comment;
+    expect(reply.parentId).toBe(root.id);
+    expect(reply.anchor).toBeNull();
+
+    const patched = await json("PATCH", `/comments/${root.id}`, { resolved: true });
+    expect(patched.status).toBe(200);
+    expect(((await patched.json()) as Comment).resolvedAt).toBeGreaterThan(0);
+    const missing = await json("PATCH", "/comments/does-not-exist", { resolved: true });
+    expect(missing.status).toBe(404);
+
+    const list = await app.request(`/comments?dir=${encodeURIComponent(dir)}`);
+    const { comments, cursor } = (await list.json()) as CommentListResponse;
+    expect(comments.map((c) => c.id)).toEqual([root.id, reply.id]);
+    expect(cursor).toBe(reply.seq);
+
+    const since = await app.request(`/comments?dir=${encodeURIComponent(dir)}&since=${root.seq}`);
+    expect(((await since.json()) as CommentListResponse).comments.map((c) => c.id)).toEqual([reply.id]);
+  });
+
+  test("long-poll resolves early when a comment lands", async () => {
+    const dir = makeRepo("routes-poll");
+    const t0 = Date.now();
+    const pending = app.request(`/comments?dir=${encodeURIComponent(dir)}&since=0&wait=1`);
+    await new Promise((r) => setTimeout(r, 50));
+    await json("POST", "/comments", { dir, base: "main", author: "user", body: "wake up" });
+    const res = (await (await pending).json()) as CommentListResponse;
+    expect(res.comments.map((c) => c.body)).toEqual(["wake up"]);
+    expect(Date.now() - t0).toBeLessThan(5_000); // resolved by notify, not the 25s cap
+  });
+
+  test("rescan broadcasts repos-changed", async () => {
+    sent.length = 0;
+    const res = await app.request("/repos/rescan", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(Array.isArray(await res.json())).toBe(true);
+    expect(sent).toContainEqual({ type: "repos-changed" });
+  });
+});
