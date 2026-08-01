@@ -29,7 +29,7 @@ export function LiveDot({ status }: { status: WsStatus }) {
           status === "reconnecting" && "bg-del",
         )}
       />
-      {LABEL[status]}
+      <span className="max-sm:hidden">{LABEL[status]}</span>
     </span>
   );
 }

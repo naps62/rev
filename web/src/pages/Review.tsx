@@ -226,47 +226,52 @@ export function Review() {
         <Link href={api.href("/")} className="font-mono text-[13px] font-bold text-fg hover:text-accent">
           rev<span className="text-accent">_</span>
         </Link>
-        <span className="text-faint">/</span>
-        <span className="max-w-48 truncate text-[13px] font-medium text-fg" title={dir}>
+        <span className="text-faint max-sm:hidden">/</span>
+        <span
+          className="max-w-48 shrink-0 truncate text-[13px] font-medium text-fg max-sm:max-w-20"
+          title={dir}
+        >
           {dir ? basename(dir) : "review"}
         </span>
-        <span className="hidden items-center gap-1.5 font-mono text-[12px] text-mute sm:flex">
-          {diffQ.data && (
-            <>
-              <span className="max-w-44 truncate" title={diffQ.data.branch ?? undefined}>
-                {diffQ.data.branch ?? `detached @ ${shortSha(diffQ.data.head)}`}
-              </span>
-              <span className="text-faint">→</span>
-            </>
-          )}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const v = baseInput.trim();
-              if (v && v !== base) navigate(api.href("/review", { dir, base: v }));
-            }}
-          >
-            <input
-              value={baseInput}
-              onChange={(e) => setBaseInput(e.target.value)}
-              spellCheck={false}
-              aria-label="Base ref"
-              title="Base ref — press Enter to re-diff"
-              className="w-24 rounded-sm border border-edge bg-bg px-1.5 py-0.5 font-mono text-[12px] text-fg focus:border-accent/60 focus:outline-none"
-            />
-          </form>
-          {diffQ.data && (
-            <span className="hidden text-[11px] text-faint md:inline" title={diffQ.data.mergeBase}>
-              merge-base {shortSha(diffQ.data.mergeBase)}
+        {diffQ.data && (
+          <span className="hidden items-center gap-1.5 font-mono text-[12px] text-mute sm:flex">
+            <span className="max-w-44 truncate" title={diffQ.data.branch ?? undefined}>
+              {diffQ.data.branch ?? `detached @ ${shortSha(diffQ.data.head)}`}
             </span>
-          )}
-        </span>
+            <span className="text-faint">→</span>
+          </span>
+        )}
+        <form
+          className="shrink-0"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const v = baseInput.trim();
+            if (v && v !== base) navigate(api.href("/review", { dir, base: v }));
+          }}
+        >
+          <input
+            value={baseInput}
+            onChange={(e) => setBaseInput(e.target.value)}
+            spellCheck={false}
+            aria-label="Base ref"
+            title="Base ref — press Enter to re-diff"
+            className="w-24 rounded-sm border border-edge bg-bg px-1.5 py-0.5 font-mono text-[12px] text-fg focus:border-accent/60 focus:outline-none max-sm:w-16"
+          />
+        </form>
+        {diffQ.data && (
+          <span
+            className="hidden text-[11px] text-faint md:inline"
+            title={diffQ.data.mergeBase}
+          >
+            merge-base {shortSha(diffQ.data.mergeBase)}
+          </span>
+        )}
         {files.length > 0 && (
           <select
             value={currentPath ?? ""}
             onChange={(e) => jumpTo(e.target.value)}
             aria-label="Jump to file"
-            className="max-w-36 rounded-sm border border-edge bg-bg px-1 py-0.5 font-mono text-[11px] text-fg md:hidden"
+            className="min-w-0 flex-1 rounded-sm border border-edge bg-bg px-1 py-0.5 font-mono text-[11px] text-fg md:hidden"
           >
             {files.map((f) => (
               <option key={f.path} value={f.path}>
@@ -284,7 +289,7 @@ export function Review() {
                 <span className="text-del">−{totals.del}</span>
               </span>
               <span
-                className="font-mono text-[11.5px] tabular-nums text-mute"
+                className="whitespace-nowrap font-mono text-[11.5px] tabular-nums text-mute"
                 title="files marked seen"
               >
                 {seenCount}/{files.length} seen
