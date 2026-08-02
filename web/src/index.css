@@ -53,6 +53,17 @@ body {
   outline-offset: 1px;
 }
 
+/* Tailwind v4 preflight leaves buttons on the default cursor; every enabled
+   interactive control must read as clickable. */
+button:not(:disabled),
+[role="button"],
+label:has(input[type="checkbox"]:not(:disabled)),
+input[type="checkbox"]:not(:disabled),
+select,
+summary {
+  cursor: pointer;
+}
+
 /* Amber wash that fades out; applied when a file turns stale under the user. */
 @keyframes stale-flash {
   0% {

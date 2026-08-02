@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Comment } from "@shared/types";
 import { Markdown } from "../markdown";
 import { cx, relativeTime, type Thread } from "../util";
@@ -73,9 +73,20 @@ export function CommentThread({
   const [expanded, setExpanded] = useState(!resolved);
   const [replying, setReplying] = useState(false);
 
+  // Resolving (optimistically or from another client) collapses right away;
+  // unresolving re-expands.
+  useEffect(() => setExpanded(!resolved), [resolved]);
+
+  // Containment that separates conversation from diff: inset panel, left
+  // accent in the thread author's color (amber = user, blue = agent).
+  const shell = cx(
+    "mx-3 my-2 overflow-hidden rounded-md border border-edge border-l-2 bg-bg font-sans",
+    root.author === "user" ? "border-l-accent/70" : "border-l-agent/70",
+  );
+
   if (resolved && !expanded) {
     return (
-      <div className="border-y border-edge-soft bg-panel font-sans">
+      <div className={shell}>
         <button
           type="button"
           onClick={() => setExpanded(true)}
@@ -102,7 +113,7 @@ export function CommentThread({
   }
 
   return (
-    <div className="border-y border-edge-soft bg-panel font-sans">
+    <div className={shell}>
       {anchorNote && (
         <div className="border-b border-edge-soft px-3 py-1.5 font-mono text-[11px] text-faint">
           {anchorNote}

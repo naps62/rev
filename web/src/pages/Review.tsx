@@ -8,6 +8,7 @@ import { Link, useLocation, useSearch } from "wouter";
 import type {
   Comment,
   CommentAnchor,
+  CommentListResponse,
   CommentPatchRequest,
   DiffResponse,
   FileDiff,
@@ -84,6 +85,29 @@ export function Review() {
   const patchMut = useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: CommentPatchRequest }) =>
       api.patchComment(id, patch),
+    // Resolve/unresolve applies to the cache immediately so the thread
+    // collapses/expands without waiting on the server; rolled back on error.
+    onMutate: async ({ id, patch }) => {
+      if (patch.resolved === undefined) return;
+      await qc.cancelQueries({ queryKey: ["comments", dir] });
+      const prev = qc.getQueryData<CommentListResponse>(["comments", dir]);
+      qc.setQueryData<CommentListResponse>(["comments", dir], (old) =>
+        old
+          ? {
+              ...old,
+              comments: old.comments.map((c) =>
+                c.id === id
+                  ? { ...c, resolvedAt: patch.resolved ? Date.now() : null }
+                  : c,
+              ),
+            }
+          : old,
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["comments", dir], ctx.prev);
+    },
     onSettled: () => qc.invalidateQueries({ queryKey: ["comments", dir] }),
   });
   const fetchMut = useMutation({

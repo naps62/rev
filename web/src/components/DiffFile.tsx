@@ -114,6 +114,8 @@ export function DiffFile({
   const status = STATUS_GLYPH[file.status];
   const canExpand = !file.binary && file.hunks.length > 0;
   const canEdit = !file.binary && file.status !== "deleted";
+  // Whether anything renders below the header (diff table or quick-edit).
+  const open = editing || (expanded && canExpand);
 
   // Collapse on mark-seen, expand on unmark — regardless of which control
   // (header checkbox, file nav, `v` key) flipped it.
@@ -125,14 +127,14 @@ export function DiffFile({
     }
   }, [file.seen, tooBig]);
 
-  const collapsedReason = file.binary
-    ? "binary file — no textual diff"
+  const collapsedNote = file.binary
+    ? "binary"
     : file.status === "deleted"
       ? `deleted · ${file.deletions} lines`
       : file.seen
-        ? "marked seen"
+        ? "seen"
         : tooBig
-          ? `large diff · ${changed.toLocaleString()} changed lines`
+          ? `large diff · ${changed.toLocaleString()} lines`
           : "collapsed";
 
   const toggleComposer = (side: "old" | "new", line: DiffLine, hunk: DiffHunk) => {
@@ -156,7 +158,7 @@ export function DiffFile({
 
   const composerNode = (key: string) =>
     composerAt?.key === key ? (
-      <div className="border-y border-edge-soft bg-panel">
+      <div className="mx-3 my-2 overflow-hidden rounded-md border border-edge border-l-2 border-l-accent/70 bg-bg">
         <Composer
           placeholder={`Comment on ${file.path}:${composerAt.anchor.line}`}
           autoFocus
@@ -314,13 +316,24 @@ export function DiffFile({
         flash && "stale-flash",
       )}
     >
-      <header className="sticky top-12 z-10 flex min-w-0 items-center gap-2.5 rounded-t-[5px] border-b border-edge-soft bg-raise px-2 py-1.5">
+      <header
+        onClick={() => canExpand && !editing && setExpanded((e) => !e)}
+        className={cx(
+          "sticky top-12 z-10 flex min-w-0 items-center gap-2.5 rounded-t-[5px] bg-raise px-2 py-1.5",
+          open ? "border-b border-edge-soft" : "rounded-b-[5px]",
+          canExpand && !editing && "cursor-pointer",
+        )}
+      >
         <button
           type="button"
-          onClick={() => canExpand && setExpanded((e) => !e)}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (canExpand && !editing) setExpanded((x) => !x);
+          }}
           disabled={!canExpand}
+          aria-expanded={canExpand ? expanded : undefined}
           aria-label={expanded ? "Collapse file" : "Expand file"}
-          className="grid size-5 shrink-0 place-items-center rounded-sm text-mute transition-colors duration-150 hover:bg-panel hover:text-fg disabled:text-faint"
+          className="grid size-5 shrink-0 place-items-center rounded-sm text-mute transition-colors duration-150 hover:bg-panel hover:text-fg disabled:cursor-default disabled:text-faint"
         >
           <svg
             width="10"
@@ -348,6 +361,9 @@ export function DiffFile({
           )}
           {file.path}
         </span>
+        {!open && (
+          <span className="shrink-0 font-mono text-[11px] text-faint">{collapsedNote}</span>
+        )}
         {!file.binary && (
           <span className="shrink-0 font-mono text-[11.5px] tabular-nums">
             <span className="text-add">+{file.additions}</span>{" "}
@@ -368,7 +384,8 @@ export function DiffFile({
           {canEdit && (
             <button
               type="button"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 setEditing(true);
                 setExpanded(true);
               }}
@@ -377,7 +394,10 @@ export function DiffFile({
               edit
             </button>
           )}
-          <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-mute transition-colors duration-150 hover:text-fg">
+          <label
+            onClick={(e) => e.stopPropagation()}
+            className="flex cursor-pointer items-center gap-1.5 text-[12px] text-mute transition-colors duration-150 hover:text-fg"
+          >
             <input
               type="checkbox"
               checked={file.seen}
@@ -392,19 +412,7 @@ export function DiffFile({
       <div className="overflow-hidden rounded-b-[5px]">
       {editing ? (
         <QuickEditPanel dir={dir} path={file.path} onClose={() => setEditing(false)} />
-      ) : !expanded || !canExpand ? (
-        canExpand ? (
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            className="block w-full px-4 py-2 text-left font-mono text-[12px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute"
-          >
-            {collapsedReason} · click to expand
-          </button>
-        ) : (
-          <p className="px-4 py-2 font-mono text-[12px] text-faint">{collapsedReason}</p>
-        )
-      ) : (
+      ) : !open ? null : (
         <table className={cx("w-full border-collapse", split && "table-fixed")}>
           {split ? (
             <colgroup>
