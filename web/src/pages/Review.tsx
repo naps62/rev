@@ -179,9 +179,20 @@ export function Review() {
   const currentRef = useRef<string | null>(null);
   currentRef.current = currentPath;
 
+  // Animated jump state: scroll-spy pauses while gliding so the rail doesn't
+  // flick through every file passed on the way.
+  const animRef = useRef<number | null>(null);
+  const glidingRef = useRef(false);
+  const cancelGlide = () => {
+    if (animRef.current != null) cancelAnimationFrame(animRef.current);
+    animRef.current = null;
+    glidingRef.current = false;
+  };
+
   useEffect(() => {
     if (files.length === 0) return;
     const onScroll = () => {
+      if (glidingRef.current) return;
       let current = files[0]?.path ?? null;
       for (const f of files) {
         const el = sectionEls.current.get(f.path);
@@ -193,15 +204,53 @@ export function Review() {
     };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelGlide();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diffQ.data]);
 
+  const targetTop = (el: HTMLElement) => {
+    const top = el.getBoundingClientRect().top + window.scrollY - HEADER_PX - 8;
+    const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    return Math.min(Math.max(top, 0), max);
+  };
+
+  /**
+   * Fast glide instead of a teleport. Exponential approach re-measures the
+   * element every frame, so files lazy-loading above (and shifting layout)
+   * can't make it land short; wheel/touch input hands control back.
+   */
   const jumpTo = (path: string) => {
     const el = sectionEls.current.get(path);
     if (!el) return;
-    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - HEADER_PX - 8 });
     setCurrentPath(path);
+    cancelGlide();
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      window.scrollTo({ top: targetTop(el) });
+      return;
+    }
+    glidingRef.current = true;
+    window.addEventListener("wheel", cancelGlide, { once: true, passive: true });
+    window.addEventListener("touchstart", cancelGlide, { once: true, passive: true });
+    const TAU_MS = 55; // settles in ~4·TAU regardless of frame rate
+    let last = performance.now();
+    const step = (now: number) => {
+      if (!glidingRef.current) return;
+      const goal = targetTop(el);
+      const delta = goal - window.scrollY;
+      if (Math.abs(delta) < 1) {
+        window.scrollTo({ top: goal });
+        cancelGlide();
+        return;
+      }
+      const k = 1 - Math.exp(-(now - last) / TAU_MS);
+      last = now;
+      window.scrollTo({ top: window.scrollY + delta * k });
+      animRef.current = requestAnimationFrame(step);
+    };
+    animRef.current = requestAnimationFrame(step);
   };
 
   const [help, setHelp] = useState(false);
