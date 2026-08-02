@@ -45,9 +45,11 @@ export function Review() {
     queryFn: () => api.getDiff(dir, base),
     enabled: !!dir && !!base,
   });
+  // No base filter: threads from earlier reviews against other bases stay
+  // visible (tagged with their base) instead of vanishing on a base switch.
   const commentsQ = useQuery({
-    queryKey: ["comments", dir, base],
-    queryFn: () => api.getComments(dir, base),
+    queryKey: ["comments", dir],
+    queryFn: () => api.getComments(dir),
     enabled: !!dir,
   });
 
@@ -84,6 +86,12 @@ export function Review() {
       api.patchComment(id, patch),
     onSettled: () => qc.invalidateQueries({ queryKey: ["comments", dir] }),
   });
+  const fetchMut = useMutation({
+    mutationFn: () => api.postFetch({ dir, base }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["diff", dir] }),
+  });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => fetchMut.reset(), [dir, base]);
 
   const toggleSeen = (file: FileDiff, seen: boolean) =>
     seenMut.mutate({ dir, base, path: file.path, contentHash: file.contentHash, seen });
@@ -133,8 +141,16 @@ export function Review() {
       if (t.root.resolvedAt == null) {
         unresolvedByFile.set(a.file, (unresolvedByFile.get(a.file) ?? 0) + 1);
       }
-      const k = lineKey(a.side, a.line);
-      if (lineSets.get(a.file)!.has(k)) {
+      // Threads follow the code: the server re-anchors "new"-side comments
+      // against the working tree (resolvedLine). Try that first, fall back to
+      // the original anchor line; detach only when neither is in the diff.
+      const rl = t.root.resolvedLine;
+      const candidates =
+        a.side === "new" && typeof rl === "number" && rl !== a.line
+          ? [lineKey("new", rl), lineKey(a.side, a.line)]
+          : [lineKey(a.side, a.line)];
+      const k = candidates.find((c) => lineSets.get(a.file)!.has(c));
+      if (k != null) {
         const m = byFile.get(a.file) ?? new Map<string, Thread[]>();
         m.set(k, [...(m.get(k) ?? []), t]);
         byFile.set(a.file, m);
@@ -147,6 +163,9 @@ export function Review() {
 
   // Current-file tracking (scroll spy + j/k target).
   const sectionEls = useRef(new Map<string, HTMLElement>());
+  // Rendered hunk-header rows, for n/p navigation. Collapsed files render no
+  // rows, so their hunks are naturally skipped.
+  const hunkEls = useRef(new Map<string, HTMLElement>());
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const currentRef = useRef<string | null>(null);
   currentRef.current = currentPath;
@@ -199,6 +218,26 @@ export function Review() {
           });
           setCurrentPath(next.path);
         }
+      } else if (e.key === "n" || e.key === "p") {
+        // Anchor sits just below the sticky header + file header; a landed
+        // hunk rests slightly above it so the next n moves on.
+        const anchor = HEADER_PX + 44;
+        const tops = [...hunkEls.current.values()]
+          .filter((el) => el.isConnected)
+          .map((el) => ({ el, top: el.getBoundingClientRect().top }))
+          .sort((x, y) => x.top - y.top);
+        const target =
+          e.key === "n"
+            ? tops.find((t) => t.top > anchor + 4)
+            : [...tops].reverse().find((t) => t.top < anchor - 4);
+        if (!target) return;
+        e.preventDefault();
+        window.scrollTo({ top: target.top + window.scrollY - HEADER_PX - 40 });
+        const el = target.el;
+        el.classList.remove("hunk-flash");
+        void el.offsetWidth; // restart the animation when re-landing
+        el.classList.add("hunk-flash");
+        setTimeout(() => el.classList.remove("hunk-flash"), 1300);
       } else if (e.key === "v") {
         const f = fs.find((x) => x.path === currentRef.current);
         if (f) {
@@ -283,6 +322,32 @@ export function Review() {
             merge-base {shortSha(diffQ.data.mergeBase)}
           </span>
         )}
+        {diffQ.data != null &&
+          diffQ.data.baseBehind != null &&
+          diffQ.data.baseBehind > 0 && (
+            <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
+              <span className="font-mono text-[11px] text-accent">
+                base {diffQ.data.baseBehind} behind origin
+              </span>
+              <button
+                type="button"
+                onClick={() => fetchMut.mutate()}
+                disabled={fetchMut.isPending}
+                title={`git fetch ${base}'s upstream, then re-diff`}
+                className="rounded-sm border border-accent/40 px-1.5 py-px font-mono text-[11px] text-accent transition-colors duration-150 hover:bg-accent hover:text-bg disabled:cursor-default disabled:border-edge disabled:bg-transparent disabled:text-faint"
+              >
+                {fetchMut.isPending ? "fetching…" : "fetch"}
+              </button>
+              {fetchMut.error != null && (
+                <span
+                  className="max-w-44 truncate text-[11px] text-del"
+                  title={(fetchMut.error as Error).message}
+                >
+                  {(fetchMut.error as Error).message}
+                </span>
+              )}
+            </span>
+          )}
         {files.length > 0 && (
           <select
             value={currentPath ?? ""}
@@ -423,6 +488,7 @@ export function Review() {
               <DiffFile
                 key={f.path}
                 dir={dir}
+                currentBase={base}
                 file={f}
                 mode={mode}
                 threadsByLine={byFile.get(f.path) ?? new Map()}
@@ -435,6 +501,11 @@ export function Review() {
                 sectionRef={(el) => {
                   if (el) sectionEls.current.set(f.path, el);
                   else sectionEls.current.delete(f.path);
+                }}
+                hunkRef={(hi, el) => {
+                  const k = `${f.path} ${hi}`;
+                  if (el) hunkEls.current.set(k, el);
+                  else hunkEls.current.delete(k);
                 }}
               />
             ))}
@@ -453,6 +524,7 @@ export function Review() {
                   <CommentThread
                     key={t.root.id}
                     thread={t}
+                    baseLabel={t.root.base !== base ? t.root.base : undefined}
                     anchorNote={
                       t.root.anchor
                         ? `${t.root.anchor.file}:${t.root.anchor.line} (not in this diff)`
@@ -471,7 +543,7 @@ export function Review() {
             </section>
 
             <p className="pb-4 text-center font-mono text-[11px] text-faint">
-              j/k files · v seen · ? shortcuts
+              j/k files · n/p hunks · v seen · ? shortcuts
             </p>
           </main>
         </div>

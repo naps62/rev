@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Comment } from "@shared/types";
+import { Markdown } from "../markdown";
 import { cx, relativeTime, type Thread } from "../util";
 import { Composer } from "./Composer";
 
@@ -24,7 +25,7 @@ function AuthorChip({ author }: { author: Comment["author"] }) {
   );
 }
 
-function CommentBody({ comment }: { comment: Comment }) {
+function CommentBody({ comment, baseLabel }: { comment: Comment; baseLabel?: string }) {
   return (
     <div className="px-3 py-2">
       <div className="flex items-baseline gap-2">
@@ -32,10 +33,18 @@ function CommentBody({ comment }: { comment: Comment }) {
         <span className="text-[11px] text-faint">
           {relativeTime(comment.createdAt)}
         </span>
+        {baseLabel && (
+          <span
+            title={`written against base ${baseLabel}`}
+            className="rounded-sm border border-edge px-1 font-mono text-[10.5px] leading-4 text-faint"
+          >
+            base {baseLabel}
+          </span>
+        )}
       </div>
-      <p className="mt-1 whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-fg">
-        {comment.body}
-      </p>
+      <div className="mt-1 whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-fg">
+        <Markdown text={comment.body} />
+      </div>
     </div>
   );
 }
@@ -44,6 +53,8 @@ interface CommentThreadProps {
   thread: Thread;
   /** Shown for threads whose anchor no longer matches a diff line. */
   anchorNote?: string;
+  /** Set when the thread was written against a different base than the review. */
+  baseLabel?: string;
   onReply: (body: string) => void;
   onResolve: (resolved: boolean) => void;
   busy?: boolean;
@@ -52,6 +63,7 @@ interface CommentThreadProps {
 export function CommentThread({
   thread,
   anchorNote,
+  baseLabel,
   onReply,
   onResolve,
   busy,
@@ -97,7 +109,7 @@ export function CommentThread({
         </div>
       )}
       <div className="divide-y divide-edge-soft">
-        <CommentBody comment={root} />
+        <CommentBody comment={root} baseLabel={baseLabel} />
         {replies.map((r) => (
           <div key={r.id} className="pl-4">
             <CommentBody comment={r} />

@@ -6,10 +6,17 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Comment, CommentAnchor, DiffLine, FileDiff } from "@shared/types";
+import type {
+  Comment,
+  CommentAnchor,
+  DiffHunk,
+  DiffLine,
+  FileDiff,
+} from "@shared/types";
 import { TUNING } from "@shared/tuning";
 import * as api from "../api";
 import { highlightLines, type TokenLine } from "../highlight";
+import { intralineSpans, type Span } from "../intraline";
 import { cx, lineKey, type Thread } from "../util";
 import { CommentThread } from "./CommentThread";
 import { Composer } from "./Composer";
@@ -27,6 +34,8 @@ export type DiffMode = "unified" | "split";
 
 interface DiffFileProps {
   dir: string;
+  /** Base ref of the review; threads from other bases get a label. */
+  currentBase: string;
   file: FileDiff;
   mode: DiffMode;
   /** lineKey("side:line") → threads anchored there. */
@@ -39,10 +48,13 @@ interface DiffFileProps {
   onReply: (root: Comment, body: string) => void;
   onResolve: (root: Comment, resolved: boolean) => void;
   sectionRef: (el: HTMLElement | null) => void;
+  /** Registers rendered hunk-header rows for n/p navigation. */
+  hunkRef?: (hunkIdx: number, el: HTMLTableRowElement | null) => void;
 }
 
 export function DiffFile({
   dir,
+  currentBase,
   file,
   mode,
   threadsByLine,
@@ -53,6 +65,7 @@ export function DiffFile({
   onReply,
   onResolve,
   sectionRef,
+  hunkRef,
 }: DiffFileProps) {
   const changed = file.additions + file.deletions;
   const tooBig = changed > TUNING.COLLAPSE_THRESHOLD_LINES;
@@ -76,6 +89,7 @@ export function DiffFile({
   }, [file.stale]);
 
   const flat = useMemo(() => file.hunks.flatMap((h) => h.lines), [file.hunks]);
+  const spans = useMemo(() => intralineSpans(file.hunks), [file.hunks]);
   const [tokens, setTokens] = useState<TokenLine[] | null>(null);
   useEffect(() => {
     setTokens(null);
@@ -121,13 +135,22 @@ export function DiffFile({
           ? `large diff · ${changed.toLocaleString()} changed lines`
           : "collapsed";
 
-  const toggleComposer = (side: "old" | "new", line: DiffLine) => {
+  const toggleComposer = (side: "old" | "new", line: DiffLine, hunk: DiffHunk) => {
     const num = (side === "old" ? line.oldLine : line.newLine) ?? 0;
     const key = lineKey(side, num);
     setComposerAt((cur) =>
       cur?.key === key
         ? null
-        : { key, anchor: { file: file.path, side, line: num, snippet: line.text.trim() } },
+        : {
+            key,
+            anchor: {
+              file: file.path,
+              side,
+              line: num,
+              snippet: line.text.trim(),
+              context: anchorContext(hunk, line, side),
+            },
+          },
     );
   };
 
@@ -153,6 +176,7 @@ export function DiffFile({
           <CommentThread
             key={thread.root.id}
             thread={thread}
+            baseLabel={thread.root.base !== currentBase ? thread.root.base : undefined}
             onReply={(body) => onReply(thread.root, body)}
             onResolve={(resolved) => onResolve(thread.root, resolved)}
           />
@@ -167,14 +191,14 @@ export function DiffFile({
     file.hunks.forEach((hunk, hi) => {
       rows.push(
         split ? (
-          <tr key={`h${hi}`}>
+          <tr key={`h${hi}`} ref={(el) => hunkRef?.(hi, el)}>
             <td colSpan={4} className="bg-raise/50 py-1 pl-7 font-mono text-[11px] text-faint">
               @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
               {hunk.header ? <span className="text-mute"> {hunk.header}</span> : null}
             </td>
           </tr>
         ) : (
-          <tr key={`h${hi}`}>
+          <tr key={`h${hi}`} ref={(el) => hunkRef?.(hi, el)}>
             <td colSpan={2} className="select-none border-r border-edge-soft bg-raise/50" />
             <td className="bg-raise/50 py-1 pl-7 font-mono text-[11px] text-faint">
               @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
@@ -213,8 +237,9 @@ export function DiffFile({
               left={p.l}
               right={p.r}
               tokens={tokens}
-              onCommentLeft={p.l ? () => toggleComposer("old", p.l!.line) : undefined}
-              onCommentRight={p.r ? () => toggleComposer("new", p.r!.line) : undefined}
+              spans={spans}
+              onCommentLeft={p.l ? () => toggleComposer("old", p.l!.line, hunk) : undefined}
+              onCommentRight={p.r ? () => toggleComposer("new", p.r!.line, hunk) : undefined}
             />,
           );
           const leftKey = p.l?.line.oldLine != null ? lineKey("old", p.l.line.oldLine) : null;
@@ -251,7 +276,8 @@ export function DiffFile({
               key={`l${hi}.${li}`}
               line={line}
               tokens={tokens?.[idx] ?? null}
-              onComment={() => toggleComposer(side, line)}
+              span={spans.get(idx)}
+              onComment={() => toggleComposer(side, line, hunk)}
             />,
           );
           const keys =
@@ -401,12 +427,13 @@ export function DiffFile({
       {expanded && !editing && detached.length > 0 && (
         <div className="border-t border-edge-soft">
           <p className="px-3 pt-2 text-[11px] text-faint">
-            Comments whose line no longer matches this diff:
+            Couldn't re-anchor — the commented lines no longer exist:
           </p>
           {detached.map((thread) => (
             <CommentThread
               key={thread.root.id}
               thread={thread}
+              baseLabel={thread.root.base !== currentBase ? thread.root.base : undefined}
               anchorNote={
                 thread.root.anchor
                   ? `${thread.root.anchor.side}:${thread.root.anchor.line}  ${thread.root.anchor.snippet}`
@@ -423,13 +450,88 @@ export function DiffFile({
   );
 }
 
+/**
+ * Up to 3 trimmed neighbor lines each way, taken from the diff's view of the
+ * anchored side within the same hunk — gives the server's re-anchoring
+ * something to disambiguate with.
+ */
+function anchorContext(
+  hunk: DiffHunk,
+  line: DiffLine,
+  side: "old" | "new",
+): { before: string[]; after: string[] } {
+  const visible = hunk.lines.filter((l) =>
+    side === "new" ? l.kind !== "del" : l.kind !== "add",
+  );
+  const i = visible.indexOf(line);
+  if (i < 0) return { before: [], after: [] };
+  return {
+    before: visible.slice(Math.max(0, i - 3), i).map((l) => l.text.trim()),
+    after: visible.slice(i + 1, i + 4).map((l) => l.text.trim()),
+  };
+}
+
+/** Line content with the intra-line changed span tinted, tokens preserved. */
+function renderContent(
+  line: DiffLine,
+  tokens: TokenLine | null,
+  span: Span | undefined,
+): ReactNode {
+  if (!span || span.end <= span.start) {
+    return tokens
+      ? tokens.map((t, i) => (
+          <span key={i} style={t.color ? { color: t.color } : undefined}>
+            {t.content}
+          </span>
+        ))
+      : line.text || " ";
+  }
+  const hiCls = cx("rounded-[2px]", line.kind === "add" ? "bg-add-hi" : "bg-del-hi");
+  if (!tokens) {
+    return (
+      <>
+        {line.text.slice(0, span.start)}
+        <span className={hiCls}>{line.text.slice(span.start, span.end)}</span>
+        {line.text.slice(span.end)}
+      </>
+    );
+  }
+  const parts: ReactNode[] = [];
+  let pos = 0;
+  tokens.forEach((t, ti) => {
+    const s = pos;
+    const e = pos + t.content.length;
+    pos = e;
+    const cuts: Array<[number, number, boolean]> = [
+      [s, Math.min(e, span.start), false],
+      [Math.max(s, span.start), Math.min(e, span.end), true],
+      [Math.max(s, span.end), e, false],
+    ];
+    for (const [cs, ce, hi] of cuts) {
+      if (ce <= cs) continue;
+      parts.push(
+        <span
+          key={`${ti}.${cs}`}
+          style={t.color ? { color: t.color } : undefined}
+          className={hi ? hiCls : undefined}
+        >
+          {t.content.slice(cs - s, ce - s)}
+        </span>,
+      );
+    }
+  });
+  return parts;
+}
+
 function LineRow({
   line,
   tokens,
+  span,
   onComment,
 }: {
   line: DiffLine;
   tokens: TokenLine | null;
+  span: Span | undefined;
   onComment: () => void;
 }) {
   const marker = line.kind === "add" ? "+" : line.kind === "del" ? "−" : "";
@@ -466,13 +568,7 @@ function LineRow({
         >
           {marker}
         </span>
-        {tokens
-          ? tokens.map((t, i) => (
-              <span key={i} style={t.color ? { color: t.color } : undefined}>
-                {t.content}
-              </span>
-            ))
-          : line.text || " "}
+        {renderContent(line, tokens, span)}
       </td>
     </tr>
   );
@@ -482,12 +578,14 @@ function SplitRow({
   left,
   right,
   tokens,
+  spans,
   onCommentLeft,
   onCommentRight,
 }: {
   left: { line: DiffLine; idx: number } | null;
   right: { line: DiffLine; idx: number } | null;
   tokens: TokenLine[] | null;
+  spans: Map<number, Span>;
   onCommentLeft?: () => void;
   onCommentRight?: () => void;
 }) {
@@ -496,11 +594,11 @@ function SplitRow({
       <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
         {left?.line.oldLine ?? ""}
       </td>
-      <SplitCell slot={left} isLeft tokens={tokens} onComment={onCommentLeft} />
+      <SplitCell slot={left} isLeft tokens={tokens} spans={spans} onComment={onCommentLeft} />
       <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
         {right?.line.newLine ?? ""}
       </td>
-      <SplitCell slot={right} isLeft={false} tokens={tokens} onComment={onCommentRight} />
+      <SplitCell slot={right} isLeft={false} tokens={tokens} spans={spans} onComment={onCommentRight} />
     </tr>
   );
 }
@@ -509,11 +607,13 @@ function SplitCell({
   slot,
   isLeft,
   tokens,
+  spans,
   onComment,
 }: {
   slot: { line: DiffLine; idx: number } | null;
   isLeft: boolean;
   tokens: TokenLine[] | null;
+  spans: Map<number, Span>;
   onComment?: () => void;
 }) {
   if (!slot) {
@@ -552,13 +652,7 @@ function SplitCell({
       >
         {marker}
       </span>
-      {toks
-        ? toks.map((t, i) => (
-            <span key={i} style={t.color ? { color: t.color } : undefined}>
-              {t.content}
-            </span>
-          ))
-        : line.text || " "}
+      {renderContent(line, toks, spans.get(idx))}
     </td>
   );
 }

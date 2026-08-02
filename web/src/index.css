@@ -13,8 +13,10 @@
   --color-accent-soft: rgb(226 180 92 / 0.13);
   --color-add: #5cc576;
   --color-add-soft: rgb(78 190 104 / 0.12);
+  --color-add-hi: rgb(78 190 104 / 0.28);
   --color-del: #ef6e58;
   --color-del-soft: rgb(239 110 88 / 0.1);
+  --color-del-hi: rgb(239 110 88 / 0.28);
   --color-agent: #85bcd9;
 
   --font-sans:
@@ -63,6 +65,21 @@ body {
 
 .stale-flash {
   animation: stale-flash 1.6s ease-out both;
+}
+
+/* Amber wash on a hunk header row after n/p navigation lands on it. Ends at
+   the row's resting tint (raise at 50%) so removal doesn't pop. */
+@keyframes hunk-flash {
+  0% {
+    background-color: rgb(226 180 92 / 0.24);
+  }
+  100% {
+    background-color: rgb(26 32 39 / 0.5);
+  }
+}
+
+.hunk-flash td {
+  animation: hunk-flash 1.2s ease-out both;
 }
 
 @keyframes overlay-in {

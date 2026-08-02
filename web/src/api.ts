@@ -112,3 +112,11 @@ export async function putSeen(req: SeenRequest): Promise<{ ok: true }> {
   if (isFixture()) return tick((await fx()).fxPutSeen(req));
   return request("/api/seen", { method: "PUT", body: JSON.stringify(req) });
 }
+
+export async function postFetch(req: {
+  dir: string;
+  base: string;
+}): Promise<{ ok: boolean; baseBehind: number | null }> {
+  if (isFixture()) return tick((await fx()).fxPostFetch(req));
+  return request("/api/fetch", { method: "POST", body: JSON.stringify(req) });
+}

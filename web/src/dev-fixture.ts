@@ -355,6 +355,67 @@ const untrackedFile: FileDiff = {
   ],
 };
 
+// `web/` holds BOTH files and subdirectories — nested DirRows in the file
+// rail regressed once (infinite recursion via a spread `node` prop); this
+// shape keeps the fixture exercising it.
+const viteConfigFile: FileDiff = {
+  path: "web/vite.config.ts",
+  status: "modified",
+  binary: false,
+  additions: 2,
+  deletions: 2,
+  contentHash: "b2d90e4a",
+  seen: false,
+  stale: false,
+  hunks: [
+    {
+      oldStart: 5,
+      oldLines: 5,
+      newStart: 5,
+      newLines: 5,
+      header: "export default defineConfig",
+      lines: [
+        ctx(5, 5, "export default defineConfig({"),
+        del(6, "  plugins: [react()],"),
+        del(7, "  server: { port: 5173 },"),
+        add(6, "  plugins: [react(), tailwindcss()],"),
+        add(7, "  server: { port: 5173, host: \"0.0.0.0\" },"),
+        ctx(8, 8, "});"),
+      ],
+    },
+  ],
+};
+
+const hooksFile: FileDiff = {
+  path: "web/src/hooks.ts",
+  status: "modified",
+  binary: false,
+  additions: 2,
+  deletions: 2,
+  contentHash: "3c7f21d9",
+  seen: false,
+  stale: false,
+  hunks: [
+    {
+      oldStart: 10,
+      oldLines: 6,
+      newStart: 10,
+      newLines: 6,
+      header: "export function useDebounced",
+      lines: [
+        ctx(10, 10, "export function useDebounced<T>(value: T, ms: number): T {"),
+        ctx(11, 11, "  const [debounced, setDebounced] = useState(value);"),
+        ctx(12, 12, "  useEffect(() => {"),
+        del(13, "    const t = setTimeout(() => setDebounced(value), ms);"),
+        del(14, "    return () => clearTimeout(t);"),
+        add(13, "    const timer = setTimeout(() => setDebounced(value), ms);"),
+        add(14, "    return () => clearTimeout(timer);"),
+        ctx(15, 15, "  }, [value, ms]);"),
+      ],
+    },
+  ],
+};
+
 const binaryFile: FileDiff = {
   path: "web/public/favicon.png",
   status: "modified",
@@ -451,12 +512,14 @@ const state = {
       renamedFile,
       deletedFile,
       untrackedFile,
+      viteConfigFile,
+      hooksFile,
       binaryFile,
       seenFile,
       makeGeneratedFile(),
     ],
     computedAt: now,
-    baseBehind: null,
+    baseBehind: 3,
   } as DiffResponse,
   comments: [] as Comment[],
   seq: 0,
@@ -467,12 +530,12 @@ const state = {
 // ---------------------------------------------------------------------------
 
 function seedComment(
-  c: Omit<Comment, "id" | "seq" | "dir" | "base"> & { id?: string },
+  c: Omit<Comment, "id" | "seq" | "dir" | "base"> & { id?: string; base?: string },
 ): Comment {
   const full: Comment = {
     id: c.id ?? `fx-${state.seq + 1}`,
     dir: state.diff.dir,
-    base: state.diff.base,
+    base: c.base ?? state.diff.base,
     seq: ++state.seq,
     anchor: c.anchor,
     parentId: c.parentId,
@@ -480,6 +543,7 @@ function seedComment(
     body: c.body,
     createdAt: c.createdAt,
     resolvedAt: c.resolvedAt,
+    resolvedLine: c.resolvedLine,
   };
   state.comments.push(full);
   return full;
@@ -507,7 +571,7 @@ seedComment({
   resolvedAt: null,
 });
 
-seedComment({
+const t2 = seedComment({
   anchor: {
     file: "server/watcher.ts",
     side: "new",
@@ -519,6 +583,66 @@ seedComment({
   body: "This glob won't match a top-level `node_modules` (no leading segment). Use `**/{${list}}/**` or pass a function matcher.",
   createdAt: now - 20 * min,
   resolvedAt: null,
+  resolvedLine: 11,
+});
+seedComment({
+  anchor: null,
+  parentId: t2.id,
+  author: "agent",
+  body: "Good catch — switched to a **function matcher** so depth stops mattering:\n\n```ts\nignored: (p) => TUNING.WATCH_IGNORE.some((d) => p.includes(`/${d}/`)),\n```\n\nThe glob form also missed *dotted* dirs like `.next`. Chokidar docs on filtering: https://github.com/paulmillr/chokidar#path-filtering.",
+  createdAt: now - 12 * min,
+  resolvedAt: null,
+});
+
+// Re-anchored: written when the seen handler sat at line 95; edits above
+// pushed it to 97. resolvedLine places it on the current line.
+seedComment({
+  anchor: {
+    file: "server/routes.ts",
+    side: "new",
+    line: 95,
+    snippet: "app.put(\"/api/seen\", async (c) => {",
+  },
+  parentId: null,
+  author: "user",
+  body: "Should seen-toggles really broadcast `comments-changed`? A dedicated event would keep clients from refetching comments they already have.",
+  createdAt: now - 90 * min,
+  resolvedAt: null,
+  resolvedLine: 97,
+});
+
+// Orphaned: the anchored line was deleted since; resolvedLine is null and
+// line 300 isn't in the diff, so it lands in the per-file detached section.
+seedComment({
+  anchor: {
+    file: "server/routes.ts",
+    side: "new",
+    line: 300,
+    snippet: "const LEGACY_TIMEOUT = 5_000;",
+  },
+  parentId: null,
+  author: "user",
+  body: "This timeout constant is unused — delete it.",
+  createdAt: now - 5 * 60 * min,
+  resolvedAt: null,
+  resolvedLine: null,
+});
+
+// From an earlier review against another base — still shown, tagged.
+seedComment({
+  base: "develop",
+  anchor: {
+    file: "server/watcher.ts",
+    side: "new",
+    line: 4,
+    snippet: "const watchers = new Map<string, FSWatcher>();",
+  },
+  parentId: null,
+  author: "agent",
+  body: "Watchers are never closed on repo removal — leak is bounded by repo count, deferring cleanup to the follow-up.",
+  createdAt: now - 26 * 60 * min,
+  resolvedAt: null,
+  resolvedLine: 4,
 });
 
 const resolved = seedComment({
@@ -589,9 +713,19 @@ export function fxPostComment(req: CommentCreateRequest): Comment {
     createdAt: Date.now(),
     resolvedAt: null,
     seq: ++state.seq,
+    resolvedLine: req.anchor ? req.anchor.line : undefined,
   };
   state.comments.push(c);
   return clone(c);
+}
+
+export function fxPostFetch(req: {
+  dir: string;
+  base: string;
+}): { ok: boolean; baseBehind: number | null } {
+  void req;
+  state.diff.baseBehind = 0;
+  return { ok: true, baseBehind: 0 };
 }
 
 export function fxPatchComment(id: string, patch: CommentPatchRequest): Comment {
