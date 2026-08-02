@@ -351,6 +351,7 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       !b ||
       typeof b.dir !== "string" ||
       typeof b.base !== "string" ||
+      b.base === "" ||
       typeof b.path !== "string" ||
       typeof b.seen !== "boolean" ||
       !Array.isArray(b.segments) ||

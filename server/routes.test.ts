@@ -248,6 +248,10 @@ describe("PUT /seen-segments", () => {
 
     const bad = await json("PUT", "/seen-segments", { dir, base: "main", path: "a.txt", segments: [], seen: true });
     expect(bad.status).toBe(400);
+    const emptyBase = await json("PUT", "/seen-segments", {
+      dir, base: "", path: "a.txt", segments: [{ hash: "h", addDelLines: 1 }], seen: true,
+    });
+    expect(emptyBase.status).toBe(400);
     const badSeg = await json("PUT", "/seen-segments", {
       dir, base: "main", path: "a.txt", segments: [{ hash: "", addDelLines: 1 }], seen: true,
     });
