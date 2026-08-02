@@ -258,16 +258,17 @@ export function DiffFile({
       showBodies,
     });
   }, [dir, file.path, file.contentHash, expandedFolds, showBodies]);
-  const toggleFold = useCallback(
-    (key: string) =>
-      setExpandedFolds((prev) => {
-        const next = new Set(prev);
-        if (next.has(key)) next.delete(key);
-        else next.add(key);
-        return next;
-      }),
-    [],
-  );
+  // Fold whose gutter rail is under the pointer; its rows get a wash.
+  const [hotFold, setHotFold] = useState<string | null>(null);
+  const toggleFold = useCallback((key: string) => {
+    setHotFold(null);
+    setExpandedFolds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   const foldBodies = semantic && fileClass === "tests" && !showBodies;
   // Import and test-body folds share hunk offsets; the prefix keeps a key
   // expanded in one mode from leaking into the other.
@@ -456,10 +457,28 @@ export function DiffFile({
         return false;
       };
       const runs = foldsByHunk?.get(hi) ?? [];
+      // hasWidget scans the run's lines; runAt is now called per line, so
+      // cache the verdict per run.
+      const widgetCache = new Map<FoldRun, boolean>();
+      const runHasWidget = (r: FoldRun) => {
+        let v = widgetCache.get(r);
+        if (v === undefined) {
+          v = hasWidget(r);
+          widgetCache.set(r, v);
+        }
+        return v;
+      };
       const runAt = (li: number) => {
         const r = runs.find((x) => li >= x.start && li < x.end);
-        return r && !hasWidget(r) ? r : null;
+        return r && !runHasWidget(r) ? r : null;
       };
+      const railProps = (run: FoldRun, fk: string, first: boolean): FoldRail => ({
+        hot: hotFold === fk,
+        first,
+        label: `Fold ${run.end - run.start} ${run.label}`,
+        onToggle: () => toggleFold(fk),
+        onHover: (h) => setHotFold((cur) => (h ? fk : cur === fk ? null : cur)),
+      });
 
       if (split) {
         type Slot = { line: DiffLine; idx: number; li: number };
@@ -493,34 +512,32 @@ export function DiffFile({
           return r != null && rs.every((x) => x === r) ? r : null;
         };
 
-        // Expanded runs keep their strip (now a collapse control) above the
-        // real rows; this tracks which runs already got one.
-        const stripped = new Set<FoldRun>();
+        // Expanded runs render as real rows with a gutter rail; the first
+        // pair of each run carries the accessible rail control.
+        const railed = new Set<FoldRun>();
         for (let pi = 0; pi < pairs.length; pi++) {
           const p = pairs[pi]!;
           const run = pairRun(p);
+          let fold: FoldRail | undefined;
           if (run) {
             const fk = foldKey(hi, run);
-            const isOpen = expandedFolds.has(fk);
-            if (!stripped.has(run)) {
-              stripped.add(run);
+            if (!expandedFolds.has(fk)) {
               rows.push(
                 <FoldStrip
                   key={`f${hi}.${run.start}.${pi}`}
                   run={run}
                   split
-                  expanded={isOpen}
                   stripRef={
                     run.start > 0 ? (el) => hunkRef?.(`${hi}.${run.start}`, el) : undefined
                   }
-                  onToggle={() => toggleFold(fk)}
+                  onExpand={() => toggleFold(fk)}
                 />,
               );
-            }
-            if (!isOpen) {
               while (pi + 1 < pairs.length && pairRun(pairs[pi + 1]!) === run) pi++;
               continue;
             }
+            fold = railProps(run, fk, !railed.has(run));
+            railed.add(run);
           }
           rows.push(
             <SplitRow
@@ -529,6 +546,7 @@ export function DiffFile({
               right={p.r}
               tokens={tokens}
               spans={spans}
+              fold={fold}
               onCommentLeft={p.l ? () => toggleComposer("old", p.l!.line, hunk) : undefined}
               onCommentRight={p.r ? () => toggleComposer("new", p.r!.line, hunk) : undefined}
               onSym={symbolHandlers}
@@ -560,27 +578,30 @@ export function DiffFile({
       } else {
         for (let li = 0; li < hunk.lines.length; li++) {
           const run = runs.find((r) => r.start === li);
-          if (run && !hasWidget(run)) {
+          if (run && !runHasWidget(run) && !expandedFolds.has(foldKey(hi, run))) {
             const fk = foldKey(hi, run);
-            const isOpen = expandedFolds.has(fk);
             rows.push(
               <FoldStrip
                 key={`f${hi}.${run.start}`}
                 run={run}
-                expanded={isOpen}
                 // Strips right under the @@ header would double n/p stops.
                 stripRef={
                   run.start > 0 ? (el) => hunkRef?.(`${hi}.${run.start}`, el) : undefined
                 }
-                onToggle={() => toggleFold(fk)}
+                onExpand={() => toggleFold(fk)}
               />,
             );
-            if (!isOpen) {
-              flatIdx += run.end - run.start;
-              li = run.end - 1;
-              continue;
-            }
+            flatIdx += run.end - run.start;
+            li = run.end - 1;
+            continue;
           }
+          // Expanded runs render their real lines with a fold rail in the
+          // gutter instead of a strip row, so the diff reads uninterrupted.
+          const openRun = runAt(li);
+          const fold =
+            openRun && expandedFolds.has(foldKey(hi, openRun))
+              ? railProps(openRun, foldKey(hi, openRun), li === openRun.start)
+              : undefined;
           const line = hunk.lines[li]!;
           const idx = flatIdx++;
           const side: "old" | "new" = line.kind === "del" ? "old" : "new";
@@ -592,6 +613,7 @@ export function DiffFile({
               line={line}
               tokens={tokens?.[idx] ?? null}
               span={spans.get(idx)}
+              fold={fold}
               onComment={() => toggleComposer(side, line, hunk)}
               onSym={symbolHandlers}
             />,
@@ -847,19 +869,17 @@ export function DiffFile({
   );
 }
 
-/** Collapsed run of folded lines; click toggles the real rows in and out. */
+/** Collapsed run of folded lines; click restores the real rows. */
 function FoldStrip({
   run,
   split,
-  expanded,
   stripRef,
-  onToggle,
+  onExpand,
 }: {
   run: FoldRun;
   split?: boolean;
-  expanded?: boolean;
   stripRef?: (el: HTMLTableRowElement | null) => void;
-  onToggle: () => void;
+  onExpand: () => void;
 }) {
   return (
     <tr ref={stripRef}>
@@ -869,19 +889,12 @@ function FoldStrip({
       <td colSpan={split ? 4 : 1} className="p-0">
         <button
           type="button"
-          onClick={onToggle}
-          aria-expanded={expanded ?? false}
-          title={expanded ? "Fold these lines back" : "Expand folded lines"}
+          onClick={onExpand}
+          aria-expanded={false}
+          title="Expand folded lines"
           className="flex w-full items-center gap-1.5 py-1 pl-7 pr-4 text-left font-mono text-[11px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute"
         >
-          <svg
-            width="9"
-            height="9"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden
-            className={cx("transition-transform duration-150", expanded && "rotate-180")}
-          >
+          <svg width="9" height="9" viewBox="0 0 16 16" fill="none" aria-hidden>
             <path
               d="M3 5.5 8 11l5-5.5"
               stroke="currentColor"
@@ -896,6 +909,46 @@ function FoldStrip({
         </button>
       </td>
     </tr>
+  );
+}
+
+/** Wiring for the gutter rail marking one line of an expanded fold run. */
+interface FoldRail {
+  /** The run's rail is under the pointer; every row of the run gets a wash. */
+  hot: boolean;
+  /** Only the run's first row carries the accessible, tabbable control. */
+  first: boolean;
+  label: string;
+  onToggle: () => void;
+  onHover: (hovering: boolean) => void;
+}
+
+/**
+ * One segment of the rail: a slim bar filling the row's gutter edge. Segments
+ * on adjacent rows join into a continuous rail spanning the expanded run.
+ */
+function FoldRailSeg({ fold }: { fold: FoldRail }) {
+  return (
+    <button
+      type="button"
+      onClick={fold.onToggle}
+      onMouseEnter={() => fold.onHover(true)}
+      onMouseLeave={() => fold.onHover(false)}
+      title={fold.label}
+      aria-label={fold.first ? fold.label : undefined}
+      aria-expanded={fold.first ? true : undefined}
+      aria-hidden={fold.first ? undefined : true}
+      tabIndex={fold.first ? 0 : -1}
+      className="absolute inset-y-0 left-0 w-[7px]"
+    >
+      <span
+        aria-hidden
+        className={cx(
+          "absolute inset-y-0 left-0 w-[3px] transition-colors duration-150",
+          fold.hot ? "bg-mute" : "bg-mute/40",
+        )}
+      />
+    </button>
   );
 }
 
@@ -1012,12 +1065,14 @@ function LineRow({
   line,
   tokens,
   span,
+  fold,
   onComment,
   onSym,
 }: {
   line: DiffLine;
   tokens: TokenLine | null;
   span: Span | undefined;
+  fold?: FoldRail;
   onComment: () => void;
   onSym?: SymbolHandlers;
 }) {
@@ -1028,9 +1083,11 @@ function LineRow({
         "group",
         line.kind === "add" && "bg-add-soft",
         line.kind === "del" && "bg-del-soft",
+        fold?.hot && "fold-hot",
       )}
     >
-      <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+      <td className="relative select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+        {fold && <FoldRailSeg fold={fold} />}
         {line.oldLine ?? ""}
       </td>
       <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
@@ -1061,6 +1118,7 @@ function SplitRow({
   right,
   tokens,
   spans,
+  fold,
   onCommentLeft,
   onCommentRight,
   onSym,
@@ -1069,6 +1127,7 @@ function SplitRow({
   right: { line: DiffLine; idx: number } | null;
   tokens: TokenLine[] | null;
   spans: Map<number, Span>;
+  fold?: FoldRail;
   onCommentLeft?: () => void;
   onCommentRight?: () => void;
   onSym?: SymbolHandlers;
@@ -1081,8 +1140,9 @@ function SplitRow({
       .filter(Boolean)
       .join(" ") || undefined;
   return (
-    <tr data-lk={lk}>
-      <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+    <tr data-lk={lk} className={cx(fold?.hot && "fold-hot")}>
+      <td className="relative select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+        {fold && <FoldRailSeg fold={fold} />}
         {left?.line.oldLine ?? ""}
       </td>
       <SplitCell slot={left} isLeft tokens={tokens} spans={spans} onComment={onCommentLeft} onSym={onSym} />
