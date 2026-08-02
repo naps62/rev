@@ -11,11 +11,13 @@ import { useRevSocket } from "../ws";
 
 interface RepoEntry {
   repo: RepoInfo;
-  /** Worktrees with review-worthy work, most recent first. */
+  /** Worktrees with a diff worth reviewing, most recent first. */
   activeWorktrees: RepoInfo[];
-  /** Worktrees with nothing going on, hidden behind a per-repo toggle. */
-  staleWorktrees: RepoInfo[];
+  /** Worktrees with nothing to review, hidden behind a per-repo toggle. */
+  idleWorktrees: RepoInfo[];
   active: boolean;
+  /** Some checkout (main or worktree) has an actual diff to review. */
+  reviewable: boolean;
 }
 
 interface Group {
@@ -36,6 +38,14 @@ function isActive(r: RepoInfo, now: number): boolean {
     r.openComments > 0 ||
     (r.lastActivity != null && now - r.lastActivity < TUNING.ACTIVE_WINDOW_MS)
   );
+}
+
+/**
+ * A checkout is worth opening only when something reviewable exists: a diff
+ * vs base (committed or working tree), or unresolved comments.
+ */
+function hasDiff(r: RepoInfo): boolean {
+  return r.dirty || r.openComments > 0 || (r.changedFiles ?? 0) > 0;
 }
 
 const parentDir = (dir: string) =>
@@ -72,26 +82,31 @@ function groupRepos(repos: RepoInfo[], now: number): Group[] {
     const worktrees = (worktreesByMain.get(r.dir) ?? []).sort(
       (a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0),
     );
+    const shown = worktrees.filter((w) => isActive(w, now) && hasDiff(w));
     const entry: RepoEntry = {
       repo: r,
-      activeWorktrees: worktrees.filter((w) => isActive(w, now)),
-      staleWorktrees: worktrees.filter((w) => !isActive(w, now)),
+      activeWorktrees: shown,
+      idleWorktrees: worktrees.filter((w) => !shown.includes(w)),
       active: isActive(r, now) || worktrees.some((w) => isActive(w, now)),
+      reviewable: hasDiff(r) || worktrees.some(hasDiff),
     };
     groups.set(rel, [...(groups.get(rel) ?? []), entry]);
   }
   const activityOf = (e: RepoEntry) =>
     Math.max(
       e.repo.lastActivity ?? 0,
-      ...[...e.activeWorktrees, ...e.staleWorktrees].map((w) => w.lastActivity ?? 0),
+      ...[...e.activeWorktrees, ...e.idleWorktrees].map((w) => w.lastActivity ?? 0),
     );
+  // Projects with nothing to review sort last regardless of recency.
+  const rank = (e: RepoEntry) => (e.reviewable ? 1 : 0);
   return [...groups.entries()]
     .map(([label, entries]) => ({
       label,
-      entries: entries.sort((a, b) => activityOf(b) - activityOf(a)),
+      entries: entries.sort((a, b) => rank(b) - rank(a) || activityOf(b) - activityOf(a)),
     }))
     .sort(
       (a, b) =>
+        Math.max(...b.entries.map(rank), 0) - Math.max(...a.entries.map(rank), 0) ||
         Math.max(...b.entries.map(activityOf), 0) - Math.max(...a.entries.map(activityOf), 0),
     );
 }
@@ -165,10 +180,10 @@ interface Card {
   entry: RepoEntry;
   dim: boolean;
   rows: CardRow[];
-  /** Stale worktrees behind the per-card toggle; 0 while filtering. */
-  staleCount: number;
-  /** Where Enter on the filter input should land for the first card. */
-  primary: RepoInfo;
+  /** Idle worktrees behind the per-card toggle; 0 while filtering. */
+  idleCount: number;
+  /** Where Enter on the filter input should land; null when nothing is reviewable. */
+  primary: RepoInfo | null;
 }
 
 function buildCards(
@@ -191,26 +206,29 @@ function buildCards(
               dim: !e.active,
               rows: [
                 ...e.activeWorktrees.map((repo) => ({ repo, dim: false })),
-                ...(open ? e.staleWorktrees.map((repo) => ({ repo, dim: true })) : []),
+                ...(open ? e.idleWorktrees.map((repo) => ({ repo, dim: true })) : []),
               ],
-              staleCount: e.staleWorktrees.length,
-              primary: e.repo,
+              idleCount: e.idleWorktrees.length,
+              primary: hasDiff(e.repo) ? e.repo : e.activeWorktrees[0] ?? null,
             };
           }
           const repoMatch = matchRepo(e.repo, terms, now);
-          const all = [...e.activeWorktrees, ...e.staleWorktrees].sort(
+          const all = [...e.activeWorktrees, ...e.idleWorktrees].sort(
             (a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0),
           );
           const matched = all.filter((w) => matchRepo(w, terms, now));
           if (!repoMatch && matched.length === 0) return null;
           const shown = repoMatch ? all : matched;
-          const staleSet = new Set(e.staleWorktrees.map((w) => w.dir));
+          const idleSet = new Set(e.idleWorktrees.map((w) => w.dir));
           return {
             entry: e,
             dim: !e.active,
-            rows: shown.map((repo) => ({ repo, dim: staleSet.has(repo.dir) })),
-            staleCount: 0,
-            primary: repoMatch ? e.repo : matched[0]!,
+            rows: shown.map((repo) => ({ repo, dim: idleSet.has(repo.dir) })),
+            idleCount: 0,
+            primary:
+              repoMatch && hasDiff(e.repo)
+                ? e.repo
+                : shown.find(hasDiff) ?? (repoMatch ? null : matched[0]!),
           };
         })
         .filter((c): c is Card => c !== null),
@@ -553,6 +571,27 @@ function ProjectCard({
 }) {
   const r = c.entry.repo;
   const checkout = r.branch ?? `detached @ ${r.head}`;
+  const clickable = hasDiff(r);
+  const header = (
+    <>
+      <span className="flex items-center gap-2">
+        <DirtyDot dirty={r.dirty} />
+        <span className="min-w-0 truncate text-[13px] font-semibold text-fg">
+          {basename(r.dir)}
+        </span>
+        <Meta repo={r} />
+      </span>
+      <span className="mt-1 flex min-w-0 items-center gap-1.5 pl-3.5">
+        <span className="truncate font-mono text-[11.5px] text-mute">
+          {checkout}
+          {r.defaultBase && r.branch !== r.defaultBase && (
+            <span className="text-faint"> → {r.defaultBase}</span>
+          )}
+        </span>
+        <Drift repo={r} />
+      </span>
+    </>
+  );
   return (
     <section
       className={cx(
@@ -560,28 +599,19 @@ function ProjectCard({
         c.dim && "opacity-55",
       )}
     >
-      <Link
-        href={api.href("/review", { dir: r.dir, base: r.defaultBase ?? "main" })}
-        title={r.dir}
-        className="block px-3 pb-2 pt-2.5 transition-colors duration-150 hover:bg-raise/60"
-      >
-        <span className="flex items-center gap-2">
-          <DirtyDot dirty={r.dirty} />
-          <span className="min-w-0 truncate text-[13px] font-semibold text-fg">
-            {basename(r.dir)}
-          </span>
-          <Meta repo={r} />
-        </span>
-        <span className="mt-1 flex min-w-0 items-center gap-1.5 pl-3.5">
-          <span className="truncate font-mono text-[11.5px] text-mute">
-            {checkout}
-            {r.defaultBase && r.branch !== r.defaultBase && (
-              <span className="text-faint"> → {r.defaultBase}</span>
-            )}
-          </span>
-          <Drift repo={r} />
-        </span>
-      </Link>
+      {clickable ? (
+        <Link
+          href={api.href("/review", { dir: r.dir, base: r.defaultBase ?? "main" })}
+          title={r.dir}
+          className="block px-3 pb-2 pt-2.5 transition-colors duration-150 hover:bg-raise/60"
+        >
+          {header}
+        </Link>
+      ) : (
+        <div title={r.dir} className="px-3 pb-2 pt-2.5">
+          {header}
+        </div>
+      )}
 
       {c.rows.length > 0 && (
         <div className="divide-y divide-edge-soft border-t border-edge-soft">
@@ -591,15 +621,15 @@ function ProjectCard({
         </div>
       )}
 
-      {c.staleCount > 0 && (
+      {c.idleCount > 0 && (
         <button
           type="button"
           onClick={onToggleStale}
           className="block w-full border-t border-edge-soft px-3 py-1.5 text-left font-mono text-[11px] text-faint transition-colors duration-150 hover:text-mute"
         >
           {staleOpen
-            ? "hide stale worktrees"
-            : `show ${c.staleCount} stale worktree${c.staleCount === 1 ? "" : "s"}`}
+            ? "hide idle worktrees"
+            : `show ${c.idleCount} idle worktree${c.idleCount === 1 ? "" : "s"}`}
         </button>
       )}
     </section>
