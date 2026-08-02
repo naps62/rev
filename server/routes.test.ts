@@ -175,13 +175,19 @@ describe("routes", () => {
     expect(Date.now() - t0).toBeLessThan(5_000); // resolved by notify, not the 25s cap
   });
 
-  test("rescan broadcasts repos-changed", async () => {
-    sent.length = 0;
-    const res = await app.request("/repos/rescan", { method: "POST" });
-    expect(res.status).toBe(200);
-    expect(Array.isArray(await res.json())).toBe(true);
-    expect(sent).toContainEqual({ type: "repos-changed" });
-  });
+  // Cold-scans every fixture repo accumulated in the scratchpad, so it needs
+  // far more than the 5s default under a loaded machine.
+  test(
+    "rescan broadcasts repos-changed",
+    async () => {
+      sent.length = 0;
+      const res = await app.request("/repos/rescan", { method: "POST" });
+      expect(res.status).toBe(200);
+      expect(Array.isArray(await res.json())).toBe(true);
+      expect(sent).toContainEqual({ type: "repos-changed" });
+    },
+    30_000,
+  );
 });
 
 describe("GET /diff/summary and /diff/file", () => {
