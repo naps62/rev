@@ -507,3 +507,32 @@ export function resolveGitDir(dir: string): string | null {
   const p = m[1]!;
   return isAbsolute(p) ? p : resolve(dir, p);
 }
+
+/**
+ * Ref names usable as a review base: local branches then remote-tracking
+ * refs, symbolic entries (origin/HEAD) excluded, current defaultBase first.
+ */
+export async function listRefs(dir: string): Promise<string[]> {
+  const out = await run(dir, [
+    "for-each-ref",
+    "--format=%(refname:short)%09%(symref)",
+    "refs/heads",
+    "refs/remotes",
+  ]);
+  const refs: string[] = [];
+  for (const line of out.split("\n")) {
+    if (!line) continue;
+    const [name, symref] = line.split("\t");
+    if (!name || symref) continue; // origin/HEAD and friends
+    refs.push(name);
+  }
+  const base = await defaultBase(dir);
+  if (base !== null) {
+    const i = refs.indexOf(base);
+    if (i > 0) {
+      refs.splice(i, 1);
+      refs.unshift(base);
+    }
+  }
+  return refs;
+}

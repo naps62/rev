@@ -796,6 +796,10 @@ export function fxGetFileDiff(dir: string, base: string, path: string): FileDiff
   return { dir, base, file, computedAt: Date.now() };
 }
 
+export function fxGetRefs(dir: string): { dir: string; refs: string[] } {
+  return { dir, refs: ["main", "develop", "origin/main", "origin/develop", "spike/always-on-review"] };
+}
+
 export function fxGetComments(dir: string): { comments: Comment[]; cursor: number } {
   void dir;
   return { comments: clone(state.comments), cursor: state.seq };

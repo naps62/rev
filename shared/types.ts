@@ -141,6 +141,12 @@ export interface FileDiffResponse {
   computedAt: number;
 }
 
+/** Base-ref candidates for a checkout; defaultBase (when present) is first. */
+export interface RefsResponse {
+  dir: string;
+  refs: string[];
+}
+
 // ---------------------------------------------------------------------------
 // File content & edits
 // ---------------------------------------------------------------------------
@@ -283,6 +289,7 @@ export type ServerMessage =
 // GET    /api/diff?dir&base                  → DiffResponse    (full, all hunks)
 // GET    /api/diff/summary?dir&base          → DiffSummaryResponse (no hunks, fast)
 // GET    /api/diff/file?dir&base&path[&oldPath] → FileDiffResponse (one file's hunks)
+// GET    /api/refs?dir                       → RefsResponse   (base-ref candidates)
 // GET    /api/file?dir&path[&rev]            → FileContentResponse
 // PUT    /api/file                           ← FileWriteRequest → FileContentResponse
 // GET    /api/comments?dir[&base][&since]    → CommentListResponse
