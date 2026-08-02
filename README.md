@@ -42,6 +42,16 @@ http://<machine-ip>:7373/review?dir=/abs/path/to/worktree&base=main
 
 All other knobs: `shared/tuning.ts`.
 
+## Deploys
+
+Merges to main on Gitea deploy automatically: a repo webhook (push, branch
+`main`) hits the `rev-deploy` listener on `:7374`, which resets the prod
+checkout (`~/tea/yolo/rev`) to `origin/main`, rebuilds, and restarts both
+services. The webhook secret lives in `~/.config/rev/deploy.env`
+(`REV_WEBHOOK_SECRET`); the listener rejects unsigned deliveries. Deploy runs
+are detached transient units — `journalctl --user -u run-*` has their logs,
+`journalctl --user -u rev-deploy` the listener's.
+
 ## Agents
 
 Append `agent/CLAUDE-rev.md` to a project's `CLAUDE.md` (or `~/.claude/CLAUDE.md`).
