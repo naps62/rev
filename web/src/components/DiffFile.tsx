@@ -20,6 +20,7 @@ import { highlightLines, type TokenLine } from "../highlight";
 import { intralineSpans, type Span } from "../intraline";
 import { cx, lineKey, type Thread } from "../util";
 import { AuthorChip, CommentThread, threadShell } from "./CommentThread";
+import { Checkbox } from "./Checkbox";
 import { Composer } from "./Composer";
 
 // "M" stays neutral so amber only ever means attention (stale, open, current).
@@ -460,11 +461,9 @@ export function DiffFile({
             onClick={(e) => e.stopPropagation()}
             className="flex cursor-pointer items-center gap-1.5 text-[12px] text-mute transition-colors duration-150 hover:text-fg"
           >
-            <input
-              type="checkbox"
+            <Checkbox
               checked={file.seen}
-              onChange={(e) => onToggleSeen(file, e.target.checked)}
-              className="chk size-4"
+              onChange={(checked) => onToggleSeen(file, checked)}
             />
             seen
           </label>

@@ -71,6 +71,7 @@ summary {
 .chk {
   appearance: none;
   margin: 0;
+  position: relative;
   /* translucent mute: --color-edge disappears on the raise-colored file headers */
   border: 1px solid color-mix(in srgb, var(--color-mute) 45%, transparent);
   border-radius: 3px;
@@ -81,6 +82,15 @@ summary {
   transition:
     border-color 150ms,
     background-color 150ms;
+}
+
+/* Invisible hit-target: absorbs the row padding/gaps around the 16px box
+   (24px tall = full nav row) without shifting layout. ::after stays free
+   for the check/dash glyph. */
+.chk::before {
+  content: "";
+  position: absolute;
+  inset: -4px -6px;
 }
 
 .chk:hover {
