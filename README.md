@@ -34,7 +34,8 @@ http://<machine-ip>:7373/review?dir=/abs/path/to/worktree&base=main
 | Env | Default | |
 |---|---|---|
 | `REV_PORT` | `7373` | HTTP + WS port |
-| `REV_ROOTS` | `~/tea` | Colon-separated roots scanned for repos; worktrees outside roots are found via `git worktree list` |
+| `REV_ROOTS` | `~/tea` | Colon-separated roots scanned for repos; worktrees outside roots are found via `git worktree list`. The installed service sets `%h` (all of home). |
+| `REV_DEPTH` | `4` | Max directory depth under each root when scanning (service sets 3) |
 | `REV_DB` | `~/.local/share/rev/rev.db` | SQLite (comments, seen-state) |
 
 All other knobs: `shared/tuning.ts`.

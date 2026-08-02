@@ -7,9 +7,10 @@ Type=simple
 WorkingDirectory=%h/tea/yolo/rev
 ExecStart=%h/.bun/bin/bun server/index.ts
 Environment=NODE_ENV=production
+Environment=REV_ROOTS=%h
+Environment=REV_DEPTH=3
 # Uncomment to override defaults:
 # Environment=REV_PORT=7373
-# Environment=REV_ROOTS=%h/tea
 Restart=always
 RestartSec=2
 

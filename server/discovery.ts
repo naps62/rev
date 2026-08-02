@@ -2,7 +2,7 @@
  * Finds every repo and worktree on the machine worth reviewing.
  *
  * Scan config.roots for `.git` (dir or file — worktrees have a .git file)
- * up to DISCOVERY_MAX_DEPTH, skipping WATCH_IGNORE dirs. From each hit, also
+ * up to config.depth (REV_DEPTH), skipping WATCH_IGNORE dirs. From each hit, also
  * `git worktree list` to catch worktrees living outside the roots. Results
  * are cached; `rescan()` forces a refresh and a slow timer
  * (DISCOVERY_INTERVAL_MS) keeps it eventually fresh.
@@ -58,7 +58,7 @@ function walk(dir: string, depth: number, found: string[]): void {
     }
     return;
   }
-  if (depth >= TUNING.DISCOVERY_MAX_DEPTH) return;
+  if (depth >= config.depth) return;
   for (const e of entries) {
     if (!e.isDirectory()) continue;
     if (e.name.startsWith(".") || IGNORED.has(e.name)) continue;

@@ -8,5 +8,6 @@ export function expandHome(p: string): string {
 export const config = {
   port: Number(process.env.REV_PORT ?? TUNING.PORT),
   roots: (process.env.REV_ROOTS?.split(":") ?? TUNING.DEFAULT_ROOTS).map(expandHome),
+  depth: Number(process.env.REV_DEPTH ?? TUNING.DISCOVERY_MAX_DEPTH),
   dbPath: expandHome(process.env.REV_DB ?? TUNING.DB_PATH),
 };
