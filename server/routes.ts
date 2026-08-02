@@ -39,6 +39,7 @@ import {
   fetchBase,
   GitError,
   hashContent,
+  listRefs,
   readFile,
 } from "./git";
 
@@ -178,6 +179,13 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       file.stale = !file.seen;
     }
     return c.json({ dir, base, file, computedAt: Date.now() });
+  });
+
+  app.get("/refs", async (c) => {
+    const dir = c.req.query("dir");
+    if (!dir) return c.json({ error: "dir is required" }, 400);
+    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    return c.json({ dir, refs: await listRefs(dir) });
   });
 
   app.get("/file", async (c) => {

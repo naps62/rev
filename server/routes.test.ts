@@ -233,3 +233,25 @@ describe("GET /diff/summary and /diff/file", () => {
     expect(escape.status).toBe(400);
   });
 });
+
+describe("GET /refs", () => {
+  test("lists local + remote refs, defaultBase first, excludes origin/HEAD", async () => {
+    const dir = makeRepo("routes-refs");
+    git(dir, "branch", "feat-x");
+    const head = git(dir, "rev-parse", "HEAD").trim();
+    git(dir, "update-ref", "refs/remotes/origin/main", head);
+    git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+
+    const res = await app.request(`/refs?dir=${encodeURIComponent(dir)}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { dir: string; refs: string[] };
+    expect(body.refs[0]).toBe("main"); // defaultBase leads
+    expect(body.refs).toContain("feat-x");
+    expect(body.refs).toContain("origin/main");
+    expect(body.refs).not.toContain("origin/HEAD");
+    expect(body.refs).not.toContain("origin");
+
+    const bad = await app.request("/refs?dir=/etc");
+    expect(bad.status).toBe(400);
+  });
+});

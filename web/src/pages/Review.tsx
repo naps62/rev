@@ -55,6 +55,13 @@ export function Review() {
     queryFn: () => api.getComments(dir),
     enabled: !!dir,
   });
+  // Base candidates for the header picker; refs move rarely, cache generously.
+  const refsQ = useQuery({
+    queryKey: ["refs", dir],
+    queryFn: () => api.getRefs(dir),
+    enabled: !!dir,
+    staleTime: 5 * 60_000,
+  });
 
   const wsStatus = useRevSocket(dir || undefined, (msg) => {
     if (msg.type === "diff-invalidated" && msg.dir === dir) {
@@ -366,8 +373,14 @@ export function Review() {
             spellCheck={false}
             aria-label="Base ref"
             title="Base ref — press Enter to re-diff"
+            list="base-refs"
             className="w-24 rounded-sm border border-edge bg-bg px-1.5 py-0.5 font-mono text-[12px] text-fg focus:border-accent/60 focus:outline-none max-sm:w-16"
           />
+          <datalist id="base-refs">
+            {(refsQ.data?.refs ?? []).map((r) => (
+              <option key={r} value={r} />
+            ))}
+          </datalist>
         </form>
         {diffQ.data && (
           <span
