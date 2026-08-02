@@ -4,6 +4,7 @@ import { Link, useLocation } from "wouter";
 import type { RepoInfo } from "#shared/types";
 import { TUNING } from "#shared/tuning";
 import * as api from "../api";
+import { AppHeader } from "../components/AppHeader";
 import { LiveDot } from "../components/LiveDot";
 import { basename, cx, relativeTime } from "../util";
 import { useRevSocket } from "../ws";
@@ -316,11 +317,9 @@ export function Repos() {
       : scopes.filter((s) => s !== currentScope && (matchCounts.get(s) ?? 0) > 0);
 
   return (
-    <div className="w-full px-4 pb-8">
-      <header className="flex h-14 items-center gap-3">
-        <h1 className="font-mono text-[15px] font-bold text-fg">
-          rev<span className="text-accent">_</span>
-        </h1>
+    <div className="min-h-screen">
+      <h1 className="sr-only">rev — always-on review</h1>
+      <AppHeader>
         <p className="text-[12px] text-faint">always-on review</p>
         <div className="ml-auto flex items-center gap-3">
           <LiveDot status={status} />
@@ -333,158 +332,160 @@ export function Repos() {
             {rescan.isPending ? "Scanning…" : "Rescan"}
           </button>
         </div>
-      </header>
+      </AppHeader>
 
-      {scopes.length > 1 && (
-        <nav aria-label="Project scope" className="mb-3 flex items-end gap-1 border-b border-edge">
-          {scopes.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => selectScope(s)}
-              aria-current={s === currentScope ? "page" : undefined}
-              className={cx(
-                "-mb-px flex items-baseline gap-1.5 border-b-2 px-2.5 pb-1.5 pt-1 font-mono text-[12px] transition-colors duration-150",
-                s === currentScope
-                  ? "border-accent text-fg"
-                  : "border-transparent text-mute hover:text-fg",
-              )}
-            >
-              {s}
-              <span
+      <div className="w-full px-4 pb-8 pt-4">
+        {scopes.length > 1 && (
+          <nav aria-label="Project scope" className="mb-3 flex items-end gap-1 border-b border-edge">
+            {scopes.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => selectScope(s)}
+                aria-current={s === currentScope ? "page" : undefined}
                 className={cx(
-                  "font-mono text-[10.5px] tabular-nums",
-                  (matchCounts != null
-                    ? (matchCounts.get(s) ?? 0) > 0
-                    : s === currentScope)
-                    ? "text-accent"
-                    : "text-faint",
+                  "-mb-px flex items-baseline gap-1.5 border-b-2 px-2.5 pb-1.5 pt-1 font-mono text-[12px] transition-colors duration-150",
+                  s === currentScope
+                    ? "border-accent text-fg"
+                    : "border-transparent text-mute hover:text-fg",
                 )}
               >
-                {matchCounts != null ? matchCounts.get(s) ?? 0 : activeCounts.get(s) ?? 0}
-              </span>
-            </button>
-          ))}
-        </nav>
-      )}
+                {s}
+                <span
+                  className={cx(
+                    "font-mono text-[10.5px] tabular-nums",
+                    (matchCounts != null
+                      ? (matchCounts.get(s) ?? 0) > 0
+                      : s === currentScope)
+                      ? "text-accent"
+                      : "text-faint",
+                  )}
+                >
+                  {matchCounts != null ? matchCounts.get(s) ?? 0 : activeCounts.get(s) ?? 0}
+                </span>
+              </button>
+            ))}
+          </nav>
+        )}
 
-      <input
-        ref={searchRef}
-        // biome-ignore lint/a11y/noAutofocus: the filter is this page's primary control
-        autoFocus
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            if (query) setQuery("");
-            else e.currentTarget.blur();
-          }
-          if (e.key === "Enter" && firstTarget) {
-            navigate(
-              api.href("/review", {
-                dir: firstTarget.dir,
-                base: firstTarget.defaultBase ?? "main",
-              }),
-            );
-          }
-        }}
-        placeholder="filter — name, branch, is:dirty, is:behind, has:comments"
-        aria-label="Filter projects"
-        className="mb-3 w-full rounded-md border border-edge bg-panel px-3 py-1.5 font-mono text-[12px] text-fg transition-colors duration-150 placeholder:text-faint focus:border-accent/50"
-      />
+        <input
+          ref={searchRef}
+          // biome-ignore lint/a11y/noAutofocus: the filter is this page's primary control
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              if (query) setQuery("");
+              else e.currentTarget.blur();
+            }
+            if (e.key === "Enter" && firstTarget) {
+              navigate(
+                api.href("/review", {
+                  dir: firstTarget.dir,
+                  base: firstTarget.defaultBase ?? "main",
+                }),
+              );
+            }
+          }}
+          placeholder="filter — name, branch, is:dirty, is:behind, has:comments"
+          aria-label="Filter projects"
+          className="mb-3 w-full rounded-md border border-edge bg-panel px-3 py-1.5 font-mono text-[12px] text-fg transition-colors duration-150 placeholder:text-faint focus:border-accent/50"
+        />
 
-      {reposQ.isPending && (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(23rem,100%),1fr))] items-start gap-3">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="animate-pulse rounded-md border border-edge bg-panel px-3 py-3">
-              <div className="h-3.5 w-40 rounded-sm bg-raise" />
-              <div className="mt-2 h-2.5 w-56 rounded-sm bg-raise/70" />
-              <div className="mt-3 h-2.5 w-48 rounded-sm bg-raise/50" />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {reposQ.error && (
-        <div className="rounded-md border border-del/40 bg-panel px-4 py-3">
-          <p className="text-[13px] text-del">{(reposQ.error as Error).message}</p>
-          <button
-            type="button"
-            onClick={() => reposQ.refetch()}
-            className="mt-2 text-[12px] text-mute hover:text-fg"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {reposQ.data && groups.length === 0 && (
-        <div className="rounded-md border border-edge bg-panel px-4 py-8 text-center">
-          <p className="text-[13px] text-mute">No git repos discovered under the configured roots.</p>
-          <p className="mt-1 text-[12px] text-faint">
-            Set REV_ROOTS on the server, then rescan.
-          </p>
-        </div>
-      )}
-
-      {groups.length > 0 && visibleGroups.length === 0 && (
-        <div className="rounded-md border border-edge bg-panel px-4 py-8 text-center">
-          {terms.length > 0 ? (
-            <>
-              <p className="text-[13px] text-mute">
-                No matches for <span className="font-mono text-fg">{query.trim()}</span>
-                {currentScope && <> in <span className="font-mono">{currentScope}</span></>}.
-              </p>
-              {otherScopeMatches.length > 0 && (
-                <p className="mt-2 flex items-center justify-center gap-2 text-[12px] text-faint">
-                  {otherScopeMatches.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => selectScope(s)}
-                      className="rounded-sm border border-edge px-2 py-0.5 font-mono text-[11.5px] text-mute transition-colors duration-150 hover:border-accent/50 hover:text-fg"
-                    >
-                      {matchCounts?.get(s)} in {s}
-                    </button>
-                  ))}
-                </p>
-              )}
-            </>
-          ) : (
-            <p className="text-[12.5px] text-mute">Nothing in active development here right now.</p>
-          )}
-        </div>
-      )}
-
-      {visibleGroups.map((g) => (
-        <section key={g.label || "(root)"} className="mb-4">
-          {g.label && (
-            <p className="mb-1.5 font-mono text-[11px] text-faint">{g.label}/</p>
-          )}
+        {reposQ.isPending && (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(min(23rem,100%),1fr))] items-start gap-3">
-            {g.cards.map((c) => (
-              <ProjectCard
-                key={c.entry.repo.dir}
-                card={c}
-                staleOpen={staleOpen.has(c.entry.repo.dir)}
-                onToggleStale={() => toggleStale(c.entry.repo.dir)}
-              />
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="animate-pulse rounded-md border border-edge bg-panel px-3 py-3">
+                <div className="h-3.5 w-40 rounded-sm bg-raise" />
+                <div className="mt-2 h-2.5 w-56 rounded-sm bg-raise/70" />
+                <div className="mt-3 h-2.5 w-48 rounded-sm bg-raise/50" />
+              </div>
             ))}
           </div>
-        </section>
-      ))}
+        )}
 
-      {terms.length === 0 && inactiveCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowInactive((v) => !v)}
-          className="block w-full rounded-md border border-edge px-3 py-2 text-left font-mono text-[11.5px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute"
-        >
-          {showInactive
-            ? "hide inactive projects"
-            : `show ${inactiveCount} inactive project${inactiveCount === 1 ? "" : "s"}`}
-        </button>
-      )}
+        {reposQ.error && (
+          <div className="rounded-md border border-del/40 bg-panel px-4 py-3">
+            <p className="text-[13px] text-del">{(reposQ.error as Error).message}</p>
+            <button
+              type="button"
+              onClick={() => reposQ.refetch()}
+              className="mt-2 text-[12px] text-mute hover:text-fg"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {reposQ.data && groups.length === 0 && (
+          <div className="rounded-md border border-edge bg-panel px-4 py-8 text-center">
+            <p className="text-[13px] text-mute">No git repos discovered under the configured roots.</p>
+            <p className="mt-1 text-[12px] text-faint">
+              Set REV_ROOTS on the server, then rescan.
+            </p>
+          </div>
+        )}
+
+        {groups.length > 0 && visibleGroups.length === 0 && (
+          <div className="rounded-md border border-edge bg-panel px-4 py-8 text-center">
+            {terms.length > 0 ? (
+              <>
+                <p className="text-[13px] text-mute">
+                  No matches for <span className="font-mono text-fg">{query.trim()}</span>
+                  {currentScope && <> in <span className="font-mono">{currentScope}</span></>}.
+                </p>
+                {otherScopeMatches.length > 0 && (
+                  <p className="mt-2 flex items-center justify-center gap-2 text-[12px] text-faint">
+                    {otherScopeMatches.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => selectScope(s)}
+                        className="rounded-sm border border-edge px-2 py-0.5 font-mono text-[11.5px] text-mute transition-colors duration-150 hover:border-accent/50 hover:text-fg"
+                      >
+                        {matchCounts?.get(s)} in {s}
+                      </button>
+                    ))}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-[12.5px] text-mute">Nothing in active development here right now.</p>
+            )}
+          </div>
+        )}
+
+        {visibleGroups.map((g) => (
+          <section key={g.label || "(root)"} className="mb-4">
+            {g.label && (
+              <p className="mb-1.5 font-mono text-[11px] text-faint">{g.label}/</p>
+            )}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(23rem,100%),1fr))] items-start gap-3">
+              {g.cards.map((c) => (
+                <ProjectCard
+                  key={c.entry.repo.dir}
+                  card={c}
+                  staleOpen={staleOpen.has(c.entry.repo.dir)}
+                  onToggleStale={() => toggleStale(c.entry.repo.dir)}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
+
+        {terms.length === 0 && inactiveCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowInactive((v) => !v)}
+            className="block w-full rounded-md border border-edge px-3 py-2 text-left font-mono text-[11.5px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute"
+          >
+            {showInactive
+              ? "hide inactive projects"
+              : `show ${inactiveCount} inactive project${inactiveCount === 1 ? "" : "s"}`}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
