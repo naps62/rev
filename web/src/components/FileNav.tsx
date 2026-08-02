@@ -92,44 +92,68 @@ function DirRow(props: LevelProps & { node: DirNode }) {
   // MUST NOT spread `props` (it carries `node`) into children — a later
   // node= would be overwritten back to this dir, recursing forever.
   const { node, ...level } = props;
-  const { depth, collapsed, toggleDir, unresolvedByFile } = level;
+  const { depth, collapsed, toggleDir, unresolvedByFile, onToggleSeen } = level;
   const isCollapsed = collapsed.has(node.path);
   const files = flattenTree(node.children);
   const open = files.reduce((n, f) => n + (unresolvedByFile.get(f.path) ?? 0), 0);
   const stale = files.some((f) => f.stale);
+  const allSeen = files.length > 0 && files.every((f) => f.seen);
+  const someSeen = files.some((f) => f.seen);
   return (
     <>
-      <button
-        type="button"
+      <div
         onClick={() => toggleDir(node.path)}
-        aria-expanded={!isCollapsed}
         title={node.path}
-        className="group flex w-full items-center gap-1.5 border-l border-transparent py-1 pr-2 text-left hover:bg-raise/50"
+        className="group flex w-full cursor-pointer items-center gap-1.5 border-l border-transparent py-1 pr-2 hover:bg-raise/50"
         style={{ paddingLeft: 8 + depth * 14 }}
       >
-        <svg
-          width="9"
-          height="9"
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden
-          className={cx(
-            "shrink-0 text-faint transition-transform duration-150",
-            !isCollapsed && "rotate-90",
-          )}
+        <input
+          type="checkbox"
+          checked={allSeen}
+          ref={(el) => {
+            if (el) el.indeterminate = someSeen && !allSeen;
+          }}
+          title={allSeen ? "Mark directory unseen" : "Mark directory seen"}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            for (const f of files) onToggleSeen(f, e.target.checked);
+          }}
+          className="size-3 shrink-0 accent-accent"
+        />
+        <button
+          type="button"
+          aria-expanded={!isCollapsed}
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
         >
-          <path
-            d="M5.5 3 11 8l-5.5 5"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-mute">
-          {node.label}
-          <span className="text-faint">/</span>
-        </span>
+          <svg
+            width="9"
+            height="9"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden
+            className={cx(
+              "shrink-0 text-faint transition-transform duration-150",
+              !isCollapsed && "rotate-90",
+            )}
+          >
+            <path
+              d="M5.5 3 11 8l-5.5 5"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span
+            className={cx(
+              "min-w-0 flex-1 truncate font-mono text-[11.5px] text-mute",
+              allSeen && "opacity-60",
+            )}
+          >
+            {node.label}
+            <span className="text-faint">/</span>
+          </span>
+        </button>
         {isCollapsed && (
           <>
             {stale && (
@@ -145,7 +169,7 @@ function DirRow(props: LevelProps & { node: DirNode }) {
             </span>
           </>
         )}
-      </button>
+      </div>
       {!isCollapsed && <TreeLevel {...level} nodes={node.children} depth={depth + 1} />}
     </>
   );
