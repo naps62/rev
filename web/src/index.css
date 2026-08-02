@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0e1115;
+  --color-panel: #14181d;
+  --color-raise: #1a2027;
+  --color-edge: #252c36;
+  --color-edge-soft: #1c222b;
+  --color-fg: #d5dbe4;
+  --color-mute: #8d97a5;
+  --color-faint: #7b8694; /* ≥4.5:1 on bg and panel — carries placeholders */
+  --color-accent: #e2b45c;
+  --color-accent-soft: rgb(226 180 92 / 0.13);
+  --color-add: #5cc576;
+  --color-add-soft: rgb(78 190 104 / 0.12);
+  --color-add-hi: rgb(78 190 104 / 0.28);
+  --color-del: #ef6e58;
+  --color-del-soft: rgb(239 110 88 / 0.1);
+  --color-del-hi: rgb(239 110 88 / 0.28);
+  --color-agent: #85bcd9;
+
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas,
+    monospace;
+}
+
+html {
+  color-scheme: dark;
+  background: var(--color-bg);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-fg);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgb(226 180 92 / 0.25);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2c3540 transparent;
+}
+
+:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Tailwind v4 preflight leaves buttons on the default cursor; every enabled
+   interactive control must read as clickable. */
+button:not(:disabled),
+[role="button"],
+label:has(input[type="checkbox"]:not(:disabled)),
+input[type="checkbox"]:not(:disabled),
+select,
+summary {
+  cursor: pointer;
+}
+
+/* Amber wash that fades out; applied when a file turns stale under the user. */
+@keyframes stale-flash {
+  0% {
+    background-color: rgb(226 180 92 / 0.16);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.stale-flash {
+  animation: stale-flash 1.6s ease-out both;
+}
+
+/* Amber wash on a hunk header row after n/p navigation lands on it. Ends at
+   the row's resting tint (raise at 50%) so removal doesn't pop. */
+@keyframes hunk-flash {
+  0% {
+    background-color: rgb(226 180 92 / 0.24);
+  }
+  100% {
+    background-color: rgb(26 32 39 / 0.5);
+  }
+}
+
+.hunk-flash td {
+  animation: hunk-flash 1.2s ease-out both;
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.overlay-in {
+  animation: overlay-in 150ms ease-out both;
+}

@@ -1,0 +1,288 @@
+/**
+ * All git interaction. Shells out to the `git` CLI; nothing else in the
+ * server touches git directly.
+ *
+ * Every function takes `dir` = absolute path of a checkout (main repo or
+ * linked worktree) and must work in both. Paths returned are repo-relative.
+ */
+
+import { readFileSync, statSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
+import type { DiffLine, DiffResponse, FileContentResponse, FileDiff } from "@shared/types";
+import { TUNING } from "@shared/tuning";
+import { parseUnifiedDiff } from "./diff-parser";
+
+/** Thrown for git failures the API should surface as 400 (bad ref, not a repo). */
+export class GitError extends Error {
+  constructor(
+    message: string,
+    /** The git command that failed, for logs. */
+    public readonly command: string,
+  ) {
+    super(message);
+  }
+}
+
+/** Run git in `dir`; throws GitError on non-zero exit. */
+export async function run(dir: string, args: string[]): Promise<string> {
+  const proc = Bun.spawn(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+  const [out, err, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (code !== 0) {
+    throw new GitError(err.trim() || `git ${args[0]} failed (exit ${code})`, `git ${args.join(" ")}`);
+  }
+  return out;
+}
+
+/** sha256 (hex, first 16 chars) of content — the contentHash everywhere. */
+export function hashContent(content: string | Uint8Array): string {
+  return new Bun.CryptoHasher("sha256").update(content).digest("hex").slice(0, 16);
+}
+
+const decoder = new TextDecoder();
+
+async function hashWorkingFile(dir: string, path: string): Promise<string> {
+  try {
+    return hashContent(await Bun.file(join(dir, path)).bytes());
+  } catch {
+    return "";
+  }
+}
+
+function isBinaryBytes(bytes: Uint8Array): boolean {
+  const n = Math.min(bytes.length, 8000);
+  for (let i = 0; i < n; i++) if (bytes[i] === 0) return true;
+  return false;
+}
+
+/** Untracked paths from `git status --porcelain=v1 -z` output. */
+function untrackedFromStatusZ(z: string): string[] {
+  const out: string[] = [];
+  const parts = z.split("\0");
+  for (let i = 0; i < parts.length; i++) {
+    const entry = parts[i]!;
+    if (entry.length < 4) continue;
+    const x = entry[0]!;
+    if (x === "R" || x === "C") i++; // rename/copy entries carry a second NUL-separated path
+    if (entry.startsWith("?? ")) out.push(entry.slice(3));
+  }
+  return out.sort();
+}
+
+/**
+ * Untracked file → all-add FileDiff. Files over MAX_UNTRACKED_BYTES are
+ * listed with no hunks and contentHash "" (hashing artifacts is wasted work);
+ * binary files get binary: true and no hunks.
+ */
+async function untrackedFileDiff(dir: string, path: string): Promise<FileDiff> {
+  const base: FileDiff = {
+    path,
+    status: "untracked",
+    binary: false,
+    hunks: [],
+    additions: 0,
+    deletions: 0,
+    contentHash: "",
+    seen: false,
+    stale: false,
+  };
+  let size: number;
+  try {
+    size = statSync(join(dir, path)).size;
+  } catch {
+    return base;
+  }
+  if (size > TUNING.MAX_UNTRACKED_BYTES) return base;
+  let bytes: Uint8Array;
+  try {
+    bytes = await Bun.file(join(dir, path)).bytes();
+  } catch {
+    return base;
+  }
+  const contentHash = hashContent(bytes);
+  if (isBinaryBytes(bytes)) return { ...base, binary: true, contentHash };
+  const textLines = decoder.decode(bytes).split("\n");
+  if (textLines.at(-1) === "") textLines.pop(); // trailing newline artifact
+  const lines: DiffLine[] = textLines.map((text, i) => ({ kind: "add", newLine: i + 1, text }));
+  const hunks =
+    lines.length === 0
+      ? []
+      : [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: lines.length, header: "", lines }];
+  return { ...base, hunks, additions: lines.length, contentHash };
+}
+
+/**
+ * Compute the full diff of `dir`'s working tree against merge-base(base, HEAD):
+ * committed changes since the merge-base AND uncommitted edits, plus untracked
+ * files (as status "untracked", skipping files over MAX_UNTRACKED_BYTES).
+ * Rename detection on. `seen`/`stale` are filled by the caller (routes), not
+ * here — git.ts stays stateless.
+ *
+ * Mode-only changes come through as status "modified" with zero hunks.
+ */
+export async function computeDiff(dir: string, base: string): Promise<DiffResponse> {
+  const mergeBase = (await run(dir, ["merge-base", base, "HEAD"])).trim();
+  const [diffText, statusZ, hi, behind] = await Promise.all([
+    // no second rev: diff merge-base against the working tree, catching uncommitted edits
+    run(dir, ["diff", mergeBase, "--find-renames", "--no-color", `-U${TUNING.DIFF_CONTEXT_LINES}`]),
+    run(dir, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+    headInfo(dir),
+    baseBehind(dir, base),
+  ]);
+
+  const files: FileDiff[] = [];
+  for (const p of parseUnifiedDiff(diffText)) {
+    const contentHash = p.status === "deleted" ? "" : await hashWorkingFile(dir, p.path);
+    files.push({ ...p, contentHash, seen: false, stale: false });
+  }
+  for (const path of untrackedFromStatusZ(statusZ)) {
+    files.push(await untrackedFileDiff(dir, path));
+  }
+
+  return {
+    dir,
+    base,
+    mergeBase,
+    head: hi.head,
+    branch: hi.branch,
+    files,
+    computedAt: Date.now(),
+    baseBehind: behind,
+  };
+}
+
+/** Read a file at a rev (null → working tree). 404s become GitError. */
+export async function readFile(dir: string, path: string, rev: string | null): Promise<FileContentResponse> {
+  if (rev === null) {
+    const f = Bun.file(join(dir, path));
+    if (!(await f.exists())) throw new GitError(`no such file in working tree: ${path}`, "read");
+    const bytes = await f.bytes();
+    return { dir, path, rev, content: decoder.decode(bytes), contentHash: hashContent(bytes) };
+  }
+  const content = await run(dir, ["show", `${rev}:${path}`]);
+  return { dir, path, rev, content, contentHash: hashContent(content) };
+}
+
+/** Current branch (null when detached) and short HEAD sha ("" before first commit). */
+export async function headInfo(dir: string): Promise<{ branch: string | null; head: string }> {
+  const branch = (await run(dir, ["branch", "--show-current"])).trim() || null;
+  let head = "";
+  try {
+    head = (await run(dir, ["rev-parse", "--short", "HEAD"])).trim();
+  } catch {
+    // unborn HEAD (no commits yet)
+  }
+  return { branch, head };
+}
+
+/** True when the working tree differs from HEAD (tracked files only). */
+export async function isDirty(dir: string): Promise<boolean> {
+  // --no-optional-locks: status must not rewrite the index — discovery reads
+  // its mtime as lastActivity, and a plain status would bump it on every scan.
+  return (await run(dir, ["--no-optional-locks", "status", "--porcelain", "-uno"])).trim().length > 0;
+}
+
+/**
+ * Pick the ref reviews should default to: first existing of main, master,
+ * origin/main, origin/master. Null when none exist (fresh repo).
+ */
+export async function defaultBase(dir: string): Promise<string | null> {
+  for (const ref of ["main", "master", "origin/main", "origin/master"]) {
+    try {
+      await run(dir, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+      return ref;
+    } catch {
+      // try next
+    }
+  }
+  return null;
+}
+
+/**
+ * Upstream counterpart of `base`: its configured upstream when it's a local
+ * branch, itself when it's already remote-tracking (origin/x), null otherwise.
+ */
+async function baseUpstream(dir: string, base: string): Promise<string | null> {
+  try {
+    return (await run(dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", `${base}@{upstream}`])).trim();
+  } catch {
+    // no upstream configured
+  }
+  const remotes = (await run(dir, ["remote"])).split("\n").filter(Boolean);
+  const prefix = base.split("/")[0];
+  if (prefix && remotes.includes(prefix)) return base;
+  for (const r of remotes) {
+    try {
+      await run(dir, ["rev-parse", "--verify", "--quiet", `${r}/${base}^{commit}`]);
+      return `${r}/${base}`;
+    } catch {
+      // try next remote
+    }
+  }
+  return null;
+}
+
+/** Commits `base` is behind its upstream; null when no upstream / count fails; 0 when current. */
+export async function baseBehind(dir: string, base: string): Promise<number | null> {
+  const up = await baseUpstream(dir, base);
+  if (up === null || up === base) return up === base ? 0 : null;
+  try {
+    return Number((await run(dir, ["rev-list", "--count", `${base}..${up}`])).trim());
+  } catch {
+    return null;
+  }
+}
+
+/** `git fetch` the remote behind `base`'s upstream. Throws GitError when base has no remote. */
+export async function fetchBase(dir: string, base: string): Promise<void> {
+  const up = await baseUpstream(dir, base);
+  if (up === null) throw new GitError(`base ${base} has no upstream remote to fetch`, "fetch");
+  const remote = up.split("/")[0]!;
+  await run(dir, ["fetch", remote]);
+}
+
+/** `git worktree list` from any checkout: absolute paths of all linked checkouts (main first). */
+export async function listWorktrees(dir: string): Promise<string[]> {
+  const out = await run(dir, ["worktree", "list", "--porcelain"]);
+  return out
+    .split("\n")
+    .filter((l) => l.startsWith("worktree "))
+    .map((l) => l.slice("worktree ".length));
+}
+
+/** Changed-file count vs merge-base(base, HEAD): tracked names + untracked. Null on failure. */
+export async function changedFileCount(dir: string, base: string): Promise<number | null> {
+  try {
+    const mb = (await run(dir, ["merge-base", base, "HEAD"])).trim();
+    const [names, untracked] = await Promise.all([
+      run(dir, ["diff", "--name-only", mb]),
+      run(dir, ["ls-files", "--others", "--exclude-standard"]),
+    ]);
+    const count = (s: string) => s.split("\n").filter(Boolean).length;
+    return count(names) + count(untracked);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Absolute path of the gitdir backing `dir`: `.git` itself for main
+ * checkouts, the `gitdir:` target for linked worktrees. Null when not a repo.
+ */
+export function resolveGitDir(dir: string): string | null {
+  const dotGit = join(dir, ".git");
+  let st;
+  try {
+    st = statSync(dotGit);
+  } catch {
+    return null;
+  }
+  if (st.isDirectory()) return dotGit;
+  const m = /^gitdir:\s*(.+?)\s*$/m.exec(readFileSync(dotGit, "utf8"));
+  if (!m) return null;
+  const p = m[1]!;
+  return isAbsolute(p) ? p : resolve(dir, p);
+}

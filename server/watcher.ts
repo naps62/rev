@@ -1,0 +1,107 @@
+/**
+ * Filesystem watching for repos with live viewers.
+ *
+ * Reference-counted: first WS subscriber to a dir starts a chokidar watcher
+ * (ignoring WATCH_IGNORE and .git internals except HEAD/index/refs, which
+ * signal commits/checkouts); last unsubscribe stops it. Events are debounced
+ * (WATCH_DEBOUNCE_MS) and delivered as one callback with the batch of
+ * repo-relative paths. For linked worktrees the real gitdir lives under the
+ * main repo's .git/worktrees/<name>; a second watcher covers its HEAD/index.
+ */
+
+import { watch, type FSWatcher } from "chokidar";
+import { relative, sep } from "node:path";
+import { TUNING } from "@shared/tuning";
+import { resolveGitDir } from "./git";
+
+export type WatchCallback = (dir: string, paths: string[]) => void;
+
+const IGNORE_NAMES = new Set<string>(TUNING.WATCH_IGNORE.filter((n) => n !== ".git"));
+const GIT_ALLOWED = new Set(["HEAD", "index", "refs", "packed-refs"]);
+
+interface Entry {
+  refs: number;
+  watchers: FSWatcher[];
+  pending: Set<string>;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+const entries = new Map<string, Entry>();
+let sink: WatchCallback | null = null;
+
+/** Register the single global sink for change events (index.ts wires this to WS broadcast). */
+export function onRepoChange(cb: WatchCallback): void {
+  sink = cb;
+}
+
+/** chokidar v4 has no globs; ignore via callback. */
+function makeIgnored(root: string) {
+  return (p: string): boolean => {
+    const rel = relative(root, p);
+    if (!rel || rel.startsWith("..")) return false;
+    const parts = rel.split(sep);
+    const gi = parts.indexOf(".git");
+    if (gi >= 0) {
+      const inside = parts.slice(gi + 1);
+      if (inside.length === 0) return false; // .git itself (dir to descend, or worktree pointer file)
+      return !GIT_ALLOWED.has(inside[0]!);
+    }
+    return parts.some((seg) => IGNORE_NAMES.has(seg));
+  };
+}
+
+/** For a linked worktree's external gitdir: only HEAD/index/refs matter. */
+function makeGitdirIgnored(gitdir: string) {
+  return (p: string): boolean => {
+    const rel = relative(gitdir, p);
+    if (!rel || rel.startsWith("..")) return false;
+    return !GIT_ALLOWED.has(rel.split(sep)[0]!);
+  };
+}
+
+/** Increment watch refcount for dir, starting the watcher if first. */
+export function subscribe(dir: string): void {
+  const existing = entries.get(dir);
+  if (existing) {
+    existing.refs++;
+    return;
+  }
+
+  const entry: Entry = { refs: 1, watchers: [], pending: new Set(), timer: null };
+  const onEvent = (p: string) => {
+    const rel = relative(dir, p);
+    // git-internal churn invalidates the diff but is not a working-tree path
+    if (rel && !rel.startsWith("..") && !rel.split(sep).includes(".git")) entry.pending.add(rel);
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      const paths = [...entry.pending].sort();
+      entry.pending.clear();
+      sink?.(dir, paths);
+    }, TUNING.WATCH_DEBOUNCE_MS);
+  };
+
+  const main = watch(dir, { ignored: makeIgnored(dir), ignoreInitial: true });
+  main.on("all", (_event, p) => onEvent(p));
+  entry.watchers.push(main);
+
+  const gitdir = resolveGitDir(dir);
+  if (gitdir && (relative(dir, gitdir).startsWith("..") || relative(dir, gitdir) === "")) {
+    const gw = watch(gitdir, { ignored: makeGitdirIgnored(gitdir), ignoreInitial: true });
+    gw.on("all", (_event, p) => onEvent(p));
+    entry.watchers.push(gw);
+  }
+
+  entries.set(dir, entry);
+}
+
+/** Decrement refcount, stopping the watcher when it hits zero. */
+export function unsubscribe(dir: string): void {
+  const entry = entries.get(dir);
+  if (!entry) return;
+  entry.refs--;
+  if (entry.refs > 0) return;
+  entries.delete(dir);
+  if (entry.timer) clearTimeout(entry.timer);
+  for (const w of entry.watchers) void w.close();
+}
