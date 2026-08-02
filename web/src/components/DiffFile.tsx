@@ -42,6 +42,8 @@ interface DiffFileProps {
   /** All threads anchored to this file; placed on lines once hunks load. */
   threads: Thread[];
   isCurrent: boolean;
+  /** Mouse moved over this file — claim focus (rail + yellow indicator). */
+  onHover?: () => void;
   onToggleSeen: (file: FileSummary, seen: boolean) => void;
   onCreateComment: (anchor: CommentAnchor, body: string) => void;
   onReply: (root: Comment, body: string) => void;
@@ -58,6 +60,7 @@ export function DiffFile({
   mode,
   threads,
   isCurrent,
+  onHover,
   onToggleSeen,
   onCreateComment,
   onReply,
@@ -366,6 +369,7 @@ export function DiffFile({
         sectionRef(el);
       }}
       data-path={file.path}
+      onMouseMove={onHover}
       className={cx(
         // No overflow-hidden here: it would turn the section into the sticky
         // header's scrollport and pin it 48px into the card.

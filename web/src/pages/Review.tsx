@@ -253,6 +253,13 @@ export function Review() {
     animRef.current = requestAnimationFrame(step);
   };
 
+  // Hovering a diff claims focus; ignored mid-glide so a rail click isn't
+  // hijacked by files sliding under the stationary-ish cursor.
+  const hoverFocus = (path: string) => {
+    if (glidingRef.current) return;
+    setCurrentPath(path);
+  };
+
   const [help, setHelp] = useState(false);
   const filesRef = useRef(files);
   filesRef.current = files;
@@ -548,6 +555,7 @@ export function Review() {
                 mode={mode}
                 threads={threadsByFile.get(f.path) ?? []}
                 isCurrent={currentPath === f.path}
+                onHover={() => hoverFocus(f.path)}
                 onToggleSeen={toggleSeen}
                 onCreateComment={(anchor, body) => createComment(anchor, body)}
                 onReply={reply}
