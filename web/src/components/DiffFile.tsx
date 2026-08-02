@@ -720,7 +720,6 @@ function LineRow({
   span: Span | undefined;
   onComment: () => void;
 }) {
-  const marker = line.kind === "add" ? "+" : line.kind === "del" ? "−" : "";
   return (
     <tr
       className={cx(
@@ -735,7 +734,7 @@ function LineRow({
       <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
         {line.newLine ?? ""}
       </td>
-      <td className="relative whitespace-pre-wrap break-all py-0 pl-7 pr-4 align-top font-mono text-[12.5px] leading-[1.7] text-fg">
+      <td className="relative whitespace-pre-wrap break-all py-0 pl-5 pr-4 align-top font-mono text-[12.5px] leading-[1.7] text-fg">
         <button
           type="button"
           onClick={onComment}
@@ -745,15 +744,6 @@ function LineRow({
         >
           +
         </button>
-        <span
-          aria-hidden
-          className={cx(
-            "absolute left-[18px] select-none",
-            line.kind === "add" ? "text-add" : line.kind === "del" ? "text-del" : "text-faint",
-          )}
-        >
-          {marker}
-        </span>
         {renderContent(line, tokens, span)}
       </td>
     </tr>
@@ -807,12 +797,11 @@ function SplitCell({
     return <td className={cx("bg-raise/30", isLeft && "border-r border-edge-soft")} />;
   }
   const { line, idx } = slot;
-  const marker = line.kind === "add" ? "+" : line.kind === "del" ? "−" : "";
   const toks = tokens?.[idx] ?? null;
   return (
     <td
       className={cx(
-        "group/cell relative whitespace-pre-wrap break-all py-0 pl-7 pr-3 align-top font-mono text-[12.5px] leading-[1.7] text-fg",
+        "group/cell relative whitespace-pre-wrap break-all py-0 pl-5 pr-3 align-top font-mono text-[12.5px] leading-[1.7] text-fg",
         line.kind === "add" && "bg-add-soft",
         line.kind === "del" && "bg-del-soft",
         isLeft && "border-r border-edge-soft",
@@ -829,15 +818,6 @@ function SplitCell({
           +
         </button>
       )}
-      <span
-        aria-hidden
-        className={cx(
-          "absolute left-[18px] select-none",
-          line.kind === "add" ? "text-add" : line.kind === "del" ? "text-del" : "text-faint",
-        )}
-      >
-        {marker}
-      </span>
       {renderContent(line, toks, spans.get(idx))}
     </td>
   );
