@@ -19,6 +19,7 @@ import type {
   CommentPatchRequest,
   FileWriteRequest,
   SeenRequest,
+  SeenSegmentsRequest,
   ServerMessage,
 } from "#shared/types";
 import { TUNING } from "#shared/tuning";
@@ -31,7 +32,9 @@ import {
   patchComment,
   putSeenSnapshot,
   seenHashes,
+  seenSegmentHashes,
   setSeen,
+  setSeenSegments,
 } from "./db.ts";
 import { resolveComments } from "./anchor.ts";
 import { invalidateRepoList, isKnownRepo, listRepos, rescan } from "./discovery.ts";
@@ -184,7 +187,13 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       file.seen = h === file.contentHash;
       file.stale = !file.seen;
     }
-    return c.json({ dir, base, file, computedAt: Date.now() });
+    return c.json({
+      dir,
+      base,
+      file,
+      computedAt: Date.now(),
+      seenSegments: seenSegmentHashes(dir, base, file.path),
+    });
   });
 
   app.get("/diff/interdiff", async (c) => {
@@ -334,6 +343,43 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     broadcast({ type: "comments-changed", dir: comment.dir, seq: comment.seq });
     notifyWaiters(comment.dir);
     return c.json(comment);
+  });
+
+  app.put("/seen-segments", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as SeenSegmentsRequest | null;
+    if (
+      !b ||
+      typeof b.dir !== "string" ||
+      typeof b.base !== "string" ||
+      b.base === "" ||
+      typeof b.path !== "string" ||
+      typeof b.seen !== "boolean" ||
+      !Array.isArray(b.segments) ||
+      b.segments.length === 0 ||
+      b.segments.length > 500 ||
+      b.segments.some(
+        (s) =>
+          typeof s !== "object" ||
+          s === null ||
+          typeof s.hash !== "string" ||
+          s.hash === "" ||
+          s.hash.length > 64 ||
+          typeof s.addDelLines !== "number" ||
+          !Number.isFinite(s.addDelLines) ||
+          s.addDelLines < 0,
+      )
+    ) {
+      return c.json({ error: "dir, base, path, seen, non-empty segments[] are required" }, 400);
+    }
+    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    if (resolveInRepo(b.dir, b.path) === null) {
+      return c.json({ error: `path escapes repo: ${b.path}` }, 400);
+    }
+    setSeenSegments(b.dir, b.base, b.path, b.segments, b.seen);
+    // Segment lines feed review progress on the projects page.
+    invalidateRepoList();
+    broadcast({ type: "repos-changed" });
+    return c.json({ ok: true });
   });
 
   app.post("/fetch", async (c) => {

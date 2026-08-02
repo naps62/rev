@@ -34,6 +34,30 @@ otherwise; "option" means a follow-up you can pick or drop.
   instantly; each file streams its hunks via `/api/diff/file` when it nears
   the viewport. `/api/diff` (full) remains for API consumers.
 
+## Sub-file seen segments (2026-08-02)
+
+Mark parts of a file seen — comment runs, block bodies, or a whole hunk —
+via `s`/`S` over the pointer; seen segments collapse into strips. Decisions:
+
+- **Detection client-side, persistence server-side.** Segments are derived
+  in the browser (`web/src/semantic/segments.ts`: brace depth for any
+  language, indent for Python, comment regexes, hunk as root — no parser,
+  fold.ts philosophy). The server stores opaque hashes in `seen_segments`
+  and never detects anything.
+- **Detected units only, no arbitrary line selections.** Keeps identity
+  clean and marking one keypress.
+- **Identity = content hash** of kind+text of every diff row in the
+  segment. An edited segment's hash misses and it silently reverts to
+  unseen — segments have no stale state, by design. Byte-identical
+  segments share seen-ness.
+- **Independent of file-level seen.** No auto-promotion at full coverage;
+  marking the file seen leaves segment rows alone. Project-card progress
+  adds per-segment line counts (stored at mark time, capped per file) for
+  unseen files — slightly optimistic when segments go stale; the review
+  page itself is always exact.
+- Unified full-diff view only (no split, no interdiff/delta); strips with
+  a comment thread inside stay expanded, like folds.
+
 ## Rejected for now (2026-08-02)
 
 - **Reviewing refs that aren't checked out** (`head=<ref>` diffing the object

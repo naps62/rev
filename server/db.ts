@@ -50,6 +50,15 @@ export function openDb(path: string = config.dbPath): void {
       created_at   INTEGER NOT NULL,
       PRIMARY KEY (dir, base, path)
     );
+    CREATE TABLE IF NOT EXISTS seen_segments (
+      dir           TEXT NOT NULL,
+      base          TEXT NOT NULL,
+      path          TEXT NOT NULL,
+      segment_hash  TEXT NOT NULL,
+      add_del_lines INTEGER NOT NULL,
+      created_at    INTEGER NOT NULL,
+      PRIMARY KEY (dir, base, path, segment_hash)
+    );
   `);
 }
 
@@ -233,6 +242,59 @@ export function getSeenSnapshot(
     .prepare("SELECT content_hash, content FROM seen_snapshots WHERE dir = ? AND base = ? AND path = ?")
     .get(dir, base, path) as { content_hash: string; content: string } | undefined;
   return row ? { contentHash: row.content_hash, content: row.content } : null;
+}
+
+/**
+ * Mark/unmark sub-file segments for (dir, base, path). Hashes are opaque to
+ * the server — the client detects segments and hashes them; rows whose hash
+ * no longer matches anything on screen are simply never rendered.
+ */
+export function setSeenSegments(
+  dir: string,
+  base: string,
+  path: string,
+  segments: Array<{ hash: string; addDelLines: number }>,
+  seen: boolean,
+): void {
+  const d = must();
+  transaction(d, () => {
+    if (seen) {
+      const ins = d.prepare(
+        `INSERT INTO seen_segments (dir, base, path, segment_hash, add_del_lines, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (dir, base, path, segment_hash) DO UPDATE
+           SET add_del_lines = excluded.add_del_lines, created_at = excluded.created_at`,
+      );
+      const now = Date.now();
+      for (const s of segments) ins.run(dir, base, path, s.hash, s.addDelLines, now);
+    } else {
+      const del = d.prepare(
+        "DELETE FROM seen_segments WHERE dir = ? AND base = ? AND path = ? AND segment_hash = ?",
+      );
+      for (const s of segments) del.run(dir, base, path, s.hash);
+    }
+  });
+}
+
+export function seenSegmentHashes(dir: string, base: string, path: string): string[] {
+  const rows = must()
+    .prepare("SELECT segment_hash FROM seen_segments WHERE dir = ? AND base = ? AND path = ?")
+    .all(dir, base, path) as unknown as Array<{ segment_hash: string }>;
+  return rows.map((r) => r.segment_hash);
+}
+
+/**
+ * Sum of add_del_lines per path for (dir, base) — partial review progress.
+ * Optimistic: includes rows whose segment no longer matches the working tree
+ * (the server can't detect segments); callers cap at the file's own total.
+ */
+export function seenSegmentLineTotals(dir: string, base: string): Map<string, number> {
+  const rows = must()
+    .prepare(
+      "SELECT path, SUM(add_del_lines) AS n FROM seen_segments WHERE dir = ? AND base = ? GROUP BY path",
+    )
+    .all(dir, base) as unknown as Array<{ path: string; n: number }>;
+  return new Map(rows.map((r) => [r.path, r.n]));
 }
 
 /** contentHash each path was marked seen at, for (dir, base). */

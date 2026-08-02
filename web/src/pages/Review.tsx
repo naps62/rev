@@ -111,6 +111,26 @@ export function Review() {
     },
     onError: () => qc.invalidateQueries({ queryKey: ["diff-summary", dir, base] }),
   });
+  // Segment marks patch every cached diff-file entry for the path (the key's
+  // contentHash tail varies), so strips appear without a refetch.
+  const segMut = useMutation({
+    mutationFn: api.putSeenSegments,
+    onMutate: (req) => {
+      qc.setQueriesData<FileDiffResponse>(
+        { queryKey: ["diff-file", dir, base, req.path] },
+        (old) => {
+          if (!old) return old;
+          const cur = new Set(old.seenSegments);
+          for (const s of req.segments) {
+            if (req.seen) cur.add(s.hash);
+            else cur.delete(s.hash);
+          }
+          return { ...old, seenSegments: [...cur] };
+        },
+      );
+    },
+    onError: () => qc.invalidateQueries({ queryKey: ["diff-file", dir, base] }),
+  });
   const createMut = useMutation({
     mutationFn: api.postComment,
     onSettled: () => qc.invalidateQueries({ queryKey: ["comments", dir] }),
@@ -155,6 +175,11 @@ export function Review() {
 
   const toggleSeen = (file: FileSummary, seen: boolean) =>
     seenMut.mutate({ dir, base, path: file.path, contentHash: file.contentHash, seen });
+  const toggleSegments = (
+    file: FileSummary,
+    segments: Array<{ hash: string; addDelLines: number }>,
+    seen: boolean,
+  ) => segMut.mutate({ dir, base, path: file.path, segments, seen });
   const createComment = (anchor: CommentAnchor | null, body: string) =>
     createMut.mutate({ dir, base, anchor: anchor ?? undefined, author: "user", body });
   const reply = (root: Comment, body: string) =>
@@ -783,6 +808,7 @@ export function Review() {
                 symbolActive={symbol != null}
                 onHover={() => hoverFocus(f.path)}
                 onToggleSeen={toggleSeen}
+                onToggleSegments={toggleSegments}
                 onCreateComment={(anchor, body) => createComment(anchor, body)}
                 onReply={reply}
                 onResolve={resolve}
@@ -828,7 +854,7 @@ export function Review() {
             </section>
 
             <p className="pb-4 text-center font-mono text-[11px] text-faint">
-              j/k files · J/K unseen · n/p hunks · . seen · ? shortcuts
+              j/k files · J/K unseen · n/p hunks · . seen · s block seen · ? shortcuts
             </p>
           </main>
 

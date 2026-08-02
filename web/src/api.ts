@@ -18,6 +18,7 @@ import type {
   RefsResponse,
   RepoInfo,
   SeenRequest,
+  SeenSegmentsRequest,
 } from "#shared/types";
 
 export class ApiError extends Error {
@@ -149,6 +150,11 @@ export async function patchComment(id: string, patch: CommentPatchRequest): Prom
 export async function putSeen(req: SeenRequest): Promise<{ ok: true }> {
   if (isFixture()) return tick((await fx()).fxPutSeen(req));
   return request("/api/seen", { method: "PUT", body: JSON.stringify(req) });
+}
+
+export async function putSeenSegments(req: SeenSegmentsRequest): Promise<{ ok: true }> {
+  if (isFixture()) return tick((await fx()).fxPutSeenSegments(req));
+  return request("/api/seen-segments", { method: "PUT", body: JSON.stringify(req) });
 }
 
 export async function postFetch(req: {

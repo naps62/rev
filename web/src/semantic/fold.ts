@@ -205,7 +205,7 @@ const STRUCTURE: Record<Lang, RegExp[]> = {
   python: [/^\s*(async\s+)?def\s+/, /^\s*class\s+/, /^\s*@\w/],
 };
 
-const COMMENT: Record<Lang, RegExp> = {
+export const COMMENT: Record<Lang, RegExp> = {
   ts: /^\s*(\/\/|\/\*|\*)/,
   rust: /^\s*(\/\/|\/\*|\*)/,
   solidity: /^\s*(\/\/|\/\*|\*)/,
