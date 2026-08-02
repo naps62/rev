@@ -28,6 +28,13 @@ export const TUNING = {
   /** Dir names never watched or diffed: churn without review value. */
   WATCH_IGNORE: ["node_modules", ".git", "dist", "build", "target", ".next", ".turbo", "coverage"],
 
+  /**
+   * Repos with more watchable files than this get .git-only watching (diff
+   * refreshes on commit/checkout, not on every edit). Guards against trees
+   * that would need tens of thousands of inotify watches.
+   */
+  WATCH_MAX_FILES: 30_000,
+
   /** Long-poll ceiling for GET /api/comments?wait=1. Below common proxy/idle timeouts. */
   LONG_POLL_MS: 25_000,
 

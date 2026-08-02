@@ -12,11 +12,13 @@ import {
   GitError,
   hashContent,
   headInfo,
+  ignoredPrefixes,
   isDirty,
   listWorktrees,
   readFile,
   remoteUrl,
   resolveGitDir,
+  watchableFileCount,
 } from "./git";
 import { git, makeRepo, tmpdir, write } from "./testutil";
 
@@ -438,5 +440,23 @@ describe("computeDiffSummary / computeFileDiff", () => {
     const degraded = await computeFileDiff(dir, "main", "moved.txt");
     expect(degraded).not.toBeNull();
     expect(degraded!.path).toBe("moved.txt");
+  });
+});
+
+describe("ignoredPrefixes / watchableFileCount", () => {
+  test("ignored dirs come back as prefixes; counts skip them", async () => {
+    const dir = makeRepo("watchstats", { "a.txt": "x\n", ".gitignore": "vendor/\nsecret.env\n" });
+    write(dir, "vendor/lib/dep.js", "dep\n");
+    write(dir, "vendor/lib/deep/more.js", "more\n");
+    write(dir, "secret.env", "k=v\n");
+    write(dir, "src/new.ts", "n\n");
+
+    const prefixes = await ignoredPrefixes(dir);
+    expect(prefixes).toContain("vendor");
+    expect(prefixes).toContain("secret.env");
+    expect(prefixes.some((p) => p.startsWith("vendor/"))).toBe(false); // collapsed, not descended
+
+    // tracked: a.txt + .gitignore; untracked non-ignored: src/new.ts
+    expect(await watchableFileCount(dir)).toBe(3);
   });
 });

@@ -460,6 +460,36 @@ export async function changedFileCount(dir: string, base: string): Promise<numbe
 }
 
 /**
+ * Repo-relative prefixes git ignores (dirs come collapsed with a trailing
+ * slash, stripped here). Watchers prune these subtrees; .venv/out/cache-style
+ * artifact dirs would otherwise cost tens of thousands of inotify watches.
+ */
+export async function ignoredPrefixes(dir: string): Promise<string[]> {
+  const z = await run(dir, [
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "--directory",
+    "-z",
+  ]);
+  return z
+    .split("\0")
+    .filter(Boolean)
+    .map((p) => (p.endsWith("/") ? p.slice(0, -1) : p));
+}
+
+/** Tracked + untracked (non-ignored) file count — what a working-tree watcher would cover. */
+export async function watchableFileCount(dir: string): Promise<number> {
+  const [tracked, untracked] = await Promise.all([
+    run(dir, ["ls-files", "-z"]),
+    run(dir, ["ls-files", "--others", "--exclude-standard", "-z"]),
+  ]);
+  const count = (z: string) => z.split("\0").filter(Boolean).length;
+  return count(tracked) + count(untracked);
+}
+
+/**
  * Absolute path of the gitdir backing `dir`: `.git` itself for main
  * checkouts, the `gitdir:` target for linked worktrees. Null when not a repo.
  */
