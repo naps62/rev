@@ -249,7 +249,8 @@ async function doRescan(force: boolean): Promise<RepoInfo[]> {
     }
     try {
       const info = await enrich(dir, main, openMap);
-      enrichCache.set(dir, { fp: gitStateFingerprint(dir), at: now, info });
+      // pre-enrich fp: state moving DURING enrich must invalidate next scan
+      enrichCache.set(dir, { fp, at: now, info });
       return info;
     } catch {
       enrichCache.delete(dir);

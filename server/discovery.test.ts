@@ -50,8 +50,8 @@ describe("gitStateFingerprint", () => {
 
   test("worktrees share ref state with the main repo but have own HEAD/index", () => {
     const dir = makeRepo("fp-wt");
-    git(dir, "worktree", "add", join(dir, "..", "fp-wt-linked"), "-b", "linked");
-    const linked = join(dir, "..", "fp-wt-linked");
+    const linked = `${dir}-linked`;
+    git(dir, "worktree", "add", linked, "-b", "linked");
     const before = gitStateFingerprint(linked);
     expect(before).not.toBe("");
     // a branch created in the MAIN repo moves the shared refs → linked fp moves
