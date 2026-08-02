@@ -336,3 +336,47 @@ describe("remoteUrl", () => {
     expect(await remoteUrl(dir)).toBe("https://git.naps.pt/yolo/rev.git");
   });
 });
+
+describe("defaultBase ref choice", () => {
+  /** Commit with a fixed committer date; merge-base recency needs distinct timestamps. */
+  const commitAt = (dir: string, date: string, msg: string) => {
+    const proc = Bun.spawnSync(["git", "commit", "-m", msg], {
+      cwd: dir,
+      env: { ...process.env, GIT_COMMITTER_DATE: date, GIT_AUTHOR_DATE: date },
+    });
+    if (proc.exitCode !== 0) throw new Error(proc.stderr.toString());
+  };
+
+  test("prefers origin/main over a stale local main", async () => {
+    const dir = makeRepo("base-stale");
+    const a = git(dir, "rev-parse", "HEAD").trim();
+    write(dir, "b.txt", "b\n");
+    git(dir, "add", "-A");
+    commitAt(dir, "2027-01-02T10:00:00", "b");
+    write(dir, "c.txt", "c\n");
+    git(dir, "add", "-A");
+    commitAt(dir, "2027-01-03T10:00:00", "c");
+    const c = git(dir, "rev-parse", "HEAD").trim();
+    git(dir, "update-ref", "refs/remotes/origin/main", c);
+    git(dir, "checkout", "-b", "feature");
+    write(dir, "d.txt", "d\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-m", "d");
+    // local main left behind at the first commit
+    git(dir, "update-ref", "refs/heads/main", a);
+
+    expect(await defaultBase(dir)).toBe("origin/main");
+  });
+
+  test("prefers a local main that is ahead of origin/main", async () => {
+    const dir = makeRepo("base-ahead");
+    const a = git(dir, "rev-parse", "HEAD").trim();
+    git(dir, "update-ref", "refs/remotes/origin/main", a);
+    write(dir, "b.txt", "b\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-m", "unpushed");
+    git(dir, "checkout", "-b", "feature");
+
+    expect(await defaultBase(dir)).toBe("main");
+  });
+});

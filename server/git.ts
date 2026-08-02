@@ -186,19 +186,39 @@ export async function isDirty(dir: string): Promise<boolean> {
 }
 
 /**
- * Pick the ref reviews should default to: first existing of main, master,
- * origin/main, origin/master. Null when none exist (fresh repo).
+ * Pick the ref reviews should default to, among main, master, origin/main,
+ * origin/master. When several exist, prefer the one sharing the NEWEST
+ * merge-base with HEAD: worktree branches are usually cut from origin/main
+ * while the local main sits stale, and diffing against stale main drags all
+ * of main's history since the fork point into the review. Null when none
+ * exist (fresh repo).
  */
 export async function defaultBase(dir: string): Promise<string | null> {
+  const existing: string[] = [];
   for (const ref of ["main", "master", "origin/main", "origin/master"]) {
     try {
       await run(dir, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
-      return ref;
+      existing.push(ref);
     } catch {
       // try next
     }
   }
-  return null;
+  if (existing.length <= 1) return existing[0] ?? null;
+  let best = existing[0]!;
+  let bestTime = -1;
+  for (const ref of existing) {
+    try {
+      const mb = (await run(dir, ["merge-base", ref, "HEAD"])).trim();
+      const t = Number((await run(dir, ["show", "-s", "--format=%ct", mb])).trim());
+      if (t > bestTime) {
+        bestTime = t;
+        best = ref;
+      }
+    } catch {
+      // unborn HEAD or unrelated histories: keep the first existing ref
+    }
+  }
+  return best;
 }
 
 /**
