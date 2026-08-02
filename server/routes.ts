@@ -122,7 +122,7 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   app.get("/repos", async (c) => c.json(await listRepos()));
 
   app.post("/repos/rescan", async (c) => {
-    const repos = await rescan();
+    const repos = await rescan(true); // user-forced: bypass per-repo stats cache
     broadcast({ type: "repos-changed" });
     return c.json(repos);
   });

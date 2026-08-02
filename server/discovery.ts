@@ -12,7 +12,7 @@
  * Hidden directories are skipped.
  */
 
-import { readdirSync, realpathSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, sep } from "node:path";
 import type { RepoInfo } from "@shared/types";
@@ -39,6 +39,14 @@ const ENRICH_CONCURRENCY = 8;
 const IGNORED = new Set<string>(TUNING.WATCH_IGNORE);
 
 let cache: { at: number; repos: RepoInfo[] } | null = null;
+/**
+ * Per-repo enrich results, reused while the repo's git-state fingerprint is
+ * unchanged and the entry is younger than DISCOVERY_STATS_TTL_MS. Git
+ * operations invalidate instantly (mtimes move); working-tree-only edits
+ * (dirty/changedFiles) surface within the TTL. openComments is re-applied
+ * fresh on every read.
+ */
+const enrichCache = new Map<string, { fp: string; at: number; info: RepoInfo }>();
 let inFlight: Promise<RepoInfo[]> | null = null;
 /** Dirs from the last scan; isKnownRepo fast path. */
 const knownDirs = new Set<string>();
@@ -125,6 +133,41 @@ export function scopeFor(url: string | null): string {
   return owner;
 }
 
+/**
+ * Mtime fingerprint of the git state feeding enrich(): per-checkout HEAD and
+ * index, plus the shared refs (commondir for linked worktrees — refs and
+ * packed-refs live with the main repo). Any commit, checkout, fetch, or
+ * branch update moves one of these.
+ */
+export function gitStateFingerprint(dir: string): string {
+  const gd = resolveGitDir(dir);
+  if (!gd) return "";
+  let common = gd;
+  try {
+    const rel = readFileSync(join(gd, "commondir"), "utf8").trim();
+    common = join(gd, rel);
+  } catch {
+    // main checkout: gitdir is the commondir
+  }
+  const parts: string[] = [];
+  for (const p of [
+    join(gd, "HEAD"),
+    join(gd, "index"),
+    join(common, "packed-refs"),
+    join(common, "refs"),
+    join(common, "refs", "heads"),
+    join(common, "refs", "remotes"),
+    join(common, "FETCH_HEAD"),
+  ]) {
+    try {
+      parts.push(String(statSync(p).mtimeMs));
+    } catch {
+      parts.push("-");
+    }
+  }
+  return parts.join(",");
+}
+
 async function enrich(dir: string, mainDir: string, openMap: Map<string, number>): Promise<RepoInfo> {
   const isWorktree = dir !== mainDir;
   const [hi, base, dirty, remote] = await Promise.all([
@@ -183,7 +226,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R
   return out;
 }
 
-async function doRescan(): Promise<RepoInfo[]> {
+async function doRescan(force: boolean): Promise<RepoInfo[]> {
   const map = await discover();
   let openMap: Map<string, number>;
   try {
@@ -191,13 +234,29 @@ async function doRescan(): Promise<RepoInfo[]> {
   } catch {
     openMap = new Map(); // DB not opened (tests)
   }
+  const now = Date.now();
   const enriched = await mapLimit([...map.entries()], ENRICH_CONCURRENCY, async ([dir, main]) => {
+    const fp = gitStateFingerprint(dir);
+    const hit = enrichCache.get(dir);
+    if (
+      !force &&
+      hit &&
+      hit.fp === fp &&
+      fp !== "" &&
+      now - hit.at < TUNING.DISCOVERY_STATS_TTL_MS
+    ) {
+      return { ...hit.info, openComments: openMap.get(dir) ?? 0 };
+    }
     try {
-      return await enrich(dir, main, openMap);
+      const info = await enrich(dir, main, openMap);
+      enrichCache.set(dir, { fp: gitStateFingerprint(dir), at: now, info });
+      return info;
     } catch {
+      enrichCache.delete(dir);
       return null; // broken checkout: drop from the list rather than failing all repos
     }
   });
+  for (const dir of enrichCache.keys()) if (!map.has(dir)) enrichCache.delete(dir);
   const repos = enriched.filter((r) => r !== null);
   repos.sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0));
   knownDirs.clear();
@@ -212,9 +271,13 @@ export async function listRepos(): Promise<RepoInfo[]> {
   return rescan();
 }
 
-/** Force a filesystem re-scan, returns the fresh list. */
-export async function rescan(): Promise<RepoInfo[]> {
-  inFlight ??= doRescan().finally(() => {
+/**
+ * Filesystem re-scan, returns the fresh list. `force` bypasses the per-repo
+ * stats cache (the UI's Rescan button); the slow timer and listRepos reuse
+ * cached stats while each repo's git state is unchanged.
+ */
+export async function rescan(force = false): Promise<RepoInfo[]> {
+  inFlight ??= doRescan(force).finally(() => {
     inFlight = null;
   });
   return inFlight;

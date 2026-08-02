@@ -13,6 +13,14 @@ export const TUNING = {
   /** Re-run discovery this often even without a rescan request; repos appear rarely, so keep it slow. */
   DISCOVERY_INTERVAL_MS: 5 * 60_000,
 
+  /**
+   * Per-repo enrich results are reused while the repo's git-state mtimes are
+   * unchanged AND the entry is younger than this. Git operations invalidate
+   * instantly; only working-tree-only edits (dirty, changed count) can lag,
+   * bounded by this window.
+   */
+  DISCOVERY_STATS_TTL_MS: 60_000,
+
   /** Checkouts with git activity newer than this count as active on the homepage. */
   ACTIVE_WINDOW_MS: 7 * 24 * 60 * 60_000,
 
