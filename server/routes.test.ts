@@ -1,7 +1,14 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { symlinkSync } from "node:fs";
 import { join } from "node:path";
-import type { Comment, CommentListResponse, DiffResponse, ServerMessage } from "@shared/types";
+import type {
+  Comment,
+  CommentListResponse,
+  DiffResponse,
+  DiffSummaryResponse,
+  FileDiffResponse,
+  ServerMessage,
+} from "@shared/types";
 import { config } from "./config";
 import { closeDb, openDb } from "./db";
 import { hashContent } from "./git";
@@ -172,5 +179,57 @@ describe("routes", () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(await res.json())).toBe(true);
     expect(sent).toContainEqual({ type: "repos-changed" });
+  });
+});
+
+describe("GET /diff/summary and /diff/file", () => {
+  test("summary joins seen/stale; per-file serves hunks with seen join", async () => {
+    const dir = makeRepo("routes-summary");
+    git(dir, "checkout", "-b", "f");
+    write(dir, "a.txt", "edited\n");
+    write(dir, "new.txt", "n1\n");
+    const q = `dir=${encodeURIComponent(dir)}&base=main`;
+
+    const bad = await app.request(`/diff/summary?dir=${encodeURIComponent(dir)}&base=nope`);
+    expect(bad.status).toBe(400);
+
+    const res = await app.request(`/diff/summary?${q}`);
+    expect(res.status).toBe(200);
+    const summary = (await res.json()) as DiffSummaryResponse;
+    const a = summary.files.find((f) => f.path === "a.txt")!;
+    expect(a.status).toBe("modified");
+    expect(a.contentHash).toBe(hashContent("edited\n"));
+    expect("hunks" in a).toBe(false);
+    expect(summary.files.find((f) => f.path === "new.txt")!.status).toBe("untracked");
+
+    await json("PUT", "/seen", {
+      dir,
+      base: "main",
+      path: "a.txt",
+      contentHash: a.contentHash,
+      seen: true,
+    });
+    const summary2 = (await (
+      await app.request(`/diff/summary?${q}`)
+    ).json()) as DiffSummaryResponse;
+    expect(summary2.files.find((f) => f.path === "a.txt")!.seen).toBe(true);
+
+    const fileRes = await app.request(`/diff/file?${q}&path=a.txt`);
+    expect(fileRes.status).toBe(200);
+    const fd = (await fileRes.json()) as FileDiffResponse;
+    expect(fd.file.path).toBe("a.txt");
+    expect(fd.file.hunks).toHaveLength(1);
+    expect(fd.file.seen).toBe(true);
+
+    const untrackedRes = await app.request(`/diff/file?${q}&path=new.txt`);
+    const ufd = (await untrackedRes.json()) as FileDiffResponse;
+    expect(ufd.file.status).toBe("untracked");
+    expect(ufd.file.hunks[0]!.lines).toEqual([{ kind: "add", newLine: 1, text: "n1" }]);
+
+    const missing = await app.request(`/diff/file?${q}&path=unchanged.txt`);
+    expect(missing.status).toBe(404);
+
+    const escape = await app.request(`/diff/file?${q}&path=${encodeURIComponent("../x")}`);
+    expect(escape.status).toBe(400);
   });
 });

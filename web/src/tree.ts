@@ -5,7 +5,7 @@
  * follow that order so the rail and the page never disagree.
  */
 
-import type { FileDiff } from "@shared/types";
+import type { FileSummary } from "@shared/types";
 
 export interface DirNode {
   type: "dir";
@@ -18,17 +18,17 @@ export interface DirNode {
 
 export interface FileNode {
   type: "file";
-  file: FileDiff;
+  file: FileSummary;
 }
 
 export type TreeNode = DirNode | FileNode;
 
 interface RawDir {
   dirs: Map<string, RawDir>;
-  files: FileDiff[];
+  files: FileSummary[];
 }
 
-export function buildFileTree(files: FileDiff[]): TreeNode[] {
+export function buildFileTree(files: FileSummary[]): TreeNode[] {
   const root: RawDir = { dirs: new Map(), files: [] };
   for (const f of files) {
     const parts = f.path.split("/");
@@ -67,13 +67,13 @@ export function buildFileTree(files: FileDiff[]): TreeNode[] {
   return toNodes(root, "");
 }
 
-function fileName(f: FileDiff): string {
+function fileName(f: FileSummary): string {
   return f.path.slice(f.path.lastIndexOf("/") + 1);
 }
 
 /** Files in tree (visual) order. */
-export function flattenTree(nodes: TreeNode[]): FileDiff[] {
-  const out: FileDiff[] = [];
+export function flattenTree(nodes: TreeNode[]): FileSummary[] {
+  const out: FileSummary[] = [];
   const walk = (ns: TreeNode[]) => {
     for (const n of ns) {
       if (n.type === "dir") walk(n.children);

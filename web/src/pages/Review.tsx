@@ -10,8 +10,8 @@ import type {
   CommentAnchor,
   CommentListResponse,
   CommentPatchRequest,
-  DiffResponse,
-  FileDiff,
+  DiffSummaryResponse,
+  FileSummary,
 } from "@shared/types";
 import * as api from "../api";
 import { CommentThread } from "../components/CommentThread";
@@ -21,7 +21,7 @@ import { FileNav } from "../components/FileNav";
 import { HelpOverlay } from "../components/HelpOverlay";
 import { LiveDot } from "../components/LiveDot";
 import { buildFileTree, flattenTree } from "../tree";
-import { basename, buildThreads, cx, lineKey, shortSha, type Thread } from "../util";
+import { basename, buildThreads, cx, shortSha, type Thread } from "../util";
 import { useRevSocket } from "../ws";
 
 const HEADER_PX = 48;
@@ -41,9 +41,11 @@ export function Review() {
   const [, navigate] = useLocation();
   const qc = useQueryClient();
 
+  // Summary first (no hunks — near-instant even on huge diffs); each DiffFile
+  // streams its own hunks in as it approaches the viewport.
   const diffQ = useQuery({
-    queryKey: ["diff", dir, base],
-    queryFn: () => api.getDiff(dir, base),
+    queryKey: ["diff-summary", dir, base],
+    queryFn: () => api.getDiffSummary(dir, base),
     enabled: !!dir && !!base,
   });
   // No base filter: threads from earlier reviews against other bases stay
@@ -56,7 +58,12 @@ export function Review() {
 
   const wsStatus = useRevSocket(dir || undefined, (msg) => {
     if (msg.type === "diff-invalidated" && msg.dir === dir) {
-      qc.invalidateQueries({ queryKey: ["diff", dir] });
+      qc.invalidateQueries({ queryKey: ["diff-summary", dir] });
+      if (msg.paths.length > 0) {
+        for (const p of msg.paths) qc.invalidateQueries({ queryKey: ["diff-file", dir, base, p] });
+      } else {
+        qc.invalidateQueries({ queryKey: ["diff-file", dir] });
+      }
     } else if (msg.type === "comments-changed" && msg.dir === dir) {
       qc.invalidateQueries({ queryKey: ["comments", dir] });
     }
@@ -65,7 +72,7 @@ export function Review() {
   const seenMut = useMutation({
     mutationFn: api.putSeen,
     onMutate: (req) => {
-      qc.setQueryData<DiffResponse>(["diff", dir, base], (old) =>
+      qc.setQueryData<DiffSummaryResponse>(["diff-summary", dir, base], (old) =>
         old
           ? {
               ...old,
@@ -76,7 +83,7 @@ export function Review() {
           : old,
       );
     },
-    onError: () => qc.invalidateQueries({ queryKey: ["diff", dir, base] }),
+    onError: () => qc.invalidateQueries({ queryKey: ["diff-summary", dir, base] }),
   });
   const createMut = useMutation({
     mutationFn: api.postComment,
@@ -112,12 +119,15 @@ export function Review() {
   });
   const fetchMut = useMutation({
     mutationFn: () => api.postFetch({ dir, base }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["diff", dir] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["diff-summary", dir] });
+      qc.invalidateQueries({ queryKey: ["diff-file", dir] });
+    },
   });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => fetchMut.reset(), [dir, base]);
 
-  const toggleSeen = (file: FileDiff, seen: boolean) =>
+  const toggleSeen = (file: FileSummary, seen: boolean) =>
     seenMut.mutate({ dir, base, path: file.path, contentHash: file.contentHash, seen });
   const createComment = (anchor: CommentAnchor | null, body: string) =>
     createMut.mutate({ dir, base, anchor: anchor ?? undefined, author: "user", body });
@@ -137,52 +147,27 @@ export function Review() {
   const tree = useMemo(() => buildFileTree(diffQ.data?.files ?? []), [diffQ.data]);
   const files = useMemo(() => flattenTree(tree), [tree]);
 
-  // Route every thread: to its diff line, to its file's detached list, or to
-  // the review-level panel (unanchored, or file absent from this diff).
-  const { byFile, detachedByFile, reviewLevel, unresolvedByFile } = useMemo(() => {
+  // Route threads by file: to their file's DiffFile (which places them on
+  // lines once its hunks load), or to the review-level panel (unanchored, or
+  // file absent from this diff).
+  const { threadsByFile, reviewLevel, unresolvedByFile } = useMemo(() => {
     const threads = buildThreads(commentsQ.data?.comments ?? []);
-    const lineSets = new Map<string, Set<string>>();
-    for (const f of files) {
-      const s = new Set<string>();
-      for (const h of f.hunks) {
-        for (const l of h.lines) {
-          if (l.oldLine != null) s.add(lineKey("old", l.oldLine));
-          if (l.newLine != null) s.add(lineKey("new", l.newLine));
-        }
-      }
-      lineSets.set(f.path, s);
-    }
-    const byFile = new Map<string, Map<string, Thread[]>>();
-    const detachedByFile = new Map<string, Thread[]>();
+    const inDiff = new Set(files.map((f) => f.path));
+    const threadsByFile = new Map<string, Thread[]>();
     const reviewLevel: Thread[] = [];
     const unresolvedByFile = new Map<string, number>();
     for (const t of threads) {
       const a = t.root.anchor;
-      if (!a || !lineSets.has(a.file)) {
+      if (!a || !inDiff.has(a.file)) {
         reviewLevel.push(t);
         continue;
       }
+      threadsByFile.set(a.file, [...(threadsByFile.get(a.file) ?? []), t]);
       if (t.root.resolvedAt == null) {
         unresolvedByFile.set(a.file, (unresolvedByFile.get(a.file) ?? 0) + 1);
       }
-      // Threads follow the code: the server re-anchors "new"-side comments
-      // against the working tree (resolvedLine). Try that first, fall back to
-      // the original anchor line; detach only when neither is in the diff.
-      const rl = t.root.resolvedLine;
-      const candidates =
-        a.side === "new" && typeof rl === "number" && rl !== a.line
-          ? [lineKey("new", rl), lineKey(a.side, a.line)]
-          : [lineKey(a.side, a.line)];
-      const k = candidates.find((c) => lineSets.get(a.file)!.has(c));
-      if (k != null) {
-        const m = byFile.get(a.file) ?? new Map<string, Thread[]>();
-        m.set(k, [...(m.get(k) ?? []), t]);
-        byFile.set(a.file, m);
-      } else {
-        detachedByFile.set(a.file, [...(detachedByFile.get(a.file) ?? []), t]);
-      }
     }
-    return { byFile, detachedByFile, reviewLevel, unresolvedByFile };
+    return { threadsByFile, reviewLevel, unresolvedByFile };
   }, [commentsQ.data, files]);
 
   // Current-file tracking (scroll spy + j/k target).
@@ -515,8 +500,7 @@ export function Review() {
                 currentBase={base}
                 file={f}
                 mode={mode}
-                threadsByLine={byFile.get(f.path) ?? new Map()}
-                detached={detachedByFile.get(f.path) ?? []}
+                threads={threadsByFile.get(f.path) ?? []}
                 isCurrent={currentPath === f.path}
                 onToggleSeen={toggleSeen}
                 onCreateComment={(anchor, body) => createComment(anchor, body)}

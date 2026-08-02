@@ -5,6 +5,8 @@ import { TUNING } from "@shared/tuning";
 import {
   changedFileCount,
   computeDiff,
+  computeDiffSummary,
+  computeFileDiff,
   defaultBase,
   divergence,
   GitError,
@@ -378,5 +380,63 @@ describe("defaultBase ref choice", () => {
     git(dir, "checkout", "-b", "feature");
 
     expect(await defaultBase(dir)).toBe("main");
+  });
+});
+
+describe("computeDiffSummary / computeFileDiff", () => {
+  async function scenario() {
+    const dir = makeRepo("summary", {
+      "a.txt": "one\ntwo\nthree\n",
+      "gone.txt": "bye\n",
+      "orig.txt": "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n",
+    });
+    writeFileSync(join(dir, "img.bin"), new Uint8Array([0x89, 0x50, 0x00, 0x01]));
+    git(dir, "add", "-A");
+    git(dir, "commit", "-m", "binary");
+    git(dir, "checkout", "-b", "feature");
+    write(dir, "a.txt", "one\nTWO\nthree\n");
+    rmSync(join(dir, "gone.txt"));
+    git(dir, "mv", "orig.txt", "moved.txt");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-m", "feature work");
+    write(dir, "a.txt", "one\nTWO\nthree\nfour\n"); // uncommitted on top
+    writeFileSync(join(dir, "img.bin"), new Uint8Array([0x89, 0x50, 0xff, 0xfe]));
+    write(dir, "brand/new.txt", "n1\nn2\n");
+    return dir;
+  }
+
+  test("summary lists the same files as the full diff, minus hunks", async () => {
+    const dir = await scenario();
+    const [full, summary] = await Promise.all([
+      computeDiff(dir, "main"),
+      computeDiffSummary(dir, "main"),
+    ]);
+    expect(summary.mergeBase).toBe(full.mergeBase);
+    expect(summary.branch).toBe("feature");
+
+    const strip = (fs: Array<Record<string, unknown>>) =>
+      fs
+        .map(({ hunks: _h, ...rest }) => rest)
+        .sort((x, y) => String(x.path).localeCompare(String(y.path)));
+    expect(strip(summary.files as never)).toEqual(strip(full.files as never));
+    expect(summary.files.every((f) => !("hunks" in f))).toBe(true);
+  });
+
+  test("per-file diff matches the corresponding slice of the full diff", async () => {
+    const dir = await scenario();
+    const full = await computeDiff(dir, "main");
+    for (const f of full.files) {
+      const single = await computeFileDiff(dir, "main", f.path, f.oldPath);
+      expect(single).toEqual(f);
+    }
+  });
+
+  test("renamed file without oldPath does not crash; unknown path → null", async () => {
+    const dir = await scenario();
+    expect(await computeFileDiff(dir, "main", "nope.txt")).toBeNull();
+    // without the old side in the pathspec, rename pairing degrades but returns the file
+    const degraded = await computeFileDiff(dir, "main", "moved.txt");
+    expect(degraded).not.toBeNull();
+    expect(degraded!.path).toBe("moved.txt");
   });
 });

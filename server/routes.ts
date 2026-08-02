@@ -31,7 +31,16 @@ import {
 } from "./db";
 import { resolveComments } from "./anchor";
 import { isKnownRepo, listRepos, rescan } from "./discovery";
-import { baseBehind, computeDiff, fetchBase, GitError, hashContent, readFile } from "./git";
+import {
+  baseBehind,
+  computeDiff,
+  computeDiffSummary,
+  computeFileDiff,
+  fetchBase,
+  GitError,
+  hashContent,
+  readFile,
+} from "./git";
 
 /**
  * Resolve a repo-relative path inside `dir`, or null when it escapes
@@ -132,6 +141,43 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       f.stale = !f.seen;
     }
     return c.json(diff);
+  });
+
+  app.get("/diff/summary", async (c) => {
+    const dir = c.req.query("dir");
+    const base = c.req.query("base");
+    if (!dir || !base) return c.json({ error: "dir and base are required" }, 400);
+    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    const summary = await computeDiffSummary(dir, base);
+    const seen = seenHashes(dir, base);
+    for (const f of summary.files) {
+      const h = seen.get(f.path);
+      if (h === undefined) continue;
+      f.seen = h === f.contentHash;
+      f.stale = !f.seen;
+    }
+    return c.json(summary);
+  });
+
+  app.get("/diff/file", async (c) => {
+    const dir = c.req.query("dir");
+    const base = c.req.query("base");
+    const path = c.req.query("path");
+    const oldPath = c.req.query("oldPath") || undefined;
+    if (!dir || !base || !path) return c.json({ error: "dir, base and path are required" }, 400);
+    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (resolveInRepo(dir, path) === null) return c.json({ error: `path escapes repo: ${path}` }, 400);
+    if (oldPath !== undefined && resolveInRepo(dir, oldPath) === null) {
+      return c.json({ error: `path escapes repo: ${oldPath}` }, 400);
+    }
+    const file = await computeFileDiff(dir, base, path, oldPath);
+    if (file === null) return c.json({ error: `no changes for ${path}` }, 404);
+    const h = seenHashes(dir, base).get(file.path);
+    if (h !== undefined) {
+      file.seen = h === file.contentHash;
+      file.stale = !file.seen;
+    }
+    return c.json({ dir, base, file, computedAt: Date.now() });
   });
 
   app.get("/file", async (c) => {

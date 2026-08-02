@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import {
   useCallback,
   useEffect,
@@ -11,7 +12,7 @@ import type {
   CommentAnchor,
   DiffHunk,
   DiffLine,
-  FileDiff,
+  FileSummary,
 } from "@shared/types";
 import { TUNING } from "@shared/tuning";
 import * as api from "../api";
@@ -22,7 +23,7 @@ import { AuthorChip, CommentThread, threadShell } from "./CommentThread";
 import { Composer } from "./Composer";
 
 // "M" stays neutral so amber only ever means attention (stale, open, current).
-const STATUS_GLYPH: Record<FileDiff["status"], { glyph: string; cls: string; label: string }> = {
+const STATUS_GLYPH: Record<FileSummary["status"], { glyph: string; cls: string; label: string }> = {
   modified: { glyph: "M", cls: "text-mute", label: "modified" },
   added: { glyph: "A", cls: "text-add", label: "added" },
   deleted: { glyph: "D", cls: "text-del", label: "deleted" },
@@ -36,14 +37,12 @@ interface DiffFileProps {
   dir: string;
   /** Base ref of the review; threads from other bases get a label. */
   currentBase: string;
-  file: FileDiff;
+  file: FileSummary;
   mode: DiffMode;
-  /** lineKey("side:line") → threads anchored there. */
-  threadsByLine: Map<string, Thread[]>;
-  /** Threads anchored to this file whose line no longer exists in the diff. */
-  detached: Thread[];
+  /** All threads anchored to this file; placed on lines once hunks load. */
+  threads: Thread[];
   isCurrent: boolean;
-  onToggleSeen: (file: FileDiff, seen: boolean) => void;
+  onToggleSeen: (file: FileSummary, seen: boolean) => void;
   onCreateComment: (anchor: CommentAnchor, body: string) => void;
   onReply: (root: Comment, body: string) => void;
   onResolve: (root: Comment, resolved: boolean) => void;
@@ -57,8 +56,7 @@ export function DiffFile({
   currentBase,
   file,
   mode,
-  threadsByLine,
-  detached,
+  threads,
   isCurrent,
   onToggleSeen,
   onCreateComment,
@@ -88,8 +86,40 @@ export function DiffFile({
     prevStale.current = file.stale;
   }, [file.stale]);
 
-  const flat = useMemo(() => file.hunks.flatMap((h) => h.lines), [file.hunks]);
-  const spans = useMemo(() => intralineSpans(file.hunks), [file.hunks]);
+  const status = STATUS_GLYPH[file.status];
+  // Summary alone tells whether there is anything to show: binary and
+  // mode-only changes have no lines; oversized untracked files report 0.
+  const canExpand = !file.binary && changed > 0;
+  const canEdit = !file.binary && file.status !== "deleted";
+  // Whether anything renders below the header (diff table or quick-edit).
+  const open = editing || (expanded && canExpand);
+
+  // Hunks stream in per file: fetched only once expanded AND near the
+  // viewport, so opening a huge review costs nothing up front.
+  const ownRef = useRef<HTMLElement | null>(null);
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    if (near || !open) return;
+    const el = ownRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => entries.some((e) => e.isIntersecting) && setNear(true),
+      { rootMargin: `${TUNING.HUNK_PREFETCH_MARGIN_PX}px 0px` },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [near, open]);
+
+  const hunksQ = useQuery({
+    queryKey: ["diff-file", dir, currentBase, file.path, file.contentHash],
+    queryFn: () => api.getFileDiff(dir, currentBase, file.path, file.oldPath),
+    enabled: canExpand && expanded && near,
+    staleTime: Infinity,
+  });
+  const hunks = useMemo(() => hunksQ.data?.file.hunks ?? [], [hunksQ.data]);
+
+  const flat = useMemo(() => hunks.flatMap((h) => h.lines), [hunks]);
+  const spans = useMemo(() => intralineSpans(hunks), [hunks]);
   const [tokens, setTokens] = useState<TokenLine[] | null>(null);
   useEffect(() => {
     setTokens(null);
@@ -103,19 +133,38 @@ export function DiffFile({
     };
   }, [expanded, file.binary, file.path, file.contentHash, flat]);
 
-  const unresolved = useMemo(() => {
-    let n = 0;
-    for (const list of threadsByLine.values())
-      for (const t of list) if (t.root.resolvedAt == null) n++;
-    for (const t of detached) if (t.root.resolvedAt == null) n++;
-    return n;
-  }, [threadsByLine, detached]);
+  // Place threads on their lines (server-re-anchored resolvedLine first,
+  // original anchor as fallback); the rest are detached. Placement needs
+  // hunks — until they load, nothing is declared detached.
+  const { threadsByLine, detached } = useMemo(() => {
+    const byLine = new Map<string, Thread[]>();
+    const rest: Thread[] = [];
+    if (threads.length === 0 || hunksQ.data == null) return { threadsByLine: byLine, detached: rest };
+    const lines = new Set<string>();
+    for (const h of hunks) {
+      for (const l of h.lines) {
+        if (l.oldLine != null) lines.add(lineKey("old", l.oldLine));
+        if (l.newLine != null) lines.add(lineKey("new", l.newLine));
+      }
+    }
+    for (const t of threads) {
+      const a = t.root.anchor!;
+      const rl = t.root.resolvedLine;
+      const candidates =
+        a.side === "new" && typeof rl === "number" && rl !== a.line
+          ? [lineKey("new", rl), lineKey(a.side, a.line)]
+          : [lineKey(a.side, a.line)];
+      const k = candidates.find((c) => lines.has(c));
+      if (k != null) byLine.set(k, [...(byLine.get(k) ?? []), t]);
+      else rest.push(t);
+    }
+    return { threadsByLine: byLine, detached: rest };
+  }, [threads, hunks, hunksQ.data]);
 
-  const status = STATUS_GLYPH[file.status];
-  const canExpand = !file.binary && file.hunks.length > 0;
-  const canEdit = !file.binary && file.status !== "deleted";
-  // Whether anything renders below the header (diff table or quick-edit).
-  const open = editing || (expanded && canExpand);
+  const unresolved = useMemo(
+    () => threads.filter((t) => t.root.resolvedAt == null).length,
+    [threads],
+  );
 
   // Collapse on mark-seen, expand on unmark — regardless of which control
   // (header checkbox, file nav, `v` key) flipped it.
@@ -196,7 +245,7 @@ export function DiffFile({
   const rows: ReactNode[] = [];
   if (expanded && !editing) {
     let flatIdx = 0;
-    file.hunks.forEach((hunk, hi) => {
+    hunks.forEach((hunk, hi) => {
       rows.push(
         split ? (
           <tr key={`h${hi}`} ref={(el) => hunkRef?.(hi, el)}>
@@ -312,7 +361,10 @@ export function DiffFile({
 
   return (
     <section
-      ref={sectionRef}
+      ref={(el) => {
+        ownRef.current = el;
+        sectionRef(el);
+      }}
       data-path={file.path}
       className={cx(
         // No overflow-hidden here: it would turn the section into the sticky
@@ -418,7 +470,22 @@ export function DiffFile({
       <div className="overflow-hidden rounded-b-[5px]">
       {editing ? (
         <QuickEditPanel dir={dir} path={file.path} onClose={() => setEditing(false)} />
-      ) : !open ? null : (
+      ) : !open ? null : hunksQ.data == null ? (
+        hunksQ.isError ? (
+          <div className="flex items-center gap-3 px-4 py-3">
+            <p className="font-mono text-[12px] text-del">{(hunksQ.error as Error).message}</p>
+            <button
+              type="button"
+              onClick={() => hunksQ.refetch()}
+              className="text-[12px] text-mute hover:text-fg"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <HunkSkeleton changed={changed} />
+        )
+      ) : (
         <table className={cx("w-full border-collapse", split && "table-fixed")}>
           {split ? (
             <colgroup>
@@ -438,7 +505,7 @@ export function DiffFile({
         </table>
       )}
 
-      {expanded && !editing && detached.length > 0 && (
+      {expanded && !editing && hunksQ.data != null && detached.length > 0 && (
         <div className="border-t border-edge-soft">
           <p className="px-3 pt-2 text-[11px] text-faint">
             Couldn't re-anchor — the commented lines no longer exist:
@@ -461,6 +528,27 @@ export function DiffFile({
       )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Diff-line-shaped placeholder shown while a file's hunks load. Row count
+ * approximates the incoming diff so the page doesn't jump when it lands.
+ */
+function HunkSkeleton({ changed }: { changed: number }) {
+  const rows = Math.max(3, Math.min(changed + 2, 24));
+  return (
+    <div aria-hidden className="animate-pulse py-1">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-center gap-3 px-2 py-[5px]">
+          <div className="h-2.5 w-16 shrink-0 rounded-sm bg-raise" />
+          <div
+            className="h-2.5 rounded-sm bg-raise"
+            style={{ width: `${22 + ((i * 37) % 58)}%` }}
+          />
+        </div>
+      ))}
+    </div>
   );
 }
 

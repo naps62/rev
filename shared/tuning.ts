@@ -37,6 +37,9 @@ export const TUNING = {
   /** Files above this many changed lines render collapsed by default; keeps first paint snappy on lockfile-sized diffs. */
   COLLAPSE_THRESHOLD_LINES: 400,
 
+  /** Expanded files start fetching their hunks this many px before entering the viewport. */
+  HUNK_PREFETCH_MARGIN_PX: 1200,
+
   /** Untracked files above this size are listed but not inlined (probably artifacts, and hashing them is wasted work). */
   MAX_UNTRACKED_BYTES: 512 * 1024,
 

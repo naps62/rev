@@ -41,7 +41,10 @@ Single Bun package. Dev: `bun run dev` (server + vite, proxied). Prod:
 - **git.ts** — shells out to `git`. Diff = `merge-base(base, HEAD)` →
   `git diff <mb>` against the *working tree* (not HEAD), plus untracked files
   from `git status --porcelain` rendered as added. Rename detection on.
-  Output parsed into `FileDiff[]` (see types).
+  Output parsed into `FileDiff[]` (see types). Two cheaper views back the
+  streamed UI: `computeDiffSummary` (numstat only — file list + stats, no
+  content generated, near-constant cost) and `computeFileDiff` (one file's
+  hunks, pathspec-limited).
 - **discovery.ts** — scans configured roots (default `~/tea`, `REV_ROOTS`)
   for `.git` dirs, then `git worktree list` from each to catch worktrees
   living outside the roots. Cached, re-scanned on demand and on a slow timer.
@@ -59,7 +62,12 @@ Single Bun package. Dev: `bun run dev` (server + vite, proxied). Prod:
 ## Web
 
 React 19 + Tailwind v4. TanStack Query for data with WS-driven invalidation
-(`diff-invalidated` → refetch diff; `comment-*` → refetch comments). Wouter
+(`diff-invalidated` → refetch summary + touched file diffs; `comment-*` →
+refetch comments). The review page loads `/api/diff/summary` first — the file
+tree and headers paint immediately regardless of diff size — then each
+expanded file fetches its own hunks (`/api/diff/file`) once it comes within
+`HUNK_PREFETCH_MARGIN_PX` of the viewport, so opening a review never blocks
+on the largest file. Wouter
 for the two routes. Shiki (lazy, client-side) for syntax highlighting. The
 diff renderer is ours — a library viewer can't host inline comment threads,
 seen-tracking and inline editing the way we need.

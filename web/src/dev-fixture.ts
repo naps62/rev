@@ -11,8 +11,10 @@ import type {
   CommentPatchRequest,
   DiffLine,
   DiffResponse,
+  DiffSummaryResponse,
   FileContentResponse,
   FileDiff,
+  FileDiffResponse,
   FileWriteRequest,
   RepoInfo,
   SeenRequest,
@@ -780,6 +782,18 @@ export function fxGetDiff(dir: string, base: string): DiffResponse {
     throw Object.assign(new Error(`unknown ref: ${base}`), { status: 400 });
   }
   return clone(state.diff);
+}
+
+export function fxGetDiffSummary(dir: string, base: string): DiffSummaryResponse {
+  const full = fxGetDiff(dir, base);
+  return { ...full, files: full.files.map(({ hunks: _hunks, ...summary }) => summary) };
+}
+
+export function fxGetFileDiff(dir: string, base: string, path: string): FileDiffResponse {
+  const full = fxGetDiff(dir, base);
+  const file = full.files.find((f) => f.path === path);
+  if (!file) throw Object.assign(new Error(`no changes for ${path}`), { status: 404 });
+  return { dir, base, file, computedAt: Date.now() };
 }
 
 export function fxGetComments(dir: string): { comments: Comment[]; cursor: number } {

@@ -29,6 +29,10 @@ otherwise; "option" means a follow-up you can pick or drop.
 - **Agent wake-up** — `scripts/rev-watch.sh` blocks on the long-poll so a
   session can arm it in the background and be re-invoked on new comments
   instead of holding a polling loop.
+- **Diff-open latency** — was linear in diff size and blocked the whole view.
+  Now summary-first: `/api/diff/summary` (numstat, no hunks) paints the tree
+  instantly; each file streams its hunks via `/api/diff/file` when it nears
+  the viewport. `/api/diff` (full) remains for API consumers.
 
 ## Rejected for now (2026-08-02)
 
@@ -55,8 +59,10 @@ otherwise; "option" means a follow-up you can pick or drop.
   A `.revignore` or "hide untracked" toggle would clean this up.
 - Oversize untracked files are listed with no hunks and empty contentHash —
   indistinguishable from empty files until `FileDiff` grows a `skipped` field.
-- No diff virtualization; files over 400 changed lines start collapsed
-  instead. Fine until a monster diff is genuinely reviewed line by line.
+- No diff virtualization within a file; files over 400 changed lines start
+  collapsed instead. Total diff size no longer matters (per-file streaming),
+  but a single monster file genuinely reviewed line by line still renders in
+  one go.
 - Split (side-by-side) view not built; unified only.
 - `WATCH_IGNORE` matches directory names anywhere — a source dir literally
   named `build` would be invisible to watch/scan.

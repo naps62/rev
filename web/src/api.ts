@@ -10,7 +10,9 @@ import type {
   CommentListResponse,
   CommentPatchRequest,
   DiffResponse,
+  DiffSummaryResponse,
   FileContentResponse,
+  FileDiffResponse,
   FileWriteRequest,
   RepoInfo,
   SeenRequest,
@@ -74,6 +76,24 @@ export async function getDiff(dir: string, base: string): Promise<DiffResponse> 
   if (isFixture()) return tick((await fx()).fxGetDiff(dir, base));
   const q = new URLSearchParams({ dir, base });
   return request(`/api/diff?${q}`);
+}
+
+export async function getDiffSummary(dir: string, base: string): Promise<DiffSummaryResponse> {
+  if (isFixture()) return tick((await fx()).fxGetDiffSummary(dir, base));
+  const q = new URLSearchParams({ dir, base });
+  return request(`/api/diff/summary?${q}`);
+}
+
+export async function getFileDiff(
+  dir: string,
+  base: string,
+  path: string,
+  oldPath?: string,
+): Promise<FileDiffResponse> {
+  if (isFixture()) return tick((await fx()).fxGetFileDiff(dir, base, path));
+  const q = new URLSearchParams({ dir, base, path });
+  if (oldPath) q.set("oldPath", oldPath);
+  return request(`/api/diff/file?${q}`);
 }
 
 export async function getFile(dir: string, path: string, rev?: string): Promise<FileContentResponse> {

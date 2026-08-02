@@ -8,7 +8,15 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import type { DiffLine, DiffResponse, FileContentResponse, FileDiff } from "@shared/types";
+import type {
+  DiffLine,
+  DiffResponse,
+  DiffSummaryResponse,
+  FileContentResponse,
+  FileDiff,
+  FileStatus,
+  FileSummary,
+} from "@shared/types";
 import { TUNING } from "@shared/tuning";
 import { parseUnifiedDiff } from "./diff-parser";
 
@@ -77,7 +85,7 @@ function untrackedFromStatusZ(z: string): string[] {
  * listed with no hunks and contentHash "" (hashing artifacts is wasted work);
  * binary files get binary: true and no hunks.
  */
-async function untrackedFileDiff(dir: string, path: string): Promise<FileDiff> {
+async function untrackedFileDiff(dir: string, path: string, withHunks: boolean): Promise<FileDiff> {
   const base: FileDiff = {
     path,
     status: "untracked",
@@ -106,6 +114,7 @@ async function untrackedFileDiff(dir: string, path: string): Promise<FileDiff> {
   if (isBinaryBytes(bytes)) return { ...base, binary: true, contentHash };
   const textLines = decoder.decode(bytes).split("\n");
   if (textLines.at(-1) === "") textLines.pop(); // trailing newline artifact
+  if (!withHunks) return { ...base, additions: textLines.length, contentHash };
   const lines: DiffLine[] = textLines.map((text, i) => ({ kind: "add", newLine: i + 1, text }));
   const hunks =
     lines.length === 0
@@ -139,7 +148,7 @@ export async function computeDiff(dir: string, base: string): Promise<DiffRespon
     files.push({ ...p, contentHash, seen: false, stale: false });
   }
   for (const path of untrackedFromStatusZ(statusZ)) {
-    files.push(await untrackedFileDiff(dir, path));
+    files.push(await untrackedFileDiff(dir, path, true));
   }
 
   return {
@@ -152,6 +161,138 @@ export async function computeDiff(dir: string, base: string): Promise<DiffRespon
     computedAt: Date.now(),
     baseBehind: behind,
   };
+}
+
+/** `-z` numstat entry. Rename entries put "" in the inline slot and carry two path tokens after. */
+function parseNumstatZ(z: string): Array<{ additions: number; deletions: number; path: string; oldPath?: string; binary: boolean }> {
+  const out: Array<{ additions: number; deletions: number; path: string; oldPath?: string; binary: boolean }> = [];
+  const tokens = z.split("\0");
+  for (let i = 0; i < tokens.length; i++) {
+    const m = /^(\d+|-)\t(\d+|-)\t(.*)$/.exec(tokens[i]!);
+    if (!m) continue;
+    const binary = m[1] === "-";
+    const additions = binary ? 0 : Number(m[1]);
+    const deletions = binary ? 0 : Number(m[2]);
+    if (m[3] !== "") {
+      out.push({ additions, deletions, path: m[3]!, binary });
+    } else {
+      const oldPath = tokens[++i] ?? "";
+      const path = tokens[++i] ?? "";
+      out.push({ additions, deletions, path, oldPath, binary });
+    }
+  }
+  return out;
+}
+
+/** `-z` name-status entries → path → status letter (path = new path for renames). */
+function parseNameStatusZ(z: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const tokens = z.split("\0");
+  for (let i = 0; i < tokens.length; i++) {
+    const status = tokens[i]!;
+    if (!/^[A-Z]/.test(status)) continue;
+    const kind = status[0]!;
+    if (kind === "R" || kind === "C") {
+      i++; // old path
+      out.set(tokens[++i] ?? "", kind);
+    } else {
+      out.set(tokens[++i] ?? "", kind);
+    }
+  }
+  return out;
+}
+
+function statusFromLetter(letter: string | undefined, hasOldPath: boolean): FileStatus {
+  if (hasOldPath || letter === "R") return "renamed";
+  if (letter === "A") return "added";
+  if (letter === "D") return "deleted";
+  return "modified";
+}
+
+/**
+ * Hunk-less counterpart of computeDiff: same file list, stats from
+ * `--numstat` so no diff content is ever generated or parsed. Cost stays
+ * near-constant as the diff grows; hunks are served per file by
+ * computeFileDiff. `seen`/`stale` are filled by routes.
+ */
+export async function computeDiffSummary(dir: string, base: string): Promise<DiffSummaryResponse> {
+  const mergeBase = (await run(dir, ["merge-base", base, "HEAD"])).trim();
+  const [numstatZ, nameStatusZ, statusZ, hi, behind] = await Promise.all([
+    run(dir, ["diff", mergeBase, "--find-renames", "--numstat", "-z"]),
+    run(dir, ["diff", mergeBase, "--find-renames", "--name-status", "-z"]),
+    run(dir, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+    headInfo(dir),
+    baseBehind(dir, base),
+  ]);
+
+  const letters = parseNameStatusZ(nameStatusZ);
+  const files: FileSummary[] = [];
+  for (const e of parseNumstatZ(numstatZ)) {
+    const status = statusFromLetter(letters.get(e.path), e.oldPath !== undefined);
+    const contentHash = status === "deleted" ? "" : await hashWorkingFile(dir, e.path);
+    files.push({
+      path: e.path,
+      ...(e.oldPath !== undefined && e.oldPath !== e.path ? { oldPath: e.oldPath } : {}),
+      status,
+      binary: e.binary,
+      additions: e.additions,
+      deletions: e.deletions,
+      contentHash,
+      seen: false,
+      stale: false,
+    });
+  }
+  for (const path of untrackedFromStatusZ(statusZ)) {
+    const { hunks: _hunks, ...summary } = await untrackedFileDiff(dir, path, false);
+    files.push(summary);
+  }
+
+  return {
+    dir,
+    base,
+    mergeBase,
+    head: hi.head,
+    branch: hi.branch,
+    files,
+    computedAt: Date.now(),
+    baseBehind: behind,
+  };
+}
+
+/**
+ * Full diff of a single file against merge-base(base, HEAD), untracked files
+ * included. `oldPath` (from the summary) must be passed for renamed files —
+ * pathspec-limited diffs can't pair a rename without the old side. Null when
+ * the path has no changes.
+ */
+export async function computeFileDiff(
+  dir: string,
+  base: string,
+  path: string,
+  oldPath?: string,
+): Promise<FileDiff | null> {
+  const untracked = (
+    await run(dir, ["ls-files", "--others", "--exclude-standard", "-z", "--", path])
+  )
+    .split("\0")
+    .includes(path);
+  if (untracked) return untrackedFileDiff(dir, path, true);
+
+  const mergeBase = (await run(dir, ["merge-base", base, "HEAD"])).trim();
+  const pathspec = oldPath && oldPath !== path ? [path, oldPath] : [path];
+  const diffText = await run(dir, [
+    "diff",
+    mergeBase,
+    "--find-renames",
+    "--no-color",
+    `-U${TUNING.DIFF_CONTEXT_LINES}`,
+    "--",
+    ...pathspec,
+  ]);
+  const parsed = parseUnifiedDiff(diffText).find((p) => p.path === path);
+  if (!parsed) return null;
+  const contentHash = parsed.status === "deleted" ? "" : await hashWorkingFile(dir, path);
+  return { ...parsed, contentHash, seen: false, stale: false };
 }
 
 /** Read a file at a rev (null → working tree). 404s become GitError. */

@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import type { FileDiff } from "@shared/types";
+import type { FileSummary } from "@shared/types";
 import type { DirNode, TreeNode } from "../tree";
 import { flattenTree } from "../tree";
 import { cx } from "../util";
 
-const GLYPH: Record<FileDiff["status"], { g: string; cls: string }> = {
+const GLYPH: Record<FileSummary["status"], { g: string; cls: string }> = {
   modified: { g: "M", cls: "text-mute" },
   added: { g: "A", cls: "text-add" },
   deleted: { g: "D", cls: "text-del" },
@@ -17,7 +17,7 @@ interface FileNavProps {
   unresolvedByFile: Map<string, number>;
   currentPath: string | null;
   onSelect: (path: string) => void;
-  onToggleSeen: (file: FileDiff, seen: boolean) => void;
+  onToggleSeen: (file: FileSummary, seen: boolean) => void;
 }
 
 export function FileNav({
@@ -70,7 +70,7 @@ interface LevelProps {
   unresolvedByFile: Map<string, number>;
   currentPath: string | null;
   onSelect: (path: string) => void;
-  onToggleSeen: (file: FileDiff, seen: boolean) => void;
+  onToggleSeen: (file: FileSummary, seen: boolean) => void;
 }
 
 function TreeLevel(props: LevelProps) {
@@ -151,7 +151,7 @@ function DirRow(props: LevelProps & { node: DirNode }) {
   );
 }
 
-function FileRow(props: LevelProps & { file: FileDiff }) {
+function FileRow(props: LevelProps & { file: FileSummary }) {
   const { file: f, depth, unresolvedByFile, currentPath, onSelect, onToggleSeen } = props;
   const name = f.path.slice(f.path.lastIndexOf("/") + 1);
   const open = unresolvedByFile.get(f.path) ?? 0;

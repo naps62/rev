@@ -84,14 +84,14 @@ export interface DiffHunk {
   lines: DiffLine[];
 }
 
-export interface FileDiff {
+/** Per-file diff metadata without hunks — cheap to compute and ship. */
+export interface FileSummary {
   /** New path, repo-relative. For deletes, the old path. */
   path: string;
   /** Old path when renamed. */
   oldPath?: string;
   status: FileStatus;
   binary: boolean;
-  hunks: DiffHunk[];
   additions: number;
   deletions: number;
   /**
@@ -104,6 +104,10 @@ export interface FileDiff {
   seen: boolean;
   /** True when the file was marked seen at a different (older) contentHash. */
   stale: boolean;
+}
+
+export interface FileDiff extends FileSummary {
+  hunks: DiffHunk[];
 }
 
 export interface DiffResponse {
@@ -122,6 +126,19 @@ export interface DiffResponse {
    * count failed; 0 when up to date.
    */
   baseBehind: number | null;
+}
+
+/** Hunk-less diff overview: file list + stats, loaded before any hunks. */
+export interface DiffSummaryResponse extends Omit<DiffResponse, "files"> {
+  files: FileSummary[];
+}
+
+/** One file's full diff, fetched lazily per file. */
+export interface FileDiffResponse {
+  dir: string;
+  base: string;
+  file: FileDiff;
+  computedAt: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +280,9 @@ export type ServerMessage =
 //
 // GET    /api/repos                          → RepoInfo[]
 // POST   /api/repos/rescan                   → RepoInfo[]      (force re-discovery)
-// GET    /api/diff?dir&base                  → DiffResponse
+// GET    /api/diff?dir&base                  → DiffResponse    (full, all hunks)
+// GET    /api/diff/summary?dir&base          → DiffSummaryResponse (no hunks, fast)
+// GET    /api/diff/file?dir&base&path[&oldPath] → FileDiffResponse (one file's hunks)
 // GET    /api/file?dir&path[&rev]            → FileContentResponse
 // PUT    /api/file                           ← FileWriteRequest → FileContentResponse
 // GET    /api/comments?dir[&base][&since]    → CommentListResponse
