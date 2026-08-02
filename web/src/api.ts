@@ -14,6 +14,7 @@ import type {
   FileContentResponse,
   FileDiffResponse,
   FileWriteRequest,
+  InterdiffResponse,
   RefsResponse,
   RepoInfo,
   SeenRequest,
@@ -101,6 +102,16 @@ export async function getRefs(dir: string): Promise<RefsResponse> {
   if (isFixture()) return tick((await fx()).fxGetRefs(dir));
   const q = new URLSearchParams({ dir });
   return request(`/api/refs?${q}`);
+}
+
+export async function getInterdiff(
+  dir: string,
+  base: string,
+  path: string,
+): Promise<InterdiffResponse> {
+  if (isFixture()) return tick((await fx()).fxGetInterdiff(dir, base, path));
+  const q = new URLSearchParams({ dir, base, path });
+  return request(`/api/diff/interdiff?${q}`);
 }
 
 export async function getFile(dir: string, path: string, rev?: string): Promise<FileContentResponse> {
