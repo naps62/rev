@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import type { RepoInfo } from "@shared/types";
-import { TUNING } from "@shared/tuning";
+import type { RepoInfo } from "#shared/types";
+import { TUNING } from "#shared/tuning";
 import * as api from "../api";
 import { LiveDot } from "../components/LiveDot";
 import { basename, cx, relativeTime } from "../util";

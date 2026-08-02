@@ -16,8 +16,8 @@
 
 import { watch, type FSWatcher } from "chokidar";
 import { join, relative, sep } from "node:path";
-import { TUNING } from "@shared/tuning";
-import { ignoredPrefixes, resolveGitDir, watchableFileCount } from "./git";
+import { TUNING } from "#shared/tuning";
+import { ignoredPrefixes, resolveGitDir, watchableFileCount } from "./git.ts";
 
 export type WatchCallback = (dir: string, paths: string[]) => void;
 

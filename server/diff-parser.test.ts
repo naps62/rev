@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
-import { parseUnifiedDiff } from "./diff-parser";
+import { describe, test } from "node:test";
+import { expect } from "expect";
+import { parseUnifiedDiff } from "./diff-parser.ts";
 
 describe("parseUnifiedDiff", () => {
   test("empty input", () => {

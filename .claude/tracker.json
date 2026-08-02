@@ -3,6 +3,6 @@
   "defaultBranch": "main",
   "remoteHost": "gitea",
   "remoteBaseUrl": "https://git.naps.pt",
-  "buildCommand": "bun run typecheck && bun test && bun run build",
+  "buildCommand": "pnpm typecheck && pnpm test && pnpm build",
   "contextFiles": ["docs/ARCHITECTURE.md", "docs/DECISIONS.md"]
 }

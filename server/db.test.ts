@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, test } from "node:test";
+import { expect } from "expect";
 import { join } from "node:path";
-import type { CommentAnchor } from "@shared/types";
+import type { CommentAnchor } from "#shared/types";
 import {
   closeDb,
   createComment,
@@ -11,8 +12,8 @@ import {
   patchComment,
   seenHashes,
   setSeen,
-} from "./db";
-import { tmpdir } from "./testutil";
+} from "./db.ts";
+import { tmpdir } from "./testutil.ts";
 
 const anchor: CommentAnchor = { file: "src/a.ts", side: "new", line: 12, snippet: "const x = 1;" };
 

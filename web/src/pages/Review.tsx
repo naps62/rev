@@ -12,7 +12,7 @@ import type {
   CommentPatchRequest,
   DiffSummaryResponse,
   FileSummary,
-} from "@shared/types";
+} from "#shared/types";
 import * as api from "../api";
 import { CommentThread } from "../components/CommentThread";
 import { Composer } from "../components/Composer";

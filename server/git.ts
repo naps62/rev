@@ -6,7 +6,10 @@
  * linked worktree) and must work in both. Paths returned are repo-relative.
  */
 
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
+import { readFile as readFileBytes } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import type {
   DiffLine,
@@ -16,45 +19,50 @@ import type {
   FileDiff,
   FileStatus,
   FileSummary,
-} from "@shared/types";
-import { TUNING } from "@shared/tuning";
-import { parseUnifiedDiff } from "./diff-parser";
+} from "#shared/types";
+import { TUNING } from "#shared/tuning";
+import { parseUnifiedDiff } from "./diff-parser.ts";
 
 /** Thrown for git failures the API should surface as 400 (bad ref, not a repo). */
 export class GitError extends Error {
-  constructor(
-    message: string,
-    /** The git command that failed, for logs. */
-    public readonly command: string,
-  ) {
+  /** The git command that failed, for logs. */
+  readonly command: string;
+
+  constructor(message: string, command: string) {
     super(message);
+    this.command = command;
   }
 }
 
 /** Run git in `dir`; throws GitError on non-zero exit. */
-export async function run(dir: string, args: string[]): Promise<string> {
-  const proc = Bun.spawn(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
-  const [out, err, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (code !== 0) {
-    throw new GitError(err.trim() || `git ${args[0]} failed (exit ${code})`, `git ${args.join(" ")}`);
-  }
-  return out;
+export function run(dir: string, args: string[]): Promise<string> {
+  return new Promise((res, rej) => {
+    const proc = spawn("git", args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    let err = "";
+    proc.stdout.setEncoding("utf8").on("data", (chunk: string) => (out += chunk));
+    proc.stderr.setEncoding("utf8").on("data", (chunk: string) => (err += chunk));
+    proc.on("error", rej);
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        rej(new GitError(err.trim() || `git ${args[0]} failed (exit ${code})`, `git ${args.join(" ")}`));
+      } else {
+        res(out);
+      }
+    });
+  });
 }
 
 /** sha256 (hex, first 16 chars) of content — the contentHash everywhere. */
 export function hashContent(content: string | Uint8Array): string {
-  return new Bun.CryptoHasher("sha256").update(content).digest("hex").slice(0, 16);
+  return createHash("sha256").update(content).digest("hex").slice(0, 16);
 }
 
 const decoder = new TextDecoder();
 
 async function hashWorkingFile(dir: string, path: string): Promise<string> {
   try {
-    return hashContent(await Bun.file(join(dir, path)).bytes());
+    return hashContent(await readFileBytes(join(dir, path)));
   } catch {
     return "";
   }
@@ -106,7 +114,7 @@ async function untrackedFileDiff(dir: string, path: string, withHunks: boolean):
   if (size > TUNING.MAX_UNTRACKED_BYTES) return base;
   let bytes: Uint8Array;
   try {
-    bytes = await Bun.file(join(dir, path)).bytes();
+    bytes = await readFileBytes(join(dir, path));
   } catch {
     return base;
   }
@@ -298,9 +306,12 @@ export async function computeFileDiff(
 /** Read a file at a rev (null → working tree). 404s become GitError. */
 export async function readFile(dir: string, path: string, rev: string | null): Promise<FileContentResponse> {
   if (rev === null) {
-    const f = Bun.file(join(dir, path));
-    if (!(await f.exists())) throw new GitError(`no such file in working tree: ${path}`, "read");
-    const bytes = await f.bytes();
+    let bytes: Uint8Array;
+    try {
+      bytes = await readFileBytes(join(dir, path));
+    } catch {
+      throw new GitError(`no such file in working tree: ${path}`, "read");
+    }
     return { dir, path, rev, content: decoder.decode(bytes), contentHash: hashContent(bytes) };
   }
   const content = await run(dir, ["show", `${rev}:${path}`]);

@@ -17,7 +17,7 @@ import type {
   RefsResponse,
   RepoInfo,
   SeenRequest,
-} from "@shared/types";
+} from "#shared/types";
 
 export class ApiError extends Error {
   status: number;

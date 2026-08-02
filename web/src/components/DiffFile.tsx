@@ -13,8 +13,8 @@ import type {
   DiffHunk,
   DiffLine,
   FileSummary,
-} from "@shared/types";
-import { TUNING } from "@shared/tuning";
+} from "#shared/types";
+import { TUNING } from "#shared/tuning";
 import * as api from "../api";
 import { highlightLines, type TokenLine } from "../highlight";
 import { intralineSpans, type Span } from "../intraline";
