@@ -1,4 +1,4 @@
-import type { Comment } from "@shared/types";
+import type { Comment } from "#shared/types";
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");

@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
-import { scopeFor } from "./discovery";
+import { describe, test } from "node:test";
+import { expect } from "expect";
+import { scopeFor } from "./discovery.ts";
 
 // Default REV_PERSONAL_HOSTS: git.naps.pt (shared/tuning.ts).
 describe("scopeFor", () => {

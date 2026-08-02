@@ -18,7 +18,7 @@ import type {
   FileWriteRequest,
   RepoInfo,
   SeenRequest,
-} from "@shared/types";
+} from "#shared/types";
 
 const now = Date.now();
 const min = 60_000;
@@ -280,7 +280,7 @@ const watcherFile: FileDiff = {
       header: "",
       lines: [
         add(1, "import { watch, type FSWatcher } from \"chokidar\";"),
-        add(2, "import { TUNING } from \"@shared/tuning\";"),
+        add(2, "import { TUNING } from \"#shared/tuning\";"),
         add(3, ""),
         add(4, "const watchers = new Map<string, FSWatcher>();"),
         add(5, "const timers = new Map<string, ReturnType<typeof setTimeout>>();"),
@@ -794,6 +794,10 @@ export function fxGetFileDiff(dir: string, base: string, path: string): FileDiff
   const file = full.files.find((f) => f.path === path);
   if (!file) throw Object.assign(new Error(`no changes for ${path}`), { status: 404 });
   return { dir, base, file, computedAt: Date.now() };
+}
+
+export function fxGetRefs(dir: string): { dir: string; refs: string[] } {
+  return { dir, refs: ["main", "develop", "origin/main", "origin/develop", "spike/always-on-review"] };
 }
 
 export function fxGetComments(dir: string): { comments: Comment[]; cursor: number } {

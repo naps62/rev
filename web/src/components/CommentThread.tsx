@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Comment } from "@shared/types";
+import type { Comment } from "#shared/types";
 import { Markdown } from "../markdown";
 import { cx, relativeTime, type Thread } from "../util";
 import { Composer } from "./Composer";

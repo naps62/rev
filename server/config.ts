@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { TUNING } from "@shared/tuning";
+import { TUNING } from "#shared/tuning";
 
 export function expandHome(p: string): string {
   return p.startsWith("~") ? homedir() + p.slice(1) : p;

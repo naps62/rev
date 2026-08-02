@@ -30,7 +30,7 @@ export const TUNING = {
   /** Remote owners treated as personal on any host (your own github org). Override with REV_PERSONAL_OWNERS. */
   PERSONAL_OWNERS: ["naps62"],
 
-  /** Watcher debounce: coalesce bursts (git checkout, bun install) into one diff-invalidated event. */
+  /** Watcher debounce: coalesce bursts (git checkout, pnpm install) into one diff-invalidated event. */
   WATCH_DEBOUNCE_MS: 150,
 
   /** Dir names never watched or diffed: churn without review value. */

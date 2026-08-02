@@ -1,5 +1,7 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { before as beforeAll, describe, test } from "node:test";
+import { expect } from "expect";
 import { symlinkSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   Comment,
@@ -8,12 +10,12 @@ import type {
   DiffSummaryResponse,
   FileDiffResponse,
   ServerMessage,
-} from "@shared/types";
-import { config } from "./config";
-import { closeDb, openDb } from "./db";
-import { hashContent } from "./git";
-import { buildApi, resolveInRepo } from "./routes";
-import { git, makeRepo, SCRATCH, tmpdir, write } from "./testutil";
+} from "#shared/types";
+import { config } from "./config.ts";
+import { closeDb, openDb } from "./db.ts";
+import { hashContent } from "./git.ts";
+import { buildApi, resolveInRepo } from "./routes.ts";
+import { git, makeRepo, SCRATCH, tmpdir, write } from "./testutil.ts";
 
 // Fixture repos live in the scratchpad (outside $HOME); make it the only root
 // so rescans never touch the user's real repos.
@@ -71,7 +73,7 @@ describe("routes", () => {
 
     const bad = await app.request(`/diff?dir=${encodeURIComponent(dir)}&base=nope`);
     expect(bad.status).toBe(400);
-    expect(((await bad.json()) as { error: string }).error).toBeString();
+    expect(typeof ((await bad.json()) as { error: string }).error).toBe("string");
 
     const res = await app.request(`/diff?${q}`);
     expect(res.status).toBe(200);
@@ -114,7 +116,7 @@ describe("routes", () => {
     const ok = await json("PUT", "/file", { dir, path: "a.txt", content: "v2\n", baseHash: body.contentHash });
     expect(ok.status).toBe(200);
     expect(((await ok.json()) as { contentHash: string }).contentHash).toBe(hashContent("v2\n"));
-    expect(await Bun.file(join(dir, "a.txt")).text()).toBe("v2\n");
+    expect(await readFile(join(dir, "a.txt"), "utf8")).toBe("v2\n");
 
     const esc = await json("PUT", "/file", { dir, path: "../esc.txt", content: "x", baseHash: "" });
     expect(esc.status).toBe(400);
@@ -237,5 +239,27 @@ describe("GET /diff/summary and /diff/file", () => {
 
     const escape = await app.request(`/diff/file?${q}&path=${encodeURIComponent("../x")}`);
     expect(escape.status).toBe(400);
+  });
+});
+
+describe("GET /refs", () => {
+  test("lists local + remote refs, defaultBase first, excludes origin/HEAD", async () => {
+    const dir = makeRepo("routes-refs");
+    git(dir, "branch", "feat-x");
+    const head = git(dir, "rev-parse", "HEAD").trim();
+    git(dir, "update-ref", "refs/remotes/origin/main", head);
+    git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+
+    const res = await app.request(`/refs?dir=${encodeURIComponent(dir)}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { dir: string; refs: string[] };
+    expect(body.refs[0]).toBe("main"); // defaultBase leads
+    expect(body.refs).toContain("feat-x");
+    expect(body.refs).toContain("origin/main");
+    expect(body.refs).not.toContain("origin/HEAD");
+    expect(body.refs).not.toContain("origin");
+
+    const bad = await app.request("/refs?dir=/etc");
+    expect(bad.status).toBe(400);
   });
 });

@@ -9,8 +9,9 @@ ARCHITECTURE.md for the design and rejected options.
   chose a single polished prototype plus the "Rejected along the way" section
   in ARCHITECTURE.md. Two half-finished variants review worse than one that
   works end-to-end. (DECISIONS.md at the end summarizes the open choices.)
-- **Bun + Hono / React 19 + Vite + Tailwind v4** — bun is already the runtime
-  used across this machine's projects; built-in sqlite and WS remove deps.
+- **Node + Hono / React 19 + Vite + Tailwind v4** — plain Node 26 runs the
+  TypeScript server directly; built-in `node:sqlite` and `node --test` keep
+  deps small. (Originally Bun; migrated.)
 - **Stateless review URLs** (`/review?dir&base`) — agents construct them with
   zero API calls.
 - **Contract-first**: `shared/types.ts` frozen before implementation; both

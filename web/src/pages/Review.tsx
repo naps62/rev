@@ -12,7 +12,7 @@ import type {
   CommentPatchRequest,
   DiffSummaryResponse,
   FileSummary,
-} from "@shared/types";
+} from "#shared/types";
 import * as api from "../api";
 import { CommentThread } from "../components/CommentThread";
 import { Composer } from "../components/Composer";
@@ -54,6 +54,13 @@ export function Review() {
     queryKey: ["comments", dir],
     queryFn: () => api.getComments(dir),
     enabled: !!dir,
+  });
+  // Base candidates for the header picker; refs move rarely, cache generously.
+  const refsQ = useQuery({
+    queryKey: ["refs", dir],
+    queryFn: () => api.getRefs(dir),
+    enabled: !!dir,
+    staleTime: 5 * 60_000,
   });
 
   const wsStatus = useRevSocket(dir || undefined, (msg) => {
@@ -253,6 +260,13 @@ export function Review() {
     animRef.current = requestAnimationFrame(step);
   };
 
+  // Hovering a diff claims focus; ignored mid-glide so a rail click isn't
+  // hijacked by files sliding under the stationary-ish cursor.
+  const hoverFocus = (path: string) => {
+    if (glidingRef.current) return;
+    setCurrentPath(path);
+  };
+
   const [help, setHelp] = useState(false);
   const filesRef = useRef(files);
   filesRef.current = files;
@@ -366,8 +380,14 @@ export function Review() {
             spellCheck={false}
             aria-label="Base ref"
             title="Base ref — press Enter to re-diff"
+            list="base-refs"
             className="w-24 rounded-sm border border-edge bg-bg px-1.5 py-0.5 font-mono text-[12px] text-fg focus:border-accent/60 focus:outline-none max-sm:w-16"
           />
+          <datalist id="base-refs">
+            {(refsQ.data?.refs ?? []).map((r) => (
+              <option key={r} value={r} />
+            ))}
+          </datalist>
         </form>
         {diffQ.data && (
           <span
@@ -548,6 +568,7 @@ export function Review() {
                 mode={mode}
                 threads={threadsByFile.get(f.path) ?? []}
                 isCurrent={currentPath === f.path}
+                onHover={() => hoverFocus(f.path)}
                 onToggleSeen={toggleSeen}
                 onCreateComment={(anchor, body) => createComment(anchor, body)}
                 onReply={reply}

@@ -1,5 +1,6 @@
 /** Shared helpers for server tests: throwaway git fixture repos. */
 
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -13,11 +14,11 @@ export function tmpdir(prefix: string): string {
 }
 
 export function git(dir: string, ...args: string[]): string {
-  const proc = Bun.spawnSync(["git", ...args], { cwd: dir });
-  if (proc.exitCode !== 0) {
-    throw new Error(`git ${args.join(" ")} failed: ${proc.stderr.toString()}`);
+  const proc = spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+  if (proc.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${proc.stderr}`);
   }
-  return proc.stdout.toString();
+  return proc.stdout;
 }
 
 export function write(dir: string, rel: string, content: string | Uint8Array): void {

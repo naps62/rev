@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import type { FileSummary } from "@shared/types";
+import type { FileSummary } from "#shared/types";
 import type { DirNode, TreeNode } from "../tree";
 import { flattenTree } from "../tree";
 import { cx } from "../util";
+import { Checkbox } from "./Checkbox";
 
 const GLYPH: Record<FileSummary["status"], { g: string; cls: string }> = {
   modified: { g: "M", cls: "text-mute" },
@@ -107,18 +108,13 @@ function DirRow(props: LevelProps & { node: DirNode }) {
         className="group flex w-full cursor-pointer items-center gap-1.5 border-l border-transparent py-1 pr-2 hover:bg-raise/50"
         style={{ paddingLeft: 8 + depth * 14 }}
       >
-        <input
-          type="checkbox"
+        <Checkbox
           checked={allSeen}
-          ref={(el) => {
-            if (el) el.indeterminate = someSeen && !allSeen;
-          }}
+          indeterminate={someSeen && !allSeen}
           title={allSeen ? "Mark directory unseen" : "Mark directory seen"}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => {
-            for (const f of files) onToggleSeen(f, e.target.checked);
+          onChange={(checked) => {
+            for (const f of files) onToggleSeen(f, checked);
           }}
-          className="chk size-4"
         />
         <button
           type="button"
@@ -192,13 +188,10 @@ function FileRow(props: LevelProps & { file: FileSummary }) {
       )}
       style={{ paddingLeft: 8 + depth * 14 }}
     >
-      <input
-        type="checkbox"
+      <Checkbox
         checked={f.seen}
         title={f.seen ? "Mark unseen" : "Mark seen"}
-        onClick={(e) => e.stopPropagation()}
-        onChange={(e) => onToggleSeen(f, e.target.checked)}
-        className="chk size-4"
+        onChange={(checked) => onToggleSeen(f, checked)}
       />
       <span
         className={cx(

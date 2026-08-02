@@ -4,7 +4,7 @@
  * (git.ts hashes working-tree content, routes.ts joins seen-state).
  */
 
-import type { DiffHunk, DiffLine, FileStatus } from "@shared/types";
+import type { DiffHunk, DiffLine, FileStatus } from "#shared/types";
 
 export interface ParsedFileDiff {
   path: string;

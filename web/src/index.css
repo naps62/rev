@@ -71,6 +71,7 @@ summary {
 .chk {
   appearance: none;
   margin: 0;
+  position: relative;
   /* translucent mute: --color-edge disappears on the raise-colored file headers */
   border: 1px solid color-mix(in srgb, var(--color-mute) 45%, transparent);
   border-radius: 3px;
@@ -81,6 +82,15 @@ summary {
   transition:
     border-color 150ms,
     background-color 150ms;
+}
+
+/* Invisible hit-target: absorbs the row padding/gaps around the 16px box
+   (24px tall = full nav row) without shifting layout. ::after stays free
+   for the check/dash glyph. */
+.chk::before {
+  content: "";
+  position: absolute;
+  inset: -4px -6px;
 }
 
 .chk:hover {
@@ -113,6 +123,24 @@ summary {
   width: 56%;
   height: 2px;
   background: var(--color-bg);
+}
+
+/* File body open/close: 0fr↔1fr grid slide. Expo-out curve matches the
+   rail-click glide (exponential approach, ~250ms settle). */
+.file-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.file-body[data-open] {
+  grid-template-rows: 1fr;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-body {
+    transition: none;
+  }
 }
 
 /* Amber wash that fades out; applied when a file turns stale under the user. */

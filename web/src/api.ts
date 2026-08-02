@@ -14,9 +14,10 @@ import type {
   FileContentResponse,
   FileDiffResponse,
   FileWriteRequest,
+  RefsResponse,
   RepoInfo,
   SeenRequest,
-} from "@shared/types";
+} from "#shared/types";
 
 export class ApiError extends Error {
   status: number;
@@ -94,6 +95,12 @@ export async function getFileDiff(
   const q = new URLSearchParams({ dir, base, path });
   if (oldPath) q.set("oldPath", oldPath);
   return request(`/api/diff/file?${q}`);
+}
+
+export async function getRefs(dir: string): Promise<RefsResponse> {
+  if (isFixture()) return tick((await fx()).fxGetRefs(dir));
+  const q = new URLSearchParams({ dir });
+  return request(`/api/refs?${q}`);
 }
 
 export async function getFile(dir: string, path: string, rev?: string): Promise<FileContentResponse> {

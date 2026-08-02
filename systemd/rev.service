@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=%h/tea/yolo/rev
-ExecStart=%h/.bun/bin/bun server/index.ts
+ExecStart=/usr/bin/node server/index.ts
 Environment=NODE_ENV=production
 Environment=REV_ROOTS=%h
 Environment=REV_DEPTH=3

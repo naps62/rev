@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ClientMessage, ServerMessage } from "@shared/types";
+import type { ClientMessage, ServerMessage } from "#shared/types";
 import { isFixture } from "./api";
 
 export type WsStatus = "connecting" | "live" | "reconnecting" | "fixture";
