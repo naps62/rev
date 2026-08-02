@@ -70,12 +70,13 @@ export function CommentThread({
 }: CommentThreadProps) {
   const { root, replies } = thread;
   const resolved = root.resolvedAt != null;
-  const [expanded, setExpanded] = useState(!resolved);
+  // Expansion derives from resolved state so an (optimistic) resolve collapses
+  // in the same render as the click; the override only carries a manual
+  // expand/collapse and resets whenever resolved flips.
+  const [override, setOverride] = useState<boolean | null>(null);
+  const expanded = override ?? !resolved;
+  useEffect(() => setOverride(null), [resolved]);
   const [replying, setReplying] = useState(false);
-
-  // Resolving (optimistically or from another client) collapses right away;
-  // unresolving re-expands.
-  useEffect(() => setExpanded(!resolved), [resolved]);
 
   // Containment that separates conversation from diff: inset panel, left
   // accent in the thread author's color (amber = user, blue = agent).
@@ -89,7 +90,7 @@ export function CommentThread({
       <div className={shell}>
         <button
           type="button"
-          onClick={() => setExpanded(true)}
+          onClick={() => setOverride(true)}
           className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-mute transition-colors duration-150 hover:text-fg"
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -148,7 +149,7 @@ export function CommentThread({
         {resolved && (
           <button
             type="button"
-            onClick={() => setExpanded(false)}
+            onClick={() => setOverride(null)}
             className="ml-auto text-[12px] text-faint transition-colors duration-150 hover:text-mute"
           >
             Collapse
