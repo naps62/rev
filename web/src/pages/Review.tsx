@@ -292,14 +292,14 @@ export function Review() {
           });
           setCurrentPath(next.path);
         }
-      } else if (e.key === "u" || e.key === "U") {
+      } else if (e.key === "J" || e.key === "K") {
         if (fs.length === 0) return;
         e.preventDefault();
         // -1 (no current file) behaves like being on the first file
         const idx = Math.max(0, fs.findIndex((f) => f.path === currentRef.current));
         const wants = (f: (typeof fs)[number]) => !f.seen || f.stale;
         const order: typeof fs = [];
-        if (e.key === "u") {
+        if (e.key === "J") {
           for (let i = 1; i <= fs.length; i++) order.push(fs[(idx + i + fs.length) % fs.length]!);
         } else {
           for (let i = 1; i <= fs.length; i++) order.push(fs[(idx - i + 2 * fs.length) % fs.length]!);
@@ -326,7 +326,7 @@ export function Review() {
         void el.offsetWidth; // restart the animation when re-landing
         el.classList.add("hunk-flash");
         setTimeout(() => el.classList.remove("hunk-flash"), 1300);
-      } else if (e.key === "v") {
+      } else if (e.key === "v" || e.key === ".") {
         const f = fs.find((x) => x.path === currentRef.current);
         if (f) {
           seenMut.mutate({
@@ -629,7 +629,7 @@ export function Review() {
             </section>
 
             <p className="pb-4 text-center font-mono text-[11px] text-faint">
-              j/k files · u unseen · n/p hunks · v seen · ? shortcuts
+              j/k files · J/K unseen · n/p hunks · . seen · ? shortcuts
             </p>
           </main>
         </div>
