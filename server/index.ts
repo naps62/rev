@@ -56,6 +56,8 @@ function main(): void {
   wss.on("connection", (ws) => {
     const dirs = new Set<string>();
     socketDirs.set(ws, dirs);
+    // an 'error' with no listener would throw and take the process down
+    ws.on("error", () => {});
     ws.on("message", async (raw) => {
       let msg: ClientMessage;
       try {
