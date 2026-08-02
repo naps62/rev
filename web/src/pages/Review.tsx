@@ -190,6 +190,7 @@ export function Review() {
   // flick through every file passed on the way.
   const animRef = useRef<number | null>(null);
   const glidingRef = useRef(false);
+  const jumpToRef = useRef<(path: string) => void>(() => {});
   const cancelGlide = () => {
     if (animRef.current != null) cancelAnimationFrame(animRef.current);
     animRef.current = null;
@@ -259,6 +260,7 @@ export function Review() {
     };
     animRef.current = requestAnimationFrame(step);
   };
+  jumpToRef.current = jumpTo;
 
   // Hovering a diff claims focus; ignored mid-glide so a rail click isn't
   // hijacked by files sliding under the stationary-ish cursor.
@@ -290,6 +292,19 @@ export function Review() {
           });
           setCurrentPath(next.path);
         }
+      } else if (e.key === "u" || e.key === "U") {
+        if (fs.length === 0) return;
+        e.preventDefault();
+        const idx = fs.findIndex((f) => f.path === currentRef.current);
+        const wants = (f: (typeof fs)[number]) => !f.seen || f.stale;
+        const order: typeof fs = [];
+        if (e.key === "u") {
+          for (let i = 1; i <= fs.length; i++) order.push(fs[(idx + i + fs.length) % fs.length]!);
+        } else {
+          for (let i = 1; i <= fs.length; i++) order.push(fs[(idx - i + 2 * fs.length) % fs.length]!);
+        }
+        const next = order.find(wants);
+        if (next) jumpToRef.current(next.path);
       } else if (e.key === "n" || e.key === "p") {
         // Anchor sits just below the sticky header + file header; a landed
         // hunk rests slightly above it so the next n moves on.
@@ -613,7 +628,7 @@ export function Review() {
             </section>
 
             <p className="pb-4 text-center font-mono text-[11px] text-faint">
-              j/k files · n/p hunks · v seen · ? shortcuts
+              j/k files · u unseen · n/p hunks · v seen · ? shortcuts
             </p>
           </main>
         </div>

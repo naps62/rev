@@ -1,5 +1,6 @@
 const KEYS: Array<[string, string]> = [
   ["j / k", "next / previous file"],
+  ["u / U", "next / previous unseen or stale file"],
   ["n / p", "next / previous hunk"],
   ["v", "toggle seen on current file"],
   ["?", "toggle this help"],
