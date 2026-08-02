@@ -64,6 +64,57 @@ summary {
   cursor: pointer;
 }
 
+/* Flat seen-checkbox: native rendering replaced so the control matches the
+   rest of the surface. Checked = accent fill + bg check; indeterminate
+   (partially-seen dir) = mute fill + bg dash, so full and partial can't be
+   confused. Size comes from the size-* utility on the element. */
+.chk {
+  appearance: none;
+  margin: 0;
+  /* translucent mute: --color-edge disappears on the raise-colored file headers */
+  border: 1px solid color-mix(in srgb, var(--color-mute) 45%, transparent);
+  border-radius: 3px;
+  background: transparent;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition:
+    border-color 150ms,
+    background-color 150ms;
+}
+
+.chk:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+
+.chk:checked,
+.chk:indeterminate {
+  border-color: transparent;
+}
+
+.chk:checked {
+  background: var(--color-accent);
+}
+
+.chk:indeterminate {
+  background: var(--color-mute);
+}
+
+.chk:checked::after {
+  content: "";
+  width: 62%;
+  height: 62%;
+  background: var(--color-bg);
+  clip-path: polygon(14% 44%, 0 62%, 38% 100%, 100% 18%, 84% 2%, 38% 66%);
+}
+
+.chk:indeterminate::after {
+  content: "";
+  width: 56%;
+  height: 2px;
+  background: var(--color-bg);
+}
+
 /* Amber wash that fades out; applied when a file turns stale under the user. */
 @keyframes stale-flash {
   0% {

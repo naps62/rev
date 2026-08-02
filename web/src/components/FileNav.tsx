@@ -118,8 +118,7 @@ function DirRow(props: LevelProps & { node: DirNode }) {
           onChange={(e) => {
             for (const f of files) onToggleSeen(f, e.target.checked);
           }}
-          // gray dash for partial so it can't be mistaken for all-seen amber
-          className="size-3 shrink-0 accent-accent indeterminate:accent-mute"
+          className="chk size-4"
         />
         <button
           type="button"
@@ -199,7 +198,7 @@ function FileRow(props: LevelProps & { file: FileSummary }) {
         title={f.seen ? "Mark unseen" : "Mark seen"}
         onClick={(e) => e.stopPropagation()}
         onChange={(e) => onToggleSeen(f, e.target.checked)}
-        className="size-3 shrink-0 accent-accent"
+        className="chk size-4"
       />
       <span
         className={cx(

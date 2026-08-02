@@ -460,7 +460,7 @@ export function DiffFile({
               type="checkbox"
               checked={file.seen}
               onChange={(e) => onToggleSeen(file, e.target.checked)}
-              className="size-3.5 accent-accent"
+              className="chk size-4"
             />
             seen
           </label>
