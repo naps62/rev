@@ -681,7 +681,7 @@ function LineRow({
           onClick={onComment}
           title="Comment on this line"
           aria-label="Comment on this line"
-          className="absolute left-0.5 top-[3px] hidden size-4 place-items-center rounded-sm bg-accent font-sans text-[13px] font-bold leading-none text-bg group-hover:grid"
+          className="absolute left-0.5 top-[3px] grid size-4 place-items-center rounded-sm bg-accent font-sans text-[13px] font-bold leading-none text-bg opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
         >
           +
         </button>
@@ -764,7 +764,7 @@ function SplitCell({
           onClick={onComment}
           title="Comment on this line"
           aria-label="Comment on this line"
-          className="absolute left-0.5 top-[3px] hidden size-4 place-items-center rounded-sm bg-accent font-sans text-[13px] font-bold leading-none text-bg group-hover/cell:grid"
+          className="absolute left-0.5 top-[3px] grid size-4 place-items-center rounded-sm bg-accent font-sans text-[13px] font-bold leading-none text-bg opacity-0 focus-visible:opacity-100 group-hover/cell:opacity-100"
         >
           +
         </button>

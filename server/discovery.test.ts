@@ -29,8 +29,8 @@ test("personal owners are personal on any host", () => {
 
 import { mkdirSync, writeFileSync, utimesSync } from "node:fs";
 import { join } from "node:path";
-import { gitStateFingerprint } from "./discovery";
-import { git, makeRepo, write } from "./testutil";
+import { gitStateFingerprint } from "./discovery.ts";
+import { git, makeRepo, write } from "./testutil.ts";
 
 describe("gitStateFingerprint", () => {
   test("stable when nothing changes, moves on commit and on ref updates", () => {
