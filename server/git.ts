@@ -236,6 +236,36 @@ export async function baseBehind(dir: string, base: string): Promise<number | nu
   }
 }
 
+/** `origin` remote URL, null when unset. */
+export async function remoteUrl(dir: string): Promise<string | null> {
+  try {
+    return (await run(dir, ["remote", "get-url", "origin"])).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Commit divergence between HEAD and `base`: how many commits each side has
+ * that the other doesn't. behind > 0 → the checkout needs a rebase/merge.
+ * Null when the count fails (unborn HEAD, bad ref).
+ */
+export async function divergence(
+  dir: string,
+  base: string,
+): Promise<{ ahead: number; behind: number } | null> {
+  try {
+    const out = (await run(dir, ["rev-list", "--left-right", "--count", `${base}...HEAD`])).trim();
+    const [behind, ahead] = out.split(/\s+/).map(Number);
+    if (behind === undefined || ahead === undefined || Number.isNaN(behind) || Number.isNaN(ahead)) {
+      return null;
+    }
+    return { ahead, behind };
+  } catch {
+    return null;
+  }
+}
+
 /** `git fetch` the remote behind `base`'s upstream. Throws GitError when base has no remote. */
 export async function fetchBase(dir: string, base: string): Promise<void> {
   const up = await baseUpstream(dir, base);

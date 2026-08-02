@@ -10,4 +10,6 @@ export const config = {
   roots: (process.env.REV_ROOTS?.split(":") ?? TUNING.DEFAULT_ROOTS).map(expandHome),
   depth: Number(process.env.REV_DEPTH ?? TUNING.DISCOVERY_MAX_DEPTH),
   dbPath: expandHome(process.env.REV_DB ?? TUNING.DB_PATH),
+  personalHosts: process.env.REV_PERSONAL_HOSTS?.split(",").map((h) => h.trim()).filter(Boolean)
+    ?? [...TUNING.PERSONAL_HOSTS],
 };

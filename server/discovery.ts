@@ -22,9 +22,11 @@ import { openCommentCounts } from "./db";
 import {
   changedFileCount,
   defaultBase,
+  divergence,
   headInfo,
   isDirty,
   listWorktrees,
+  remoteUrl,
   resolveGitDir,
   run,
 } from "./git";
@@ -101,10 +103,38 @@ function nameFor(dir: string, mainDir: string, isWorktree: boolean): string {
   return basename(dir);
 }
 
+/**
+ * Host and owner from a git remote URL. Handles https (with optional
+ * credentials) and scp-like ssh (git@host:owner/repo.git).
+ */
+function parseRemote(url: string): { host: string; owner: string } | null {
+  const ssh = /^(?:ssh:\/\/)?(?:[\w.-]+@)?([\w.-]+)[:/]([^/:]+)\/[^/]+?(?:\.git)?\/?$/;
+  const http = /^https?:\/\/(?:[^@/]+@)?([\w.-]+)(?::\d+)?\/([^/]+)\/[^/]+?(?:\.git)?\/?$/;
+  const m = http.exec(url) ?? ssh.exec(url);
+  return m ? { host: m[1]!, owner: m[2]! } : null;
+}
+
+/** Grouping bucket: "personal" for personal-host or missing remotes, else the remote owner org. */
+export function scopeFor(url: string | null): string {
+  if (!url) return "personal";
+  const parsed = parseRemote(url);
+  if (!parsed) return "personal";
+  if (config.personalHosts.includes(parsed.host)) return "personal";
+  return parsed.owner.toLowerCase();
+}
+
 async function enrich(dir: string, mainDir: string, openMap: Map<string, number>): Promise<RepoInfo> {
   const isWorktree = dir !== mainDir;
-  const [hi, base, dirty] = await Promise.all([headInfo(dir), defaultBase(dir), isDirty(dir)]);
-  const changedFiles = base === null ? null : await changedFileCount(dir, base);
+  const [hi, base, dirty, remote] = await Promise.all([
+    headInfo(dir),
+    defaultBase(dir),
+    isDirty(dir),
+    remoteUrl(dir),
+  ]);
+  const [changedFiles, div] = await Promise.all([
+    base === null ? null : changedFileCount(dir, base),
+    base === null ? null : divergence(dir, base),
+  ]);
 
   let lastActivity: number | null = null;
   const gd = resolveGitDir(dir);
@@ -131,6 +161,10 @@ async function enrich(dir: string, mainDir: string, openMap: Map<string, number>
     changedFiles,
     openComments: openMap.get(dir) ?? 0,
     lastActivity: lastActivity === null ? null : Math.round(lastActivity),
+    remoteUrl: remote,
+    scope: scopeFor(remote),
+    aheadBase: div?.ahead ?? null,
+    behindBase: div?.behind ?? null,
   };
 }
 

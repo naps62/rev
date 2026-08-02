@@ -13,6 +13,12 @@ export const TUNING = {
   /** Re-run discovery this often even without a rescan request; repos appear rarely, so keep it slow. */
   DISCOVERY_INTERVAL_MS: 5 * 60_000,
 
+  /** Checkouts with git activity newer than this count as active on the homepage. */
+  ACTIVE_WINDOW_MS: 7 * 24 * 60 * 60_000,
+
+  /** Remote hosts whose repos land in the "personal" scope. Override with REV_PERSONAL_HOSTS (comma-separated). */
+  PERSONAL_HOSTS: ["git.naps.pt"],
+
   /** Watcher debounce: coalesce bursts (git checkout, bun install) into one diff-invalidated event. */
   WATCH_DEBOUNCE_MS: 150,
 

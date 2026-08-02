@@ -6,12 +6,14 @@ import {
   changedFileCount,
   computeDiff,
   defaultBase,
+  divergence,
   GitError,
   hashContent,
   headInfo,
   isDirty,
   listWorktrees,
   readFile,
+  remoteUrl,
   resolveGitDir,
 } from "./git";
 import { git, makeRepo, tmpdir, write } from "./testutil";
@@ -293,5 +295,44 @@ describe("baseBehind / fetchBase", () => {
     const dir = makeRepo("noremote");
     expect(await baseBehind(dir, "main")).toBeNull();
     await expect(fetchBase(dir, "main")).rejects.toBeInstanceOf(GitError);
+  });
+});
+
+describe("divergence", () => {
+  test("ahead and behind vs base", async () => {
+    const dir = makeRepo("div");
+    git(dir, "checkout", "-b", "feature");
+    write(dir, "f.txt", "feature\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-m", "feature work");
+    write(dir, "f2.txt", "more\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-m", "more feature work");
+    git(dir, "checkout", "main");
+    write(dir, "m.txt", "main moved\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-m", "main moved");
+    git(dir, "checkout", "feature");
+
+    expect(await divergence(dir, "main")).toEqual({ ahead: 2, behind: 1 });
+  });
+
+  test("zero for a checkout sitting on base", async () => {
+    const dir = makeRepo("div-zero");
+    expect(await divergence(dir, "main")).toEqual({ ahead: 0, behind: 0 });
+  });
+
+  test("null for a bad ref", async () => {
+    const dir = makeRepo("div-bad");
+    expect(await divergence(dir, "no-such-branch")).toBeNull();
+  });
+});
+
+describe("remoteUrl", () => {
+  test("null without origin, URL with one", async () => {
+    const dir = makeRepo("remote");
+    expect(await remoteUrl(dir)).toBeNull();
+    git(dir, "remote", "add", "origin", "https://git.naps.pt/yolo/rev.git");
+    expect(await remoteUrl(dir)).toBe("https://git.naps.pt/yolo/rev.git");
   });
 });

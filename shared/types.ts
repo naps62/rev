@@ -37,6 +37,18 @@ export interface RepoInfo {
   openComments: number;
   /** Last time the working tree or HEAD changed, best-effort. */
   lastActivity: number | null;
+  /** `origin` remote URL, null when the repo has no origin. */
+  remoteUrl: string | null;
+  /**
+   * Grouping bucket derived from remoteUrl: "personal" for remotes on a
+   * personal host (REV_PERSONAL_HOSTS) or no remote at all, otherwise the
+   * remote owner org (e.g. "subvisual").
+   */
+  scope: string;
+  /** Commits HEAD has that defaultBase doesn't. Null when unknown (no base, detached mishaps). */
+  aheadBase: number | null;
+  /** Commits defaultBase has that HEAD doesn't — >0 means the checkout needs a rebase/merge. */
+  behindBase: number | null;
 }
 
 // ---------------------------------------------------------------------------

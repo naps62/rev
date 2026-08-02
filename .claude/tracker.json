@@ -1,0 +1,8 @@
+{
+  "tracker": "gitea",
+  "defaultBranch": "main",
+  "remoteHost": "gitea",
+  "remoteBaseUrl": "https://git.naps.pt",
+  "buildCommand": "bun run typecheck && bun test && bun run build",
+  "contextFiles": ["docs/ARCHITECTURE.md", "docs/DECISIONS.md"]
+}
