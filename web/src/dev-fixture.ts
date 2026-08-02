@@ -15,6 +15,7 @@ import type {
   FileContentResponse,
   FileDiff,
   FileDiffResponse,
+  InterdiffResponse,
   FileWriteRequest,
   RepoInfo,
   SeenRequest,
@@ -798,6 +799,42 @@ export function fxGetFileDiff(dir: string, base: string, path: string): FileDiff
 
 export function fxGetRefs(dir: string): { dir: string; refs: string[] } {
   return { dir, refs: ["main", "develop", "origin/main", "origin/develop", "spike/always-on-review"] };
+}
+
+/** Stale fixture file (server/db.ts) gets a small delta since seen. */
+export function fxGetInterdiff(dir: string, base: string, path: string): InterdiffResponse {
+  const f = state.diff.files.find((x) => x.path === path);
+  if (!f || !f.stale) {
+    throw Object.assign(new Error(`no seen snapshot for ${path}`), { status: 404 });
+  }
+  return {
+    dir,
+    base,
+    path,
+    sinceHash: "77e02c9c",
+    file: {
+      ...clone(f),
+      hunks: [
+        {
+          oldStart: 36,
+          oldLines: 4,
+          newStart: 36,
+          newLines: 6,
+          header: "export function markSeen",
+          lines: [
+            ctx(36, 36, ") {"),
+            del(37, "  if (seen) {"),
+            add(37, "  // idempotent: re-marking refreshes the stored hash"),
+            add(38, "  if (seen) {"),
+            add(39, "    deleteSeen.run(dir, base, path);"),
+            ctx(38, 40, "    insertSeen.run(dir, base, path, contentHash);"),
+          ],
+        },
+      ],
+      additions: 3,
+      deletions: 1,
+    },
+  };
 }
 
 export function fxGetComments(dir: string): { comments: Comment[]; cursor: number } {
