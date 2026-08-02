@@ -118,7 +118,8 @@ function DirRow(props: LevelProps & { node: DirNode }) {
           onChange={(e) => {
             for (const f of files) onToggleSeen(f, e.target.checked);
           }}
-          className="size-3 shrink-0 accent-accent"
+          // gray dash for partial so it can't be mistaken for all-seen amber
+          className="size-3 shrink-0 accent-accent indeterminate:accent-mute"
         />
         <button
           type="button"
