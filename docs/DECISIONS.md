@@ -30,6 +30,16 @@ otherwise; "option" means a follow-up you can pick or drop.
   session can arm it in the background and be re-invoked on new comments
   instead of holding a polling loop.
 
+## Rejected for now (2026-08-02)
+
+- **Reviewing refs that aren't checked out** (`head=<ref>` diffing the object
+  DB). Decision: reviews target checked-out worktrees only; if a branch isn't
+  available, check it out first. A future mechanism could let rev itself
+  create the worktree from the UI (`git worktree add` on demand) — that path,
+  not rev-mode diffing, is the preferred evolution. Prereq noted for then:
+  comments should be keyed by repo (`mainDir`), not checkout dir, so threads
+  are visible from every worktree of the same repo.
+
 ## Open — pick before building on the spike
 
 1. **Quick edit widget.** Plain textarea today (no dependency, honest 409
