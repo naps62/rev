@@ -79,7 +79,7 @@ function TreeLevel(props: LevelProps) {
     <>
       {nodes.map((node) =>
         node.type === "dir" ? (
-          <DirRow key={`d:${node.path}`} node={node} {...props} />
+          <DirRow key={`d:${node.path}`} {...props} node={node} />
         ) : (
           <FileRow key={`f:${node.file.path}`} {...props} file={node.file} />
         ),
@@ -89,7 +89,10 @@ function TreeLevel(props: LevelProps) {
 }
 
 function DirRow(props: LevelProps & { node: DirNode }) {
-  const { node, depth, collapsed, toggleDir, unresolvedByFile } = props;
+  // MUST NOT spread `props` (it carries `node`) into children — a later
+  // node= would be overwritten back to this dir, recursing forever.
+  const { node, ...level } = props;
+  const { depth, collapsed, toggleDir, unresolvedByFile } = level;
   const isCollapsed = collapsed.has(node.path);
   const files = flattenTree(node.children);
   const open = files.reduce((n, f) => n + (unresolvedByFile.get(f.path) ?? 0), 0);
@@ -143,7 +146,7 @@ function DirRow(props: LevelProps & { node: DirNode }) {
           </>
         )}
       </button>
-      {!isCollapsed && <TreeLevel {...props} nodes={node.children} depth={depth + 1} />}
+      {!isCollapsed && <TreeLevel {...level} nodes={node.children} depth={depth + 1} />}
     </>
   );
 }
