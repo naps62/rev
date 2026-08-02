@@ -172,6 +172,12 @@ summary {
   animation: hunk-flash 1.2s ease-out both;
 }
 
+/* Wash over an expanded fold run while its gutter rail is hovered. Inset
+   shadow instead of background so add/del row tints stay visible under it. */
+.fold-hot > td {
+  box-shadow: inset 0 0 0 100vmax rgb(141 151 165 / 0.08);
+}
+
 @keyframes overlay-in {
   from {
     opacity: 0;

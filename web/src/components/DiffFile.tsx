@@ -21,6 +21,7 @@ import { highlightLines, type TokenLine } from "../highlight";
 import { intralineSpans, type Span } from "../intraline";
 import type { FileClass } from "../semantic/classify.ts";
 import { importFolds, langOf, testFolds, type FoldRun } from "../semantic/fold.ts";
+import { loadFoldState, saveFoldState } from "../semantic/foldStore.ts";
 import {
   buildSegments,
   innermostAt,
@@ -249,10 +250,43 @@ export function DiffFile({
   const spans = useMemo(() => intralineSpans(hunks), [hunks]);
 
   // Semantic folding: import runs everywhere, whole bodies in test files.
-  // Manually expanded strips are remembered per session.
-  const [expandedFolds, setExpandedFolds] = useState<Set<string>>(new Set());
-  const [showBodies, setShowBodies] = useState(false);
+  // Manually expanded strips and the show-bodies toggle persist per file,
+  // pinned to contentHash — a content change invalidates the hunk-relative
+  // fold keys, so the state resets with it.
+  const persistedFolds = useMemo(
+    () => loadFoldState(dir, file.path, file.contentHash),
+    [dir, file.path, file.contentHash],
+  );
+  const [expandedFolds, setExpandedFolds] = useState<Set<string>>(
+    () => new Set(persistedFolds?.folds ?? []),
+  );
+  const [showBodies, setShowBodies] = useState(persistedFolds?.showBodies ?? false);
+  useEffect(() => {
+    setExpandedFolds(new Set(persistedFolds?.folds ?? []));
+    setShowBodies(persistedFolds?.showBodies ?? false);
+  }, [persistedFolds]);
+  useEffect(() => {
+    saveFoldState(dir, file.path, file.contentHash, {
+      folds: [...expandedFolds],
+      showBodies,
+    });
+  }, [dir, file.path, file.contentHash, expandedFolds, showBodies]);
+  // Fold whose gutter rail is under the pointer; its rows get a wash.
+  const [hotFold, setHotFold] = useState<string | null>(null);
+  const toggleFold = useCallback((key: string) => {
+    setHotFold(null);
+    setExpandedFolds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   const foldBodies = semantic && fileClass === "tests" && !showBodies;
+  // Import and test-body folds share hunk offsets; the prefix keeps a key
+  // expanded in one mode from leaking into the other.
+  const foldKey = (hi: number, run: FoldRun) =>
+    `${foldBodies ? "t" : "i"}:${hi}:${run.start}`;
   const foldsByHunk = useMemo(() => {
     const lang = langOf(file.path);
     if (!semantic || !lang) return null;
@@ -533,10 +567,28 @@ export function DiffFile({
       const runs = (foldsByHunk?.get(hi) ?? []).filter(
         (r) => !sruns.some((g) => r.start < g.end && g.start < r.end),
       );
-      const activeRun = (li: number) => {
-        const r = runs.find((x) => li >= x.start && li < x.end);
-        return r && !expandedFolds.has(`${hi}:${r.start}`) && !hasWidget(r) ? r : null;
+      // hasWidget scans the run's lines; runAt is now called per line, so
+      // cache the verdict per run.
+      const widgetCache = new Map<FoldRun, boolean>();
+      const runHasWidget = (r: FoldRun) => {
+        let v = widgetCache.get(r);
+        if (v === undefined) {
+          v = hasWidget(r);
+          widgetCache.set(r, v);
+        }
+        return v;
       };
+      const runAt = (li: number) => {
+        const r = runs.find((x) => li >= x.start && li < x.end);
+        return r && !runHasWidget(r) ? r : null;
+      };
+      const railProps = (run: FoldRun, fk: string, first: boolean): FoldRail => ({
+        hot: hotFold === fk,
+        first,
+        label: `Fold ${run.end - run.start} ${run.label}`,
+        onToggle: () => toggleFold(fk),
+        onHover: (h) => setHotFold((cur) => (h ? fk : cur === fk ? null : cur)),
+      });
 
       if (split) {
         type Slot = { line: DiffLine; idx: number; li: number };
@@ -560,35 +612,42 @@ export function DiffFile({
         });
         flush();
 
-        // A pair folds only when every populated slot sits in the same
-        // unexpanded run; consecutive such pairs collapse into one strip.
+        // A pair folds only when every populated slot sits in the same run;
+        // consecutive such pairs collapse into one strip.
         const pairRun = (p: { l: Slot | null; r: Slot | null }): FoldRun | null => {
           const slots = [p.l, p.r].filter(Boolean) as Slot[];
           if (slots.length === 0) return null;
-          const rs = slots.map((s) => activeRun(s.li));
+          const rs = slots.map((s) => runAt(s.li));
           const r = rs[0];
           return r != null && rs.every((x) => x === r) ? r : null;
         };
 
+        // Expanded runs render as real rows with a gutter rail; the first
+        // pair of each run carries the accessible rail control.
+        const railed = new Set<FoldRun>();
         for (let pi = 0; pi < pairs.length; pi++) {
           const p = pairs[pi]!;
           const run = pairRun(p);
+          let fold: FoldRail | undefined;
           if (run) {
-            rows.push(
-              <FoldStrip
-                key={`f${hi}.${run.start}.${pi}`}
-                run={run}
-                split
-                stripRef={
-                  run.start > 0 ? (el) => hunkRef?.(`${hi}.${run.start}`, el) : undefined
-                }
-                onExpand={() =>
-                  setExpandedFolds((prev) => new Set(prev).add(`${hi}:${run.start}`))
-                }
-              />,
-            );
-            while (pi + 1 < pairs.length && pairRun(pairs[pi + 1]!) === run) pi++;
-            continue;
+            const fk = foldKey(hi, run);
+            if (!expandedFolds.has(fk)) {
+              rows.push(
+                <FoldStrip
+                  key={`f${hi}.${run.start}.${pi}`}
+                  run={run}
+                  split
+                  stripRef={
+                    run.start > 0 ? (el) => hunkRef?.(`${hi}.${run.start}`, el) : undefined
+                  }
+                  onExpand={() => toggleFold(fk)}
+                />,
+              );
+              while (pi + 1 < pairs.length && pairRun(pairs[pi + 1]!) === run) pi++;
+              continue;
+            }
+            fold = railProps(run, fk, !railed.has(run));
+            railed.add(run);
           }
           rows.push(
             <SplitRow
@@ -597,6 +656,7 @@ export function DiffFile({
               right={p.r}
               tokens={tokens}
               spans={spans}
+              fold={fold}
               onCommentLeft={p.l ? () => toggleComposer("old", p.l!.line, hunk) : undefined}
               onCommentRight={p.r ? () => toggleComposer("new", p.r!.line, hunk) : undefined}
               onSym={symbolHandlers}
@@ -648,7 +708,8 @@ export function DiffFile({
             continue;
           }
           const run = runs.find((r) => r.start === li);
-          if (run && !expandedFolds.has(`${hi}:${run.start}`) && !hasWidget(run)) {
+          if (run && !runHasWidget(run) && !expandedFolds.has(foldKey(hi, run))) {
+            const fk = foldKey(hi, run);
             rows.push(
               <FoldStrip
                 key={`f${hi}.${run.start}`}
@@ -657,15 +718,20 @@ export function DiffFile({
                 stripRef={
                   run.start > 0 ? (el) => hunkRef?.(`${hi}.${run.start}`, el) : undefined
                 }
-                onExpand={() =>
-                  setExpandedFolds((prev) => new Set(prev).add(`${hi}:${run.start}`))
-                }
+                onExpand={() => toggleFold(fk)}
               />,
             );
             flatIdx += run.end - run.start;
             li = run.end - 1;
             continue;
           }
+          // Expanded runs render their real lines with a fold rail in the
+          // gutter instead of a strip row, so the diff reads uninterrupted.
+          const openRun = runAt(li);
+          const fold =
+            openRun && expandedFolds.has(foldKey(hi, openRun))
+              ? railProps(openRun, foldKey(hi, openRun), li === openRun.start)
+              : undefined;
           const line = hunk.lines[li]!;
           const idx = flatIdx++;
           const side: "old" | "new" = line.kind === "del" ? "old" : "new";
@@ -679,6 +745,7 @@ export function DiffFile({
               li={li}
               tokens={tokens?.[idx] ?? null}
               span={spans.get(idx)}
+              fold={fold}
               onComment={() => toggleComposer(side, line, hunk)}
               onSym={symbolHandlers}
             />,
@@ -958,6 +1025,7 @@ function FoldStrip({
         <button
           type="button"
           onClick={onExpand}
+          aria-expanded={false}
           title="Expand folded lines"
           className="flex w-full items-center gap-1.5 py-1 pl-7 pr-4 text-left font-mono text-[11px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute"
         >
@@ -976,6 +1044,46 @@ function FoldStrip({
         </button>
       </td>
     </tr>
+  );
+}
+
+/** Wiring for the gutter rail marking one line of an expanded fold run. */
+interface FoldRail {
+  /** The run's rail is under the pointer; every row of the run gets a wash. */
+  hot: boolean;
+  /** Only the run's first row carries the accessible, tabbable control. */
+  first: boolean;
+  label: string;
+  onToggle: () => void;
+  onHover: (hovering: boolean) => void;
+}
+
+/**
+ * One segment of the rail: a slim bar filling the row's gutter edge. Segments
+ * on adjacent rows join into a continuous rail spanning the expanded run.
+ */
+function FoldRailSeg({ fold }: { fold: FoldRail }) {
+  return (
+    <button
+      type="button"
+      onClick={fold.onToggle}
+      onMouseEnter={() => fold.onHover(true)}
+      onMouseLeave={() => fold.onHover(false)}
+      title={fold.label}
+      aria-label={fold.first ? fold.label : undefined}
+      aria-expanded={fold.first ? true : undefined}
+      aria-hidden={fold.first ? undefined : true}
+      tabIndex={fold.first ? 0 : -1}
+      className="absolute inset-y-0 left-0 w-[7px]"
+    >
+      <span
+        aria-hidden
+        className={cx(
+          "absolute inset-y-0 left-0 w-[3px] transition-colors duration-150",
+          fold.hot ? "bg-mute" : "bg-mute/40",
+        )}
+      />
+    </button>
   );
 }
 
@@ -1135,6 +1243,7 @@ function LineRow({
   li,
   tokens,
   span,
+  fold,
   onComment,
   onSym,
 }: {
@@ -1144,6 +1253,7 @@ function LineRow({
   li?: number;
   tokens: TokenLine | null;
   span: Span | undefined;
+  fold?: FoldRail;
   onComment: () => void;
   onSym?: SymbolHandlers;
 }) {
@@ -1156,9 +1266,11 @@ function LineRow({
         "group",
         line.kind === "add" && "bg-add-soft",
         line.kind === "del" && "bg-del-soft",
+        fold?.hot && "fold-hot",
       )}
     >
-      <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+      <td className="relative select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+        {fold && <FoldRailSeg fold={fold} />}
         {line.oldLine ?? ""}
       </td>
       <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
@@ -1189,6 +1301,7 @@ function SplitRow({
   right,
   tokens,
   spans,
+  fold,
   onCommentLeft,
   onCommentRight,
   onSym,
@@ -1197,6 +1310,7 @@ function SplitRow({
   right: { line: DiffLine; idx: number } | null;
   tokens: TokenLine[] | null;
   spans: Map<number, Span>;
+  fold?: FoldRail;
   onCommentLeft?: () => void;
   onCommentRight?: () => void;
   onSym?: SymbolHandlers;
@@ -1209,8 +1323,9 @@ function SplitRow({
       .filter(Boolean)
       .join(" ") || undefined;
   return (
-    <tr data-lk={lk}>
-      <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+    <tr data-lk={lk} className={cx(fold?.hot && "fold-hot")}>
+      <td className="relative select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+        {fold && <FoldRailSeg fold={fold} />}
         {left?.line.oldLine ?? ""}
       </td>
       <SplitCell slot={left} isLeft tokens={tokens} spans={spans} onComment={onCommentLeft} onSym={onSym} />
