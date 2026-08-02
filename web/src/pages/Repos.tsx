@@ -51,20 +51,23 @@ function groupRepos(repos: RepoInfo[]): Group[] {
     const rel = parentDir(r.dir).split("/").slice(prefixLen).join("/");
     const entry: RepoEntry = {
       repo: r,
-      worktrees: (worktreesByMain.get(r.dir) ?? []).sort((a, b) =>
-        basename(a.dir).localeCompare(basename(b.dir)),
+      worktrees: (worktreesByMain.get(r.dir) ?? []).sort(
+        (a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0),
       ),
     };
     groups.set(rel, [...(groups.get(rel) ?? []), entry]);
   }
+  const activityOf = (e: RepoEntry) =>
+    Math.max(e.repo.lastActivity ?? 0, ...e.worktrees.map((w) => w.lastActivity ?? 0));
   return [...groups.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
     .map(([label, entries]) => ({
       label,
-      entries: entries.sort((a, b) =>
-        basename(a.repo.dir).localeCompare(basename(b.repo.dir)),
-      ),
-    }));
+      entries: entries.sort((a, b) => activityOf(b) - activityOf(a)),
+    }))
+    .sort(
+      (a, b) =>
+        Math.max(...b.entries.map(activityOf), 0) - Math.max(...a.entries.map(activityOf), 0),
+    );
 }
 
 const GRID = "grid grid-cols-[minmax(14rem,2fr)_minmax(12rem,1.5fr)_6rem_7rem_7rem] items-center gap-x-4";
