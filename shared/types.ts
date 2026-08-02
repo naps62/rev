@@ -33,6 +33,16 @@ export interface RepoInfo {
   dirty: boolean;
   /** Count of files changed vs defaultBase (committed + working tree), null if unknown. */
   changedFiles: number | null;
+  /** Lines added vs defaultBase (untracked files count as all-added), null if unknown. */
+  additions: number | null;
+  /** Lines deleted vs defaultBase, null if unknown. */
+  deletions: number | null;
+  /**
+   * Review progress: additions+deletions of changed files currently marked
+   * seen at their working-tree contentHash. Denominator is
+   * additions+deletions. Null when additions is null.
+   */
+  seenLines: number | null;
   /** Open (unresolved) review comments recorded for this dir, across bases. */
   openComments: number;
   /** Last time the working tree or HEAD changed, best-effort. */

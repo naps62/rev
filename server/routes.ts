@@ -34,7 +34,7 @@ import {
   setSeen,
 } from "./db.ts";
 import { resolveComments } from "./anchor.ts";
-import { isKnownRepo, listRepos, rescan } from "./discovery.ts";
+import { invalidateRepoList, isKnownRepo, listRepos, rescan } from "./discovery.ts";
 import {
   baseBehind,
   computeDiff,
@@ -391,6 +391,9 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       }
     }
     if (!snapshotted) deleteSeenSnapshot(b.dir, b.base, b.path);
+    // Review progress on the projects page counts seen lines; make it refetch.
+    invalidateRepoList();
+    broadcast({ type: "repos-changed" });
     return c.json({ ok: true });
   });
 

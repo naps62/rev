@@ -541,6 +541,18 @@ function Drift({ repo: r }: { repo: RepoInfo }) {
 }
 
 function Meta({ repo: r }: { repo: RepoInfo }) {
+  const total = (r.additions ?? 0) + (r.deletions ?? 0);
+  // floor + clamp so "reviewed" only ever reads 100% when every line is seen
+  const pct =
+    total > 0 && r.seenLines != null
+      ? r.seenLines >= total
+        ? 100
+        : Math.min(99, Math.floor((r.seenLines / total) * 100))
+      : null;
+  const filesTitle =
+    r.changedFiles != null
+      ? `${r.changedFiles} file${r.changedFiles === 1 ? "" : "s"} changed`
+      : undefined;
   return (
     <span className="ml-auto flex shrink-0 items-center gap-2">
       {r.openComments > 0 && (
@@ -548,10 +560,29 @@ function Meta({ repo: r }: { repo: RepoInfo }) {
           {r.openComments} open
         </span>
       )}
-      {r.changedFiles != null && r.changedFiles > 0 && (
-        <span className="font-mono text-[11px] tabular-nums text-mute">
-          {r.changedFiles} file{r.changedFiles === 1 ? "" : "s"}
+      {pct != null && pct > 0 && (
+        <span
+          title={`review progress: ${r.seenLines} of ${total} changed lines marked seen`}
+          className={cx(
+            "font-mono text-[10.5px] tabular-nums",
+            pct === 100 ? "text-add" : "text-faint",
+          )}
+        >
+          {pct === 100 ? "✓ " : ""}{pct}%
         </span>
+      )}
+      {r.additions != null && total > 0 ? (
+        <span title={filesTitle} className="font-mono text-[11px] tabular-nums">
+          <span className="text-add">+{r.additions}</span>{" "}
+          <span className="text-del">−{r.deletions}</span>
+        </span>
+      ) : (
+        r.changedFiles != null &&
+        r.changedFiles > 0 && (
+          <span className="font-mono text-[11px] tabular-nums text-mute">
+            {r.changedFiles} file{r.changedFiles === 1 ? "" : "s"}
+          </span>
+        )
       )}
       <span className="w-14 text-right text-[11px] text-faint">
         {relativeTime(r.lastActivity)}

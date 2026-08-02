@@ -5,7 +5,7 @@ import { chmodSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { TUNING } from "#shared/tuning";
 import {
-  changedFileCount,
+  changedFileStats,
   computeDiff,
   computeDiffSummary,
   computeFileDiff,
@@ -252,7 +252,7 @@ describe("readFile", () => {
   });
 });
 
-describe("listWorktrees / resolveGitDir / changedFileCount", () => {
+describe("listWorktrees / resolveGitDir / changedFileStats", () => {
   test("worktree list has main first; gitdir resolves for both kinds", async () => {
     const dir = makeRepo("wtlist");
     const wt = join(tmpdir("wtlist-checkout"), "side");
@@ -264,14 +264,20 @@ describe("listWorktrees / resolveGitDir / changedFileCount", () => {
     expect(resolveGitDir(wt)).toBe(join(dir, ".git", "worktrees", "side"));
   });
 
-  test("changedFileCount counts tracked + untracked; null on bad base", async () => {
+  test("changedFileStats covers tracked + untracked with line counts and hashes; null on bad base", async () => {
     const dir = makeRepo("count", { "a.txt": "x\n", "b.txt": "y\n" });
     git(dir, "checkout", "-b", "f");
     write(dir, "a.txt", "changed\n");
     write(dir, "new1.txt", "u\n");
-    write(dir, "new2.txt", "u\n");
-    expect(await changedFileCount(dir, "main")).toBe(3);
-    expect(await changedFileCount(dir, "nope")).toBeNull();
+    write(dir, "new2.txt", "u\nv\n");
+    const stats = await changedFileStats(dir, "main");
+    expect(stats).not.toBeNull();
+    expect(stats!.map((f) => f.path).sort()).toEqual(["a.txt", "new1.txt", "new2.txt"]);
+    const byPath = new Map(stats!.map((f) => [f.path, f]));
+    expect(byPath.get("a.txt")).toMatchObject({ additions: 1, deletions: 1 });
+    expect(byPath.get("new2.txt")).toMatchObject({ additions: 2, deletions: 0 });
+    for (const f of stats!) expect(f.contentHash).toMatch(/^[0-9a-f]{16}$/);
+    expect(await changedFileStats(dir, "nope")).toBeNull();
   });
 });
 

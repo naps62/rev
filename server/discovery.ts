@@ -18,9 +18,10 @@ import { basename, join, sep } from "node:path";
 import type { RepoInfo } from "#shared/types";
 import { TUNING } from "#shared/tuning";
 import { config } from "./config.ts";
-import { openCommentCounts } from "./db.ts";
+import { openCommentCounts, seenHashes } from "./db.ts";
 import {
-  changedFileCount,
+  type ChangedFileStat,
+  changedFileStats,
   defaultBase,
   divergence,
   headInfo,
@@ -43,10 +44,13 @@ let cache: { at: number; repos: RepoInfo[] } | null = null;
  * Per-repo enrich results, reused while the repo's git-state fingerprint is
  * unchanged and the entry is younger than DISCOVERY_STATS_TTL_MS. Git
  * operations invalidate instantly (mtimes move); working-tree-only edits
- * (dirty/changedFiles) surface within the TTL. openComments is re-applied
- * fresh on every read.
+ * (dirty/changedFiles) surface within the TTL. openComments and seenLines
+ * are re-applied fresh on every read — neither moves the git fingerprint.
  */
-const enrichCache = new Map<string, { fp: string; at: number; info: RepoInfo }>();
+const enrichCache = new Map<
+  string,
+  { fp: string; at: number; info: RepoInfo; stats: ChangedFileStat[] | null }
+>();
 let inFlight: Promise<RepoInfo[]> | null = null;
 /** Dirs from the last scan; isKnownRepo fast path. */
 const knownDirs = new Set<string>();
@@ -168,7 +172,27 @@ export function gitStateFingerprint(dir: string): string {
   return parts.join(",");
 }
 
-async function enrich(dir: string, mainDir: string, openMap: Map<string, number>): Promise<RepoInfo> {
+/** Sum of additions+deletions over files whose working content still matches the hash they were marked seen at. */
+function seenLinesFor(dir: string, base: string | null, stats: ChangedFileStat[] | null): number | null {
+  if (base === null || stats === null) return null;
+  let seen: Map<string, string>;
+  try {
+    seen = seenHashes(dir, base);
+  } catch {
+    seen = new Map(); // DB not opened (tests)
+  }
+  let lines = 0;
+  for (const f of stats) {
+    if (seen.get(f.path) === f.contentHash) lines += f.additions + f.deletions;
+  }
+  return lines;
+}
+
+async function enrich(
+  dir: string,
+  mainDir: string,
+  openMap: Map<string, number>,
+): Promise<{ info: RepoInfo; stats: ChangedFileStat[] | null }> {
   const isWorktree = dir !== mainDir;
   const [hi, base, dirty, remote] = await Promise.all([
     headInfo(dir),
@@ -176,8 +200,8 @@ async function enrich(dir: string, mainDir: string, openMap: Map<string, number>
     isDirty(dir),
     remoteUrl(dir),
   ]);
-  const [changedFiles, div] = await Promise.all([
-    base === null ? null : changedFileCount(dir, base),
+  const [stats, div] = await Promise.all([
+    base === null ? null : changedFileStats(dir, base),
     base === null ? null : divergence(dir, base),
   ]);
 
@@ -194,7 +218,7 @@ async function enrich(dir: string, mainDir: string, openMap: Map<string, number>
     }
   }
 
-  return {
+  const info: RepoInfo = {
     dir,
     name: nameFor(dir, mainDir, isWorktree),
     branch: hi.branch,
@@ -203,7 +227,10 @@ async function enrich(dir: string, mainDir: string, openMap: Map<string, number>
     mainDir,
     defaultBase: base,
     dirty,
-    changedFiles,
+    changedFiles: stats === null ? null : stats.length,
+    additions: stats === null ? null : stats.reduce((n, f) => n + f.additions, 0),
+    deletions: stats === null ? null : stats.reduce((n, f) => n + f.deletions, 0),
+    seenLines: seenLinesFor(dir, base, stats),
     openComments: openMap.get(dir) ?? 0,
     lastActivity: lastActivity === null ? null : Math.round(lastActivity),
     remoteUrl: remote,
@@ -211,6 +238,7 @@ async function enrich(dir: string, mainDir: string, openMap: Map<string, number>
     aheadBase: div?.ahead ?? null,
     behindBase: div?.behind ?? null,
   };
+  return { info, stats };
 }
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
@@ -245,12 +273,16 @@ async function doRescan(force: boolean): Promise<RepoInfo[]> {
       fp !== "" &&
       now - hit.at < TUNING.DISCOVERY_STATS_TTL_MS
     ) {
-      return { ...hit.info, openComments: openMap.get(dir) ?? 0 };
+      return {
+        ...hit.info,
+        openComments: openMap.get(dir) ?? 0,
+        seenLines: seenLinesFor(dir, hit.info.defaultBase, hit.stats),
+      };
     }
     try {
-      const info = await enrich(dir, main, openMap);
+      const { info, stats } = await enrich(dir, main, openMap);
       // pre-enrich fp: state moving DURING enrich must invalidate next scan
-      enrichCache.set(dir, { fp, at: now, info });
+      enrichCache.set(dir, { fp, at: now, info, stats });
       return info;
     } catch {
       enrichCache.delete(dir);
@@ -264,6 +296,15 @@ async function doRescan(force: boolean): Promise<RepoInfo[]> {
   for (const r of repos) knownDirs.add(r.dir);
   cache = { at: Date.now(), repos };
   return repos;
+}
+
+/**
+ * Drop the materialized repo list so the next /api/repos rebuilds it.
+ * Per-repo enrich results survive — seenLines/openComments are re-derived on
+ * every read. Used when seen-state changes (invisible to git fingerprints).
+ */
+export function invalidateRepoList(): void {
+  cache = null;
 }
 
 /** Cached list, enriched (branch, dirty, changedFiles, openComments). */

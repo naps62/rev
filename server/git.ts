@@ -506,16 +506,43 @@ export async function listWorktrees(dir: string): Promise<string[]> {
     .map((l) => l.slice("worktree ".length));
 }
 
-/** Changed-file count vs merge-base(base, HEAD): tracked names + untracked. Null on failure. */
-export async function changedFileCount(dir: string, base: string): Promise<number | null> {
+export interface ChangedFileStat {
+  path: string;
+  additions: number;
+  deletions: number;
+  /** Working-tree contentHash, "" for deleted/oversized/unreadable — same convention as FileSummary. */
+  contentHash: string;
+}
+
+/**
+ * Per-file line stats vs merge-base(base, HEAD): tracked files from
+ * `--numstat` (renames folded), untracked files as all-added. Null on
+ * failure (bad base, not a repo).
+ */
+export async function changedFileStats(
+  dir: string,
+  base: string,
+): Promise<ChangedFileStat[] | null> {
   try {
     const mb = (await run(dir, ["merge-base", base, "HEAD"])).trim();
-    const [names, untracked] = await Promise.all([
-      run(dir, ["diff", "--name-only", mb]),
-      run(dir, ["ls-files", "--others", "--exclude-standard"]),
+    const [numstatZ, statusZ] = await Promise.all([
+      run(dir, ["diff", mb, "--find-renames", "--numstat", "-z"]),
+      run(dir, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"]),
     ]);
-    const count = (s: string) => s.split("\n").filter(Boolean).length;
-    return count(names) + count(untracked);
+    const out: ChangedFileStat[] = [];
+    for (const e of parseNumstatZ(numstatZ)) {
+      out.push({
+        path: e.path,
+        additions: e.additions,
+        deletions: e.deletions,
+        contentHash: await hashWorkingFile(dir, e.path),
+      });
+    }
+    for (const path of untrackedFromStatusZ(statusZ)) {
+      const f = await untrackedFileDiff(dir, path, false);
+      out.push({ path, additions: f.additions, deletions: 0, contentHash: f.contentHash });
+    }
+    return out;
   } catch {
     return null;
   }
