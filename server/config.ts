@@ -12,4 +12,6 @@ export const config = {
   dbPath: expandHome(process.env.REV_DB ?? TUNING.DB_PATH),
   personalHosts: process.env.REV_PERSONAL_HOSTS?.split(",").map((h) => h.trim()).filter(Boolean)
     ?? [...TUNING.PERSONAL_HOSTS],
+  personalOwners: process.env.REV_PERSONAL_OWNERS?.split(",").map((o) => o.trim().toLowerCase()).filter(Boolean)
+    ?? [...TUNING.PERSONAL_OWNERS],
 };

@@ -19,6 +19,9 @@ export const TUNING = {
   /** Remote hosts whose repos land in the "personal" scope. Override with REV_PERSONAL_HOSTS (comma-separated). */
   PERSONAL_HOSTS: ["git.naps.pt"],
 
+  /** Remote owners treated as personal on any host (your own github org). Override with REV_PERSONAL_OWNERS. */
+  PERSONAL_OWNERS: ["naps62"],
+
   /** Watcher debounce: coalesce bursts (git checkout, bun install) into one diff-invalidated event. */
   WATCH_DEBOUNCE_MS: 150,
 

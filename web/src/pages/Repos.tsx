@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import type { RepoInfo } from "@shared/types";
+import { TUNING } from "@shared/tuning";
 import * as api from "../api";
 import { LiveDot } from "../components/LiveDot";
 import { basename, cx, relativeTime } from "../util";
@@ -9,13 +10,31 @@ import { useRevSocket } from "../ws";
 
 interface RepoEntry {
   repo: RepoInfo;
-  worktrees: RepoInfo[];
+  /** Worktrees with review-worthy work, most recent first. */
+  activeWorktrees: RepoInfo[];
+  /** Worktrees with nothing going on, hidden behind a per-repo toggle. */
+  staleWorktrees: RepoInfo[];
+  active: boolean;
 }
 
 interface Group {
   /** Path segments between the common root and the repo, "" for top-level. */
   label: string;
   entries: RepoEntry[];
+}
+
+/**
+ * A checkout counts as active when work is in flight: uncommitted edits, open
+ * comment threads, or git activity inside ACTIVE_WINDOW_MS. Unmerged commits
+ * alone don't qualify — an abandoned branch stays stale however far ahead of
+ * base it sits.
+ */
+function isActive(r: RepoInfo, now: number): boolean {
+  return (
+    r.dirty ||
+    r.openComments > 0 ||
+    (r.lastActivity != null && now - r.lastActivity < TUNING.ACTIVE_WINDOW_MS)
+  );
 }
 
 const parentDir = (dir: string) =>
@@ -26,7 +45,7 @@ const parentDir = (dir: string) =>
  * "yolo/", "bullish/") and nests worktrees under their main checkout via
  * RepoInfo.mainDir. Worktrees whose main repo wasn't discovered stay top-level.
  */
-function groupRepos(repos: RepoInfo[]): Group[] {
+function groupRepos(repos: RepoInfo[], now: number): Group[] {
   const byDir = new Map(repos.map((r) => [r.dir, r]));
   const worktreesByMain = new Map<string, RepoInfo[]>();
   const tops: RepoInfo[] = [];
@@ -49,16 +68,22 @@ function groupRepos(repos: RepoInfo[]): Group[] {
   const groups = new Map<string, RepoEntry[]>();
   for (const r of tops) {
     const rel = parentDir(r.dir).split("/").slice(prefixLen).join("/");
+    const worktrees = (worktreesByMain.get(r.dir) ?? []).sort(
+      (a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0),
+    );
     const entry: RepoEntry = {
       repo: r,
-      worktrees: (worktreesByMain.get(r.dir) ?? []).sort(
-        (a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0),
-      ),
+      activeWorktrees: worktrees.filter((w) => isActive(w, now)),
+      staleWorktrees: worktrees.filter((w) => !isActive(w, now)),
+      active: isActive(r, now) || worktrees.some((w) => isActive(w, now)),
     };
     groups.set(rel, [...(groups.get(rel) ?? []), entry]);
   }
   const activityOf = (e: RepoEntry) =>
-    Math.max(e.repo.lastActivity ?? 0, ...e.worktrees.map((w) => w.lastActivity ?? 0));
+    Math.max(
+      e.repo.lastActivity ?? 0,
+      ...[...e.activeWorktrees, ...e.staleWorktrees].map((w) => w.lastActivity ?? 0),
+    );
   return [...groups.entries()]
     .map(([label, entries]) => ({
       label,
@@ -69,6 +94,18 @@ function groupRepos(repos: RepoInfo[]): Group[] {
         Math.max(...b.entries.map(activityOf), 0) - Math.max(...a.entries.map(activityOf), 0),
     );
 }
+
+/** Scope names ordered by their most recent activity, so the busiest context leads. */
+function scopeOrder(repos: RepoInfo[]): string[] {
+  const latest = new Map<string, number>();
+  for (const r of repos) {
+    const t = Math.max(latest.get(r.scope) ?? 0, r.lastActivity ?? 0);
+    latest.set(r.scope, t);
+  }
+  return [...latest.entries()].sort((a, b) => b[1] - a[1]).map(([s]) => s);
+}
+
+const SCOPE_KEY = "rev.scope";
 
 const GRID = "grid grid-cols-[minmax(14rem,2fr)_minmax(12rem,1.5fr)_6rem_7rem_7rem] items-center gap-x-4";
 
@@ -85,7 +122,53 @@ export function Repos() {
     onSuccess: (repos) => qc.setQueryData(["repos"], repos),
   });
 
-  const groups = useMemo(() => groupRepos(reposQ.data ?? []), [reposQ.data]);
+  const now = useMemo(() => Date.now(), [reposQ.data]);
+  const repos = reposQ.data ?? [];
+  const scopes = useMemo(() => scopeOrder(repos), [repos]);
+
+  const [scope, setScope] = useState<string | null>(() => localStorage.getItem(SCOPE_KEY));
+  const [showInactive, setShowInactive] = useState(false);
+  const [staleOpen, setStaleOpen] = useState<Set<string>>(new Set);
+
+  // Fall back to the busiest scope when nothing (or a vanished scope) is saved.
+  const currentScope =
+    scope != null && scopes.includes(scope) ? scope : scopes[0] ?? null;
+
+  const selectScope = (s: string) => {
+    setScope(s);
+    localStorage.setItem(SCOPE_KEY, s);
+    setShowInactive(false);
+    setStaleOpen(new Set());
+  };
+
+  const activeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of scopes) {
+      counts.set(s, groupRepos(repos.filter((r) => r.scope === s), now)
+        .flatMap((g) => g.entries)
+        .filter((e) => e.active).length);
+    }
+    return counts;
+  }, [repos, scopes, now]);
+
+  const groups = useMemo(
+    () => groupRepos(repos.filter((r) => r.scope === currentScope), now),
+    [repos, currentScope, now],
+  );
+  const inactiveCount = groups.flatMap((g) => g.entries).filter((e) => !e.active).length;
+  const visibleGroups = showInactive
+    ? groups
+    : groups
+        .map((g) => ({ ...g, entries: g.entries.filter((e) => e.active) }))
+        .filter((g) => g.entries.length > 0);
+
+  const toggleStale = (dir: string) =>
+    setStaleOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(dir)) next.delete(dir);
+      else next.add(dir);
+      return next;
+    });
 
   return (
     <div className="w-full px-4 pb-8">
@@ -106,6 +189,35 @@ export function Repos() {
           </button>
         </div>
       </header>
+
+      {scopes.length > 1 && (
+        <nav aria-label="Project scope" className="mb-3 flex items-end gap-1 border-b border-edge">
+          {scopes.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => selectScope(s)}
+              aria-current={s === currentScope ? "page" : undefined}
+              className={cx(
+                "-mb-px flex items-baseline gap-1.5 border-b-2 px-2.5 pb-1.5 pt-1 font-mono text-[12px] transition-colors duration-150",
+                s === currentScope
+                  ? "border-accent text-fg"
+                  : "border-transparent text-mute hover:text-fg",
+              )}
+            >
+              {s}
+              <span
+                className={cx(
+                  "font-mono text-[10.5px] tabular-nums",
+                  s === currentScope ? "text-accent" : "text-faint",
+                )}
+              >
+                {activeCounts.get(s) ?? 0}
+              </span>
+            </button>
+          ))}
+        </nav>
+      )}
 
       {reposQ.isPending && (
         <ul className="divide-y divide-edge-soft rounded-md border border-edge bg-panel">
@@ -154,8 +266,13 @@ export function Repos() {
             <span className="text-right">Comments</span>
             <span className="text-right">Activity</span>
           </div>
+          {visibleGroups.length === 0 && (
+            <p className="px-3 py-6 text-center text-[12.5px] text-mute">
+              Nothing in active development here right now.
+            </p>
+          )}
           <div className="divide-y divide-edge-soft">
-            {groups.map((g) => (
+            {visibleGroups.map((g) => (
               <div key={g.label || "(root)"}>
                 {g.label && (
                   <p className="px-3 pb-0.5 pt-2 font-mono text-[11px] text-faint">
@@ -163,16 +280,45 @@ export function Repos() {
                   </p>
                 )}
                 {g.entries.map((e) => (
-                  <div key={e.repo.dir}>
+                  <div key={e.repo.dir} className={cx(!e.active && "opacity-55")}>
                     <RepoRow repo={e.repo} indent={g.label ? 1 : 0} />
-                    {e.worktrees.map((w) => (
+                    {e.activeWorktrees.map((w) => (
                       <RepoRow key={w.dir} repo={w} indent={(g.label ? 1 : 0) + 1} isWorktree />
                     ))}
+                    {e.staleWorktrees.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => toggleStale(e.repo.dir)}
+                        className="block w-full px-3 py-1 text-left font-mono text-[11px] text-faint transition-colors duration-150 hover:text-mute"
+                        style={{ paddingLeft: 12 + ((g.label ? 1 : 0) + 1) * 16 }}
+                      >
+                        {staleOpen.has(e.repo.dir)
+                          ? "hide stale worktrees"
+                          : `show ${e.staleWorktrees.length} stale worktree${e.staleWorktrees.length === 1 ? "" : "s"}`}
+                      </button>
+                    )}
+                    {staleOpen.has(e.repo.dir) &&
+                      e.staleWorktrees.map((w) => (
+                        <div key={w.dir} className="opacity-55">
+                          <RepoRow repo={w} indent={(g.label ? 1 : 0) + 1} isWorktree />
+                        </div>
+                      ))}
                   </div>
                 ))}
               </div>
             ))}
           </div>
+          {inactiveCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowInactive((v) => !v)}
+              className="block w-full border-t border-edge-soft px-3 py-2 text-left font-mono text-[11.5px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute"
+            >
+              {showInactive
+                ? "hide inactive projects"
+                : `show ${inactiveCount} inactive project${inactiveCount === 1 ? "" : "s"}`}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -220,6 +366,22 @@ function RepoRow({
       <span className="truncate font-mono text-[11.5px] text-mute">
         {r.branch ?? `detached @ ${r.head}`}
         {r.defaultBase && <span className="text-faint"> → {r.defaultBase}</span>}
+        {(r.behindBase ?? 0) > 0 && (
+          <span
+            title={`${r.behindBase} commit${r.behindBase === 1 ? "" : "s"} behind ${r.defaultBase} — needs rebase or merge`}
+            className="ml-1.5 rounded-sm bg-del-soft px-1 py-px text-[10.5px] font-medium text-del"
+          >
+            ↓{r.behindBase}
+          </span>
+        )}
+        {(r.aheadBase ?? 0) > 0 && (
+          <span
+            title={`${r.aheadBase} commit${r.aheadBase === 1 ? "" : "s"} ahead of ${r.defaultBase}`}
+            className="ml-1.5 text-[10.5px] text-faint"
+          >
+            ↑{r.aheadBase}
+          </span>
+        )}
       </span>
       <span className="text-right font-mono text-[11px] tabular-nums text-mute">
         {r.changedFiles != null

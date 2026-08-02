@@ -120,7 +120,9 @@ export function scopeFor(url: string | null): string {
   const parsed = parseRemote(url);
   if (!parsed) return "personal";
   if (config.personalHosts.includes(parsed.host)) return "personal";
-  return parsed.owner.toLowerCase();
+  const owner = parsed.owner.toLowerCase();
+  if (config.personalOwners.includes(owner)) return "personal";
+  return owner;
 }
 
 async function enrich(dir: string, mainDir: string, openMap: Map<string, number>): Promise<RepoInfo> {

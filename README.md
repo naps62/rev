@@ -37,6 +37,8 @@ http://<machine-ip>:7373/review?dir=/abs/path/to/worktree&base=main
 | `REV_ROOTS` | `~/tea` | Colon-separated roots scanned for repos; worktrees outside roots are found via `git worktree list`. The installed service sets `%h` (all of home). |
 | `REV_DEPTH` | `4` | Max directory depth under each root when scanning (service sets 3) |
 | `REV_DB` | `~/.local/share/rev/rev.db` | SQLite (comments, seen-state) |
+| `REV_PERSONAL_HOSTS` | `git.naps.pt` | Comma-separated remote hosts whose repos land in the "personal" scope tab; any other remote is scoped by its owner org |
+| `REV_PERSONAL_OWNERS` | `naps62` | Comma-separated remote owners treated as personal on any host |
 
 All other knobs: `shared/tuning.ts`.
 

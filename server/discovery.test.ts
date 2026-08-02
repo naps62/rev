@@ -21,3 +21,7 @@ describe("scopeFor", () => {
     expect(scopeFor("not a url")).toBe("personal");
   });
 });
+
+test("personal owners are personal on any host", () => {
+  expect(scopeFor("git@github.com:naps62/finance-planning.git")).toBe("personal");
+});
