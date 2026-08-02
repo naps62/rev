@@ -17,6 +17,20 @@ to commit first, and new commits show up live.
 
 ## Waiting for and answering comments
 
+Preferred (Claude Code): don't hold a polling loop in your turn. Run the
+watcher in the background — it blocks until a comment arrives, so its
+completion re-invokes you with the new comments in the tool result:
+
+```bash
+# via the Bash tool with run_in_background: true
+~/tea/yolo/rev/scripts/rev-watch.sh "$DIR"
+```
+
+Address the comments, reply in-thread (below), then re-arm the watcher.
+Repeat until the user says the review is done.
+
+Manual alternative (any agent):
+
 Comments are stored server-side. Poll with a cursor (`seq`), long-polling so
 you don't spin:
 
