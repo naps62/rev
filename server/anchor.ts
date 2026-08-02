@@ -4,8 +4,9 @@
  * so threads follow the code instead of orphaning on every edit above them.
  */
 
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Comment, CommentAnchor } from "@shared/types";
+import type { Comment, CommentAnchor } from "#shared/types";
 
 /**
  * Find the 1-based line of `anchor` in `lines` (trimmed comparison).
@@ -74,7 +75,7 @@ export async function resolveComments(dir: string, comments: Comment[]): Promise
   for (const [file, list] of byFile) {
     let lines: string[] | null = null;
     try {
-      lines = (await Bun.file(join(dir, file)).text()).split("\n");
+      lines = (await readFile(join(dir, file), "utf8")).split("\n");
     } catch {
       // deleted or binary: orphan below
     }

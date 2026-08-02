@@ -11,6 +11,7 @@
 
 import { Hono } from "hono";
 import { existsSync, realpathSync } from "node:fs";
+import { readFile as readFileBytes, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import type {
   CommentCreateRequest,
@@ -19,8 +20,8 @@ import type {
   FileWriteRequest,
   SeenRequest,
   ServerMessage,
-} from "@shared/types";
-import { TUNING } from "@shared/tuning";
+} from "#shared/types";
+import { TUNING } from "#shared/tuning";
 import {
   createComment,
   DbError,
@@ -28,9 +29,9 @@ import {
   patchComment,
   seenHashes,
   setSeen,
-} from "./db";
-import { resolveComments } from "./anchor";
-import { isKnownRepo, listRepos, rescan } from "./discovery";
+} from "./db.ts";
+import { resolveComments } from "./anchor.ts";
+import { isKnownRepo, listRepos, rescan } from "./discovery.ts";
 import {
   baseBehind,
   computeDiff,
@@ -41,7 +42,7 @@ import {
   hashContent,
   listRefs,
   readFile,
-} from "./git";
+} from "./git.ts";
 
 /**
  * Resolve a repo-relative path inside `dir`, or null when it escapes
@@ -212,12 +213,16 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     if (!(await isKnownRepo(body.dir))) return c.json({ error: `not a known repo: ${body.dir}` }, 400);
     const target = resolveInRepo(body.dir, body.path);
     if (target === null) return c.json({ error: `path escapes repo: ${body.path}` }, 400);
-    const file = Bun.file(target);
-    const currentHash = (await file.exists()) ? hashContent(await file.bytes()) : "";
+    let currentHash = "";
+    try {
+      currentHash = hashContent(await readFileBytes(target));
+    } catch {
+      // missing file: baseHash "" means "create"
+    }
     if (currentHash !== body.baseHash) {
       return c.json({ error: `baseHash mismatch: file is at ${currentHash || "(missing)"}` }, 409);
     }
-    await Bun.write(target, body.content);
+    await writeFile(target, body.content);
     return c.json({
       dir: body.dir,
       path: body.path,

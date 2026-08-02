@@ -1,7 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { describe, test } from "node:test";
+import { expect } from "expect";
+import { spawnSync } from "node:child_process";
 import { chmodSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { TUNING } from "@shared/tuning";
+import { TUNING } from "#shared/tuning";
 import {
   changedFileCount,
   computeDiff,
@@ -19,8 +21,8 @@ import {
   remoteUrl,
   resolveGitDir,
   watchableFileCount,
-} from "./git";
-import { git, makeRepo, tmpdir, write } from "./testutil";
+} from "./git.ts";
+import { git, makeRepo, tmpdir, write } from "./testutil.ts";
 
 function byPath<T extends { path: string }>(files: T[], path: string): T | undefined {
   return files.find((f) => f.path === path);
@@ -75,7 +77,7 @@ describe("headInfo / isDirty / defaultBase", () => {
 describe("computeDiff", () => {
   test("bad base ref throws GitError", async () => {
     const dir = makeRepo("badref");
-    expect(computeDiff(dir, "no-such-branch")).rejects.toBeInstanceOf(GitError);
+    await expect(computeDiff(dir, "no-such-branch")).rejects.toBeInstanceOf(GitError);
   });
 
   test("committed + uncommitted + untracked changes vs main", async () => {
@@ -245,8 +247,8 @@ describe("readFile", () => {
     expect(wt.rev).toBeNull();
     const at = await readFile(dir, "a.txt", "main");
     expect(at.content).toBe("committed\n");
-    expect(readFile(dir, "missing.txt", null)).rejects.toBeInstanceOf(GitError);
-    expect(readFile(dir, "missing.txt", "main")).rejects.toBeInstanceOf(GitError);
+    await expect(readFile(dir, "missing.txt", null)).rejects.toBeInstanceOf(GitError);
+    await expect(readFile(dir, "missing.txt", "main")).rejects.toBeInstanceOf(GitError);
   });
 });
 
@@ -275,8 +277,8 @@ describe("listWorktrees / resolveGitDir / changedFileCount", () => {
 
 describe("baseBehind / fetchBase", () => {
   test("clone behind its origin: counts, fetch updates", async () => {
-    const { baseBehind, fetchBase } = await import("./git");
-    const { git, tmpdir } = await import("./testutil");
+    const { baseBehind, fetchBase } = await import("./git.ts");
+    const { git, tmpdir } = await import("./testutil.ts");
     const origin = makeRepo("origin");
     const clone = tmpdir("clone");
     git(clone, "clone", origin, ".");
@@ -295,7 +297,7 @@ describe("baseBehind / fetchBase", () => {
   });
 
   test("no remote: baseBehind null, fetchBase throws GitError", async () => {
-    const { baseBehind, fetchBase } = await import("./git");
+    const { baseBehind, fetchBase } = await import("./git.ts");
     const dir = makeRepo("noremote");
     expect(await baseBehind(dir, "main")).toBeNull();
     await expect(fetchBase(dir, "main")).rejects.toBeInstanceOf(GitError);
@@ -344,11 +346,12 @@ describe("remoteUrl", () => {
 describe("defaultBase ref choice", () => {
   /** Commit with a fixed committer date; merge-base recency needs distinct timestamps. */
   const commitAt = (dir: string, date: string, msg: string) => {
-    const proc = Bun.spawnSync(["git", "commit", "-m", msg], {
+    const proc = spawnSync("git", ["commit", "-m", msg], {
       cwd: dir,
       env: { ...process.env, GIT_COMMITTER_DATE: date, GIT_AUTHOR_DATE: date },
+      encoding: "utf8",
     });
-    if (proc.exitCode !== 0) throw new Error(proc.stderr.toString());
+    if (proc.status !== 0) throw new Error(proc.stderr);
   };
 
   test("prefers origin/main over a stale local main", async () => {

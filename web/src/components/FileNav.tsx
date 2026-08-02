@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { FileSummary } from "@shared/types";
+import type { FileSummary } from "#shared/types";
 import type { DirNode, TreeNode } from "../tree";
 import { flattenTree } from "../tree";
 import { cx } from "../util";

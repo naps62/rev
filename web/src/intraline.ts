@@ -6,7 +6,7 @@
  * noise, the whole-line tint already says "changed".
  */
 
-import type { DiffHunk } from "@shared/types";
+import type { DiffHunk } from "#shared/types";
 
 export interface Span {
   start: number;

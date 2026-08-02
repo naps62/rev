@@ -3,8 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-bun install
-bun run build
+pnpm install
+pnpm run build
 
 mkdir -p ~/.config/systemd/user
 cp systemd/rev.service ~/.config/systemd/user/rev.service

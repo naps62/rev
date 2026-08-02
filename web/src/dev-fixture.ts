@@ -18,7 +18,7 @@ import type {
   FileWriteRequest,
   RepoInfo,
   SeenRequest,
-} from "@shared/types";
+} from "#shared/types";
 
 const now = Date.now();
 const min = 60_000;
@@ -280,7 +280,7 @@ const watcherFile: FileDiff = {
       header: "",
       lines: [
         add(1, "import { watch, type FSWatcher } from \"chokidar\";"),
-        add(2, "import { TUNING } from \"@shared/tuning\";"),
+        add(2, "import { TUNING } from \"#shared/tuning\";"),
         add(3, ""),
         add(4, "const watchers = new Map<string, FSWatcher>();"),
         add(5, "const timers = new Map<string, ReturnType<typeof setTimeout>>();"),

@@ -8,10 +8,12 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
     "skipLibCheck": true,
-    "types": ["bun", "vite/client"],
+    "types": ["node", "vite/client"],
     "paths": {
-      "@shared/*": ["./shared/*"]
+      "#shared/*": ["./shared/*"]
     }
   },
   "include": ["shared", "server", "web/src"]

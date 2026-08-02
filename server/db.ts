@@ -1,24 +1,24 @@
 /**
- * SQLite persistence (bun:sqlite) for comments and seen-state.
+ * SQLite persistence (node:sqlite) for comments and seen-state.
  * Schema is created on open; the DB file lives at config.dbPath.
  */
 
-import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Comment, CommentCreateRequest } from "@shared/types";
-import { config } from "./config";
+import { DatabaseSync } from "node:sqlite";
+import type { Comment, CommentCreateRequest } from "#shared/types";
+import { config } from "./config.ts";
 
 /** Thrown for caller errors (unknown id, bad parent) the API maps to 4xx. */
 export class DbError extends Error {}
 
-let db: Database | null = null;
+let db: DatabaseSync | null = null;
 
 /** Open (or create) the DB. `path` overrides config.dbPath, for tests. */
 export function openDb(path: string = config.dbPath): void {
   if (db) db.close();
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
-  db = new Database(path, { create: true });
+  db = new DatabaseSync(path);
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec(`
     CREATE TABLE IF NOT EXISTS comments (
@@ -49,9 +49,22 @@ export function closeDb(): void {
   db = null;
 }
 
-function must(): Database {
+function must(): DatabaseSync {
   if (!db) throw new Error("openDb() not called");
   return db;
+}
+
+/** Run `fn` inside BEGIN/COMMIT, rolling back on throw. */
+function transaction<T>(d: DatabaseSync, fn: () => T): T {
+  d.exec("BEGIN");
+  try {
+    const result = fn();
+    d.exec("COMMIT");
+    return result;
+  } catch (err) {
+    d.exec("ROLLBACK");
+    throw err;
+  }
 }
 
 interface CommentRow {
@@ -82,8 +95,8 @@ function rowToComment(r: CommentRow): Comment {
   };
 }
 
-function getRow(d: Database, id: string): CommentRow | null {
-  return d.query<CommentRow, [string]>("SELECT * FROM comments WHERE id = ?").get(id);
+function getRow(d: DatabaseSync, id: string): CommentRow | null {
+  return (d.prepare("SELECT * FROM comments WHERE id = ?").get(id) as CommentRow | undefined) ?? null;
 }
 
 /** Insert; assigns id, seq (monotonic), createdAt. Replies must reference an existing root. */
@@ -91,7 +104,7 @@ export function createComment(req: CommentCreateRequest): Comment {
   const d = must();
   const id = crypto.randomUUID();
   const createdAt = Date.now();
-  const insert = d.transaction(() => {
+  transaction(d, () => {
     let parentId: string | null = null;
     let anchor: string | null = req.anchor ? JSON.stringify(req.anchor) : null;
     if (req.parentId !== undefined) {
@@ -101,13 +114,12 @@ export function createComment(req: CommentCreateRequest): Comment {
       parentId = parent.parent_id ?? parent.id;
       anchor = null;
     }
-    const seq = d.query<{ s: number }, []>("SELECT COALESCE(MAX(seq), 0) + 1 AS s FROM comments").get()!.s;
-    d.query(
+    const seq = (d.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS s FROM comments").get() as { s: number }).s;
+    d.prepare(
       `INSERT INTO comments (id, dir, base, anchor, parent_id, author, body, created_at, resolved_at, seq)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
     ).run(id, req.dir, req.base, anchor, parentId, req.author, req.body, createdAt, seq);
   });
-  insert();
   return rowToComment(getRow(d, id)!);
 }
 
@@ -117,11 +129,11 @@ export function patchComment(id: string, patch: { body?: string; resolved?: bool
   const row = getRow(d, id);
   if (!row) throw new DbError(`unknown comment: ${id}`);
   if (patch.body !== undefined) {
-    d.query("UPDATE comments SET body = ? WHERE id = ?").run(patch.body, id);
+    d.prepare("UPDATE comments SET body = ? WHERE id = ?").run(patch.body, id);
   }
   if (patch.resolved !== undefined) {
     const rootId = row.parent_id ?? row.id;
-    d.query("UPDATE comments SET resolved_at = ? WHERE id = ?").run(
+    d.prepare("UPDATE comments SET resolved_at = ? WHERE id = ?").run(
       patch.resolved ? Date.now() : null,
       rootId,
     );
@@ -147,10 +159,10 @@ export function listComments(dir: string, base?: string, since?: number): { comm
     params.push(since);
   }
   sql += " ORDER BY seq ASC";
-  const rows = d.query<CommentRow, (string | number)[]>(sql).all(...params);
-  const cursor = d
-    .query<{ c: number }, [string]>("SELECT COALESCE(MAX(seq), 0) AS c FROM comments WHERE dir = ?")
-    .get(dir)!.c;
+  const rows = d.prepare(sql).all(...params) as unknown as CommentRow[];
+  const cursor = (
+    d.prepare("SELECT COALESCE(MAX(seq), 0) AS c FROM comments WHERE dir = ?").get(dir) as { c: number }
+  ).c;
   return { comments: rows.map(rowToComment), cursor };
 }
 
@@ -158,10 +170,8 @@ export function listComments(dir: string, base?: string, since?: number): { comm
 export function openCommentCounts(): Map<string, number> {
   const d = must();
   const rows = d
-    .query<{ dir: string; n: number }, []>(
-      "SELECT dir, COUNT(*) AS n FROM comments WHERE parent_id IS NULL AND resolved_at IS NULL GROUP BY dir",
-    )
-    .all();
+    .prepare("SELECT dir, COUNT(*) AS n FROM comments WHERE parent_id IS NULL AND resolved_at IS NULL GROUP BY dir")
+    .all() as unknown as Array<{ dir: string; n: number }>;
   return new Map(rows.map((r) => [r.dir, r.n]));
 }
 
@@ -169,12 +179,12 @@ export function openCommentCounts(): Map<string, number> {
 export function setSeen(dir: string, base: string, path: string, contentHash: string, seen: boolean): void {
   const d = must();
   if (seen) {
-    d.query(
+    d.prepare(
       `INSERT INTO seen (dir, base, path, content_hash) VALUES (?, ?, ?, ?)
        ON CONFLICT (dir, base, path) DO UPDATE SET content_hash = excluded.content_hash`,
     ).run(dir, base, path, contentHash);
   } else {
-    d.query("DELETE FROM seen WHERE dir = ? AND base = ? AND path = ?").run(dir, base, path);
+    d.prepare("DELETE FROM seen WHERE dir = ? AND base = ? AND path = ?").run(dir, base, path);
   }
 }
 
@@ -182,9 +192,7 @@ export function setSeen(dir: string, base: string, path: string, contentHash: st
 export function seenHashes(dir: string, base: string): Map<string, string> {
   const d = must();
   const rows = d
-    .query<{ path: string; content_hash: string }, [string, string]>(
-      "SELECT path, content_hash FROM seen WHERE dir = ? AND base = ?",
-    )
-    .all(dir, base);
+    .prepare("SELECT path, content_hash FROM seen WHERE dir = ? AND base = ?")
+    .all(dir, base) as unknown as Array<{ path: string; content_hash: string }>;
   return new Map(rows.map((r) => [r.path, r.content_hash]));
 }

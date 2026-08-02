@@ -27,14 +27,15 @@ agent. rev fixes each structurally:
 ```
 shared/types.ts    — the API contract (single source of truth, imported by both sides)
 shared/tuning.ts   — every magic number, with reasoning
-server/            — Bun + Hono: git ops, discovery, watcher, comments DB, WS, REST
+server/            — Node + Hono: git ops, discovery, watcher, comments DB, WS, REST
 web/               — Vite + React 19 + Tailwind v4 diff UI
 agent/CLAUDE-rev.md— snippet agents load to know how to request reviews
 systemd/           — user service unit for the always-on part
 ```
 
-Single Bun package. Dev: `bun run dev` (server + vite, proxied). Prod:
-`bun run build && bun run start` — server serves `web/dist` statically.
+Single pnpm package on Node 26 — the server runs its TypeScript directly
+(type stripping), no build step. Dev: `pnpm dev` (server + vite, proxied).
+Prod: `pnpm build && pnpm start` — server serves `web/dist` statically.
 
 ## Server
 
@@ -52,7 +53,7 @@ Single Bun package. Dev: `bun run dev` (server + vite, proxied). Prod:
   (subscribed over WS), ignoring `.git/objects`, `node_modules`, build dirs.
   Debounced; emits `diff-invalidated` with the changed paths. Watching only
   viewed repos keeps the daemon cheap with dozens of repos discovered.
-- **db.ts** — `bun:sqlite` at `~/.local/share/rev/rev.db`. Tables: comments
+- **db.ts** — `node:sqlite` at `~/.local/share/rev/rev.db`. Tables: comments
   (threaded via `parentId`, resolvable), seen-state per (dir, base, file,
   contentHash). Content-hash is how "seen" survives refreshes and how
   staleness is detected.

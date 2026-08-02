@@ -15,10 +15,10 @@
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, sep } from "node:path";
-import type { RepoInfo } from "@shared/types";
-import { TUNING } from "@shared/tuning";
-import { config } from "./config";
-import { openCommentCounts } from "./db";
+import type { RepoInfo } from "#shared/types";
+import { TUNING } from "#shared/tuning";
+import { config } from "./config.ts";
+import { openCommentCounts } from "./db.ts";
 import {
   changedFileCount,
   defaultBase,
@@ -29,7 +29,7 @@ import {
   remoteUrl,
   resolveGitDir,
   run,
-} from "./git";
+} from "./git.ts";
 
 /** Enriching a repo spawns several git processes; /api/repos may be polled, so cache briefly. */
 const CACHE_TTL_MS = 5_000;

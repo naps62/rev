@@ -11,13 +11,13 @@ Design: `docs/ARCHITECTURE.md`.
 ## Run
 
 ```bash
-bun install
+pnpm install
 
 # dev (vite on :5173 proxying to the server on :7373)
-bun run dev
+pnpm dev
 
 # production
-bun run build && bun run start
+pnpm build && pnpm start
 
 # always-on (systemd user service + linger)
 ./scripts/install-service.sh

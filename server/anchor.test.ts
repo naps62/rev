@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
-import type { Comment, CommentAnchor } from "@shared/types";
-import { resolveAnchor, resolveComments } from "./anchor";
-import { makeRepo, write } from "./testutil";
+import { describe, test } from "node:test";
+import { expect } from "expect";
+import type { Comment, CommentAnchor } from "#shared/types";
+import { resolveAnchor, resolveComments } from "./anchor.ts";
+import { makeRepo, write } from "./testutil.ts";
 
 function anchor(line: number, snippet: string, context?: CommentAnchor["context"]): CommentAnchor {
   return { file: "a.txt", side: "new", line, snippet, context };

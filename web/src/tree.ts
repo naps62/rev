@@ -5,7 +5,7 @@
  * follow that order so the rail and the page never disagree.
  */
 
-import type { FileSummary } from "@shared/types";
+import type { FileSummary } from "#shared/types";
 
 export interface DirNode {
   type: "dir";
