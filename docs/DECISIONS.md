@@ -15,27 +15,27 @@ otherwise; "option" means a follow-up you can pick or drop.
   wait on comments instead of you relaying them.
 - **Bun + Hono / React + Vite + Tailwind v4**, single package.
 
+## Resolved during the overnight iteration (was "open")
+
+- **Base freshness** — per-review "fetch base": the header shows how far
+  local base lags its upstream (`baseBehind`) with a fetch button
+  (`POST /api/fetch`). No background fetching, by design.
+- **Comment lifetime vs base switch** — show-all: threads for the dir render
+  regardless of base, tagged with a base chip when it differs.
+- **Anchor durability** — server-side re-anchoring: anchors carry ±3 context
+  lines; `GET /api/comments` returns `resolvedLine` located in the current
+  working tree (snippet + context match), so threads follow the code.
+  Orphans fall back to a per-file section.
+- **Agent wake-up** — `scripts/rev-watch.sh` blocks on the long-poll so a
+  session can arm it in the background and be re-invoked on new comments
+  instead of holding a polling loop.
+
 ## Open — pick before building on the spike
 
-1. **Base freshness.** Diffs use your local `main`. If origin moved and you
-   haven't fetched, the diff is against an older main (correct locally,
-   unlike a stale review server, but still not origin's truth).
-   Option: server runs `git fetch` on the base remote every N minutes, or a
-   per-review "fetch base" button. Recommend the button — background fetches
-   in every repo will fight with agents mid-rebase.
-2. **Comment lifetime vs base switch.** Comments are keyed (dir, base);
-   switching base on the review page hides comments made under the other
-   base. Options: show all comments for the dir regardless of base, or keep
-   as is. Recommend show-all with a subtle base tag.
-3. **Quick edit widget.** Plain textarea today (no dependency, honest 409
+1. **Quick edit widget.** Plain textarea today (no dependency, honest 409
    conflict handling). Option: CodeMirror 6 for syntax + search + multi-file.
    Worth it only if you find yourself editing more than a few lines.
-4. **Anchor durability.** Comments anchor to file+side+line+snippet; heavy
-   edits above a comment can orphan it (it then shows in a per-file
-   "couldn't re-anchor" section with its snippet). Option: hunk-context
-   anchoring (store surrounding lines, re-match like `git apply` does).
-   Recommend doing this once real reviews hit it.
-5. **Auth.** None. Fine for the LAN; needed before any tunnel/exposure.
+2. **Auth.** None. Fine for the LAN; needed before any tunnel/exposure.
    A single bearer token in an env var + `?token=` bootstrap is a day of work.
 
 ## Known rough edges (accepted for the spike)
