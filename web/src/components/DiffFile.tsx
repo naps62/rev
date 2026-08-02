@@ -18,7 +18,7 @@ import * as api from "../api";
 import { highlightLines, type TokenLine } from "../highlight";
 import { intralineSpans, type Span } from "../intraline";
 import { cx, lineKey, type Thread } from "../util";
-import { CommentThread } from "./CommentThread";
+import { AuthorChip, CommentThread, threadShell } from "./CommentThread";
 import { Composer } from "./Composer";
 
 // "M" stays neutral so amber only ever means attention (stale, open, current).
@@ -158,9 +158,15 @@ export function DiffFile({
 
   const composerNode = (key: string) =>
     composerAt?.key === key ? (
-      <div className="mx-3 my-2 overflow-hidden rounded-md border border-edge border-l-2 border-l-accent/70 bg-bg">
+      <div className={threadShell}>
+        <div className="flex items-baseline gap-2 border-b border-edge-soft bg-panel px-3 py-1">
+          <AuthorChip author="user" />
+          <span className="min-w-0 truncate font-mono text-[11px] text-faint">
+            {file.path}:{composerAt.anchor.line}
+          </span>
+        </div>
         <Composer
-          placeholder={`Comment on ${file.path}:${composerAt.anchor.line}`}
+          placeholder="Write a comment…"
           autoFocus
           onSubmit={(body) => {
             onCreateComment(composerAt.anchor, body);

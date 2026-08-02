@@ -4,15 +4,10 @@ import { Markdown } from "../markdown";
 import { cx, relativeTime, type Thread } from "../util";
 import { Composer } from "./Composer";
 
-function AuthorChip({ author }: { author: Comment["author"] }) {
+export function AuthorChip({ author }: { author: Comment["author"] }) {
   const user = author === "user";
   return (
-    <span
-      className={cx(
-        "inline-flex items-center gap-1.5 text-[12px] font-medium",
-        user ? "text-accent" : "text-agent",
-      )}
-    >
+    <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-fg">
       <span
         aria-hidden
         className={cx(
@@ -25,10 +20,16 @@ function AuthorChip({ author }: { author: Comment["author"] }) {
   );
 }
 
-function CommentBody({ comment, baseLabel }: { comment: Comment; baseLabel?: string }) {
+/** Contained conversation well: darker than the diff surface, bordered all
+ * around. Comment headers and the action row sit on the panel surface so the
+ * thread reads as a ledger of turns, not a stack of cards. */
+export const threadShell =
+  "mx-3 my-2 overflow-hidden rounded-md border border-edge bg-bg font-sans";
+
+function CommentBlock({ comment, baseLabel }: { comment: Comment; baseLabel?: string }) {
   return (
-    <div className="px-3 py-2">
-      <div className="flex items-baseline gap-2">
+    <div>
+      <div className="flex items-baseline gap-2 bg-panel px-3 py-1">
         <AuthorChip author={comment.author} />
         <span className="text-[11px] text-faint">
           {relativeTime(comment.createdAt)}
@@ -36,13 +37,13 @@ function CommentBody({ comment, baseLabel }: { comment: Comment; baseLabel?: str
         {baseLabel && (
           <span
             title={`written against base ${baseLabel}`}
-            className="rounded-sm border border-edge px-1 font-mono text-[10.5px] leading-4 text-faint"
+            className="ml-auto rounded-sm border border-edge px-1 font-mono text-[10.5px] leading-4 text-faint"
           >
             base {baseLabel}
           </span>
         )}
       </div>
-      <div className="mt-1 whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-fg">
+      <div className="whitespace-pre-wrap px-3 pb-1.5 pt-1 font-sans text-[13px] leading-relaxed text-fg">
         <Markdown text={comment.body} />
       </div>
     </div>
@@ -78,22 +79,22 @@ export function CommentThread({
   useEffect(() => setOverride(null), [resolved]);
   const [replying, setReplying] = useState(false);
 
-  // Containment that separates conversation from diff: inset panel, left
-  // accent in the thread author's color (amber = user, blue = agent).
-  const shell = cx(
-    "mx-3 my-2 overflow-hidden rounded-md border border-edge border-l-2 bg-bg font-sans",
-    root.author === "user" ? "border-l-accent/70" : "border-l-agent/70",
-  );
-
   if (resolved && !expanded) {
     return (
-      <div className={shell}>
+      <div className={threadShell}>
         <button
           type="button"
           onClick={() => setOverride(true)}
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-mute transition-colors duration-150 hover:text-fg"
+          className="flex w-full items-center gap-2 bg-panel px-3 py-1.5 text-left text-[12px] text-mute transition-colors duration-150 hover:text-fg"
         >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden
+            className="shrink-0 text-add"
+          >
             <path
               d="M3 8.5 6.5 12 13 4.5"
               stroke="currentColor"
@@ -102,8 +103,8 @@ export function CommentThread({
               strokeLinejoin="round"
             />
           </svg>
-          <span>resolved</span>
-          <span className="min-w-0 flex-1 truncate">{root.body}</span>
+          <span className="font-medium">Resolved</span>
+          <span className="min-w-0 flex-1 truncate text-faint">{root.body}</span>
           <span className="shrink-0 text-faint">
             {replies.length > 0 && `${replies.length} repl${replies.length === 1 ? "y" : "ies"} · `}
             expand
@@ -114,21 +115,19 @@ export function CommentThread({
   }
 
   return (
-    <div className={shell}>
+    <div className={threadShell}>
       {anchorNote && (
         <div className="border-b border-edge-soft px-3 py-1.5 font-mono text-[11px] text-faint">
           {anchorNote}
         </div>
       )}
       <div className="divide-y divide-edge-soft">
-        <CommentBody comment={root} baseLabel={baseLabel} />
+        <CommentBlock comment={root} baseLabel={baseLabel} />
         {replies.map((r) => (
-          <div key={r.id} className="pl-4">
-            <CommentBody comment={r} />
-          </div>
+          <CommentBlock key={r.id} comment={r} />
         ))}
       </div>
-      <div className="flex items-center gap-3 border-t border-edge-soft px-3 py-1.5">
+      <div className="flex items-center gap-3 border-t border-edge-soft bg-panel px-3 py-1.5">
         {!replying && (
           <button
             type="button"
