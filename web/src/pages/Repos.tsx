@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import type { RepoInfo } from "#shared/types";
 import { TUNING } from "#shared/tuning";
 import * as api from "../api";
+import { AppHeader } from "../components/AppHeader";
 import { LiveDot } from "../components/LiveDot";
 import { basename, cx, relativeTime } from "../util";
 import { useRevSocket } from "../ws";
@@ -171,11 +172,9 @@ export function Repos() {
     });
 
   return (
-    <div className="w-full px-4 pb-8">
-      <header className="flex h-14 items-center gap-3">
-        <h1 className="font-mono text-[15px] font-bold text-fg">
-          rev<span className="text-accent">_</span>
-        </h1>
+    <div className="min-h-screen">
+      <h1 className="sr-only">rev — always-on review</h1>
+      <AppHeader>
         <p className="text-[12px] text-faint">always-on review</p>
         <div className="ml-auto flex items-center gap-3">
           <LiveDot status={status} />
@@ -188,139 +187,141 @@ export function Repos() {
             {rescan.isPending ? "Scanning…" : "Rescan"}
           </button>
         </div>
-      </header>
+      </AppHeader>
 
-      {scopes.length > 1 && (
-        <nav aria-label="Project scope" className="mb-3 flex items-end gap-1 border-b border-edge">
-          {scopes.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => selectScope(s)}
-              aria-current={s === currentScope ? "page" : undefined}
-              className={cx(
-                "-mb-px flex items-baseline gap-1.5 border-b-2 px-2.5 pb-1.5 pt-1 font-mono text-[12px] transition-colors duration-150",
-                s === currentScope
-                  ? "border-accent text-fg"
-                  : "border-transparent text-mute hover:text-fg",
-              )}
-            >
-              {s}
-              <span
+      <div className="w-full px-4 pb-8 pt-4">
+        {scopes.length > 1 && (
+          <nav aria-label="Project scope" className="mb-3 flex items-end gap-1 border-b border-edge">
+            {scopes.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => selectScope(s)}
+                aria-current={s === currentScope ? "page" : undefined}
                 className={cx(
-                  "font-mono text-[10.5px] tabular-nums",
-                  s === currentScope ? "text-accent" : "text-faint",
+                  "-mb-px flex items-baseline gap-1.5 border-b-2 px-2.5 pb-1.5 pt-1 font-mono text-[12px] transition-colors duration-150",
+                  s === currentScope
+                    ? "border-accent text-fg"
+                    : "border-transparent text-mute hover:text-fg",
                 )}
               >
-                {activeCounts.get(s) ?? 0}
-              </span>
-            </button>
-          ))}
-        </nav>
-      )}
-
-      {reposQ.isPending && (
-        <ul className="divide-y divide-edge-soft rounded-md border border-edge bg-panel">
-          {[0, 1, 2].map((i) => (
-            <li key={i} className="animate-pulse px-3 py-3">
-              <div className="h-3.5 w-40 rounded-sm bg-raise" />
-              <div className="mt-2 h-2.5 w-64 rounded-sm bg-raise/70" />
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {reposQ.error && (
-        <div className="rounded-md border border-del/40 bg-panel px-4 py-3">
-          <p className="text-[13px] text-del">{(reposQ.error as Error).message}</p>
-          <button
-            type="button"
-            onClick={() => reposQ.refetch()}
-            className="mt-2 text-[12px] text-mute hover:text-fg"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {reposQ.data && groups.length === 0 && (
-        <div className="rounded-md border border-edge bg-panel px-4 py-8 text-center">
-          <p className="text-[13px] text-mute">No git repos discovered under the configured roots.</p>
-          <p className="mt-1 text-[12px] text-faint">
-            Set REV_ROOTS on the server, then rescan.
-          </p>
-        </div>
-      )}
-
-      {groups.length > 0 && (
-        <div className="overflow-hidden rounded-md border border-edge bg-panel">
-          <div
-            className={cx(
-              GRID,
-              "border-b border-edge px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-faint",
-            )}
-          >
-            <span>Repo</span>
-            <span>Branch → base</span>
-            <span className="text-right">Changed</span>
-            <span className="text-right">Comments</span>
-            <span className="text-right">Activity</span>
-          </div>
-          {visibleGroups.length === 0 && (
-            <p className="px-3 py-6 text-center text-[12.5px] text-mute">
-              Nothing in active development here right now.
-            </p>
-          )}
-          <div className="divide-y divide-edge-soft">
-            {visibleGroups.map((g) => (
-              <div key={g.label || "(root)"}>
-                {g.label && (
-                  <p className="px-3 pb-0.5 pt-2 font-mono text-[11px] text-faint">
-                    {g.label}/
-                  </p>
-                )}
-                {g.entries.map((e) => (
-                  <div key={e.repo.dir} className={cx(!e.active && "opacity-55")}>
-                    <RepoRow repo={e.repo} indent={g.label ? 1 : 0} />
-                    {e.activeWorktrees.map((w) => (
-                      <RepoRow key={w.dir} repo={w} indent={(g.label ? 1 : 0) + 1} isWorktree />
-                    ))}
-                    {e.staleWorktrees.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => toggleStale(e.repo.dir)}
-                        className="block w-full px-3 py-1 text-left font-mono text-[11px] text-faint transition-colors duration-150 hover:text-mute"
-                        style={{ paddingLeft: 12 + ((g.label ? 1 : 0) + 1) * 16 }}
-                      >
-                        {staleOpen.has(e.repo.dir)
-                          ? "hide stale worktrees"
-                          : `show ${e.staleWorktrees.length} stale worktree${e.staleWorktrees.length === 1 ? "" : "s"}`}
-                      </button>
-                    )}
-                    {staleOpen.has(e.repo.dir) &&
-                      e.staleWorktrees.map((w) => (
-                        <div key={w.dir} className="opacity-55">
-                          <RepoRow repo={w} indent={(g.label ? 1 : 0) + 1} isWorktree />
-                        </div>
-                      ))}
-                  </div>
-                ))}
-              </div>
+                {s}
+                <span
+                  className={cx(
+                    "font-mono text-[10.5px] tabular-nums",
+                    s === currentScope ? "text-accent" : "text-faint",
+                  )}
+                >
+                  {activeCounts.get(s) ?? 0}
+                </span>
+              </button>
             ))}
-          </div>
-          {inactiveCount > 0 && (
+          </nav>
+        )}
+  
+        {reposQ.isPending && (
+          <ul className="divide-y divide-edge-soft rounded-md border border-edge bg-panel">
+            {[0, 1, 2].map((i) => (
+              <li key={i} className="animate-pulse px-3 py-3">
+                <div className="h-3.5 w-40 rounded-sm bg-raise" />
+                <div className="mt-2 h-2.5 w-64 rounded-sm bg-raise/70" />
+              </li>
+            ))}
+          </ul>
+        )}
+  
+        {reposQ.error && (
+          <div className="rounded-md border border-del/40 bg-panel px-4 py-3">
+            <p className="text-[13px] text-del">{(reposQ.error as Error).message}</p>
             <button
               type="button"
-              onClick={() => setShowInactive((v) => !v)}
-              className="block w-full border-t border-edge-soft px-3 py-2 text-left font-mono text-[11.5px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute"
+              onClick={() => reposQ.refetch()}
+              className="mt-2 text-[12px] text-mute hover:text-fg"
             >
-              {showInactive
-                ? "hide inactive projects"
-                : `show ${inactiveCount} inactive project${inactiveCount === 1 ? "" : "s"}`}
+              Retry
             </button>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+  
+        {reposQ.data && groups.length === 0 && (
+          <div className="rounded-md border border-edge bg-panel px-4 py-8 text-center">
+            <p className="text-[13px] text-mute">No git repos discovered under the configured roots.</p>
+            <p className="mt-1 text-[12px] text-faint">
+              Set REV_ROOTS on the server, then rescan.
+            </p>
+          </div>
+        )}
+  
+        {groups.length > 0 && (
+          <div className="overflow-hidden rounded-md border border-edge bg-panel">
+            <div
+              className={cx(
+                GRID,
+                "border-b border-edge px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-faint",
+              )}
+            >
+              <span>Repo</span>
+              <span>Branch → base</span>
+              <span className="text-right">Changed</span>
+              <span className="text-right">Comments</span>
+              <span className="text-right">Activity</span>
+            </div>
+            {visibleGroups.length === 0 && (
+              <p className="px-3 py-6 text-center text-[12.5px] text-mute">
+                Nothing in active development here right now.
+              </p>
+            )}
+            <div className="divide-y divide-edge-soft">
+              {visibleGroups.map((g) => (
+                <div key={g.label || "(root)"}>
+                  {g.label && (
+                    <p className="px-3 pb-0.5 pt-2 font-mono text-[11px] text-faint">
+                      {g.label}/
+                    </p>
+                  )}
+                  {g.entries.map((e) => (
+                    <div key={e.repo.dir} className={cx(!e.active && "opacity-55")}>
+                      <RepoRow repo={e.repo} indent={g.label ? 1 : 0} />
+                      {e.activeWorktrees.map((w) => (
+                        <RepoRow key={w.dir} repo={w} indent={(g.label ? 1 : 0) + 1} isWorktree />
+                      ))}
+                      {e.staleWorktrees.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => toggleStale(e.repo.dir)}
+                          className="block w-full px-3 py-1 text-left font-mono text-[11px] text-faint transition-colors duration-150 hover:text-mute"
+                          style={{ paddingLeft: 12 + ((g.label ? 1 : 0) + 1) * 16 }}
+                        >
+                          {staleOpen.has(e.repo.dir)
+                            ? "hide stale worktrees"
+                            : `show ${e.staleWorktrees.length} stale worktree${e.staleWorktrees.length === 1 ? "" : "s"}`}
+                        </button>
+                      )}
+                      {staleOpen.has(e.repo.dir) &&
+                        e.staleWorktrees.map((w) => (
+                          <div key={w.dir} className="opacity-55">
+                            <RepoRow repo={w} indent={(g.label ? 1 : 0) + 1} isWorktree />
+                          </div>
+                        ))}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+            {inactiveCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowInactive((v) => !v)}
+                className="block w-full border-t border-edge-soft px-3 py-2 text-left font-mono text-[11.5px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute"
+              >
+                {showInactive
+                  ? "hide inactive projects"
+                  : `show ${inactiveCount} inactive project${inactiveCount === 1 ? "" : "s"}`}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

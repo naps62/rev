@@ -14,6 +14,7 @@ import type {
   FileSummary,
 } from "#shared/types";
 import * as api from "../api";
+import { AppHeader, HEADER_PX } from "../components/AppHeader";
 import { CommentThread } from "../components/CommentThread";
 import { Composer } from "../components/Composer";
 import { DiffFile, type DiffMode } from "../components/DiffFile";
@@ -24,7 +25,6 @@ import { buildFileTree, flattenTree } from "../tree";
 import { basename, buildThreads, cx, shortSha, type Thread } from "../util";
 import { useRevSocket } from "../ws";
 
-const HEADER_PX = 48;
 const MODE_KEY = "rev.diffMode";
 
 function initialMode(params: URLSearchParams): DiffMode {
@@ -363,13 +363,7 @@ export function Review() {
 
   return (
     <div className="min-h-screen">
-      <header
-        className="sticky top-0 z-20 flex items-center gap-3 border-b border-edge bg-panel px-3"
-        style={{ height: HEADER_PX }}
-      >
-        <Link href={api.href("/")} className="font-mono text-[13px] font-bold text-fg hover:text-accent">
-          rev<span className="text-accent">_</span>
-        </Link>
+      <AppHeader>
         <span className="text-faint max-sm:hidden">/</span>
         <span
           className="max-w-56 shrink-0 truncate text-[13px] font-medium text-fg max-sm:max-w-24"
@@ -499,7 +493,7 @@ export function Review() {
             ?
           </button>
         </div>
-      </header>
+      </AppHeader>
 
       {!dir || !base ? (
         <CenterPanel>
