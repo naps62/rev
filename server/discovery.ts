@@ -18,7 +18,7 @@ import { basename, join, sep } from "node:path";
 import type { RepoInfo } from "#shared/types";
 import { TUNING } from "#shared/tuning";
 import { config } from "./config.ts";
-import { openCommentCounts, seenHashes } from "./db.ts";
+import { openCommentCounts, seenHashes, seenSegmentLineTotals } from "./db.ts";
 import {
   type ChangedFileStat,
   changedFileStats,
@@ -172,18 +172,27 @@ export function gitStateFingerprint(dir: string): string {
   return parts.join(",");
 }
 
-/** Sum of additions+deletions over files whose working content still matches the hash they were marked seen at. */
+/**
+ * Sum of additions+deletions over files whose working content still matches
+ * the hash they were marked seen at, plus seen-segment lines for the rest.
+ * Segment counts are optimistic (stored at mark time, not re-verified) and
+ * capped at each file's own total.
+ */
 function seenLinesFor(dir: string, base: string | null, stats: ChangedFileStat[] | null): number | null {
   if (base === null || stats === null) return null;
   let seen: Map<string, string>;
+  let segTotals: Map<string, number>;
   try {
     seen = seenHashes(dir, base);
+    segTotals = seenSegmentLineTotals(dir, base);
   } catch {
     seen = new Map(); // DB not opened (tests)
+    segTotals = new Map();
   }
   let lines = 0;
   for (const f of stats) {
     if (seen.get(f.path) === f.contentHash) lines += f.additions + f.deletions;
+    else lines += Math.min(segTotals.get(f.path) ?? 0, f.additions + f.deletions);
   }
   return lines;
 }

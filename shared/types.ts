@@ -149,6 +149,13 @@ export interface FileDiffResponse {
   base: string;
   file: FileDiff;
   computedAt: number;
+  /**
+   * Hashes of sub-file segments marked seen for (dir, base, path). Segments
+   * are detected client-side (see web/src/semantic/segments.ts); the server
+   * stores opaque hashes and returns the full set — the client keeps whichever
+   * ones still match a detected segment.
+   */
+  seenSegments: string[];
 }
 
 /** Base-ref candidates for a checkout; defaultBase (when present) is first. */
@@ -281,6 +288,27 @@ export interface SeenRequest {
   seen: boolean;
 }
 
+/**
+ * One sub-file segment (comment run, block body, whole hunk) marked seen.
+ * The hash covers kind+text of every diff row in the segment, so any edit
+ * inside it changes the hash and the segment reverts to unseen — segments
+ * have no separate stale state.
+ */
+export interface SeenSegment {
+  hash: string;
+  /** add+del rows inside the segment at mark time, for progress counting. */
+  addDelLines: number;
+}
+
+export interface SeenSegmentsRequest {
+  dir: string;
+  base: string;
+  path: string;
+  segments: SeenSegment[];
+  /** false → un-mark (addDelLines ignored). */
+  seen: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // WebSocket protocol  (path: /ws)
 // ---------------------------------------------------------------------------
@@ -324,6 +352,7 @@ export type ServerMessage =
 // POST   /api/comments                       ← CommentCreateRequest → Comment
 // PATCH  /api/comments/:id                   ← CommentPatchRequest  → Comment
 // PUT    /api/seen                           ← SeenRequest → { ok: true }
+// PUT    /api/seen-segments                  ← SeenSegmentsRequest → { ok: true }
 // POST   /api/fetch                          ← { dir, base } → { ok, baseBehind }
 //        Runs `git fetch` for base's upstream remote so the review can be
 //        re-based against origin's truth without leaving the page.

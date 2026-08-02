@@ -239,6 +239,46 @@ describe("GET /diff/summary and /diff/file", () => {
   });
 });
 
+describe("PUT /seen-segments", () => {
+  test("stores hashes, /diff/file returns them, unmark removes", async () => {
+    const dir = makeRepo("routes-segments");
+    git(dir, "checkout", "-b", "f");
+    write(dir, "a.txt", "edited\n");
+    const q = `dir=${encodeURIComponent(dir)}&base=main`;
+
+    const bad = await json("PUT", "/seen-segments", { dir, base: "main", path: "a.txt", segments: [], seen: true });
+    expect(bad.status).toBe(400);
+    const badSeg = await json("PUT", "/seen-segments", {
+      dir, base: "main", path: "a.txt", segments: [{ hash: "", addDelLines: 1 }], seen: true,
+    });
+    expect(badSeg.status).toBe(400);
+    const escape = await json("PUT", "/seen-segments", {
+      dir, base: "main", path: "../x", segments: [{ hash: "h", addDelLines: 1 }], seen: true,
+    });
+    expect(escape.status).toBe(400);
+
+    sent.length = 0;
+    const ok = await json("PUT", "/seen-segments", {
+      dir,
+      base: "main",
+      path: "a.txt",
+      segments: [{ hash: "h1", addDelLines: 2 }, { hash: "h2", addDelLines: 3 }],
+      seen: true,
+    });
+    expect(ok.status).toBe(200);
+    expect(sent).toContainEqual({ type: "repos-changed" });
+
+    const fd = (await (await app.request(`/diff/file?${q}&path=a.txt`)).json()) as FileDiffResponse;
+    expect(fd.seenSegments.sort()).toEqual(["h1", "h2"]);
+
+    await json("PUT", "/seen-segments", {
+      dir, base: "main", path: "a.txt", segments: [{ hash: "h1", addDelLines: 0 }], seen: false,
+    });
+    const fd2 = (await (await app.request(`/diff/file?${q}&path=a.txt`)).json()) as FileDiffResponse;
+    expect(fd2.seenSegments).toEqual(["h2"]);
+  });
+});
+
 describe("GET /refs", () => {
   test("lists local + remote refs, defaultBase first, excludes origin/HEAD", async () => {
     const dir = makeRepo("routes-refs");
