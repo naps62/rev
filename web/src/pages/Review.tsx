@@ -3,7 +3,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import type {
   Comment,
@@ -11,6 +11,7 @@ import type {
   CommentListResponse,
   CommentPatchRequest,
   DiffSummaryResponse,
+  FileDiffResponse,
   FileSummary,
 } from "#shared/types";
 import * as api from "../api";
@@ -21,16 +22,34 @@ import { DiffFile, type DiffMode } from "../components/DiffFile";
 import { FileNav } from "../components/FileNav";
 import { HelpOverlay } from "../components/HelpOverlay";
 import { LiveDot } from "../components/LiveDot";
+import { Checkbox } from "../components/Checkbox";
+import { SymbolPanel } from "../components/SymbolPanel";
+import {
+  buildClassSections,
+  CLASS_LABEL,
+  type ClassSection,
+  type FileClass,
+} from "../semantic/classify.ts";
+import { findOccurrences, type Occurrence } from "../semantic/symbols.ts";
 import { buildFileTree, flattenTree } from "../tree";
 import { basename, buildThreads, cx, shortSha, type Thread } from "../util";
 import { useRevSocket } from "../ws";
 
 const MODE_KEY = "rev.diffMode";
+const VIEW_KEY = "rev.viewMode";
+
+export type ViewMode = "classic" | "semantic";
 
 function initialMode(params: URLSearchParams): DiffMode {
   const p = params.get("mode");
   if (p === "split" || p === "unified") return p;
   return localStorage.getItem(MODE_KEY) === "split" ? "split" : "unified";
+}
+
+function initialView(params: URLSearchParams): ViewMode {
+  const p = params.get("view");
+  if (p === "semantic" || p === "classic") return p;
+  return localStorage.getItem(VIEW_KEY) === "semantic" ? "semantic" : "classic";
 }
 
 export function Review() {
@@ -148,11 +167,120 @@ export function Review() {
     setModeState(m);
     localStorage.setItem(MODE_KEY, m);
   };
+  const [view, setViewState] = useState<ViewMode>(() => initialView(params));
+  const setView = (v: ViewMode) => {
+    setViewState(v);
+    localStorage.setItem(VIEW_KEY, v);
+  };
 
   // Tree (visual) order drives everything: the rail, the diff pane, scroll-spy
-  // and j/k all agree on it.
-  const tree = useMemo(() => buildFileTree(diffQ.data?.files ?? []), [diffQ.data]);
-  const files = useMemo(() => flattenTree(tree), [tree]);
+  // and j/k all agree on it. In semantic view the order is class sections
+  // first, tree order within each.
+  const sections = useMemo(
+    () => (view === "semantic" ? buildClassSections(diffQ.data?.files ?? []) : null),
+    [view, diffQ.data],
+  );
+  const tree = useMemo(
+    () => (sections ? [] : buildFileTree(diffQ.data?.files ?? [])),
+    [sections, diffQ.data],
+  );
+  const files = useMemo(
+    () => (sections ? sections.flatMap((s) => s.files) : flattenTree(tree)),
+    [sections, tree],
+  );
+
+  // Collapse/expand-all per class section; seq bump = one action broadcast to
+  // that section's DiffFiles. fileCmds targets a single file (symbol jumps).
+  const cmdSeq = useRef(0);
+  const [sectionCmds, setSectionCmds] = useState<
+    Partial<Record<FileClass, { seq: number; expand: boolean }>>
+  >({});
+  const commandSection = (cls: FileClass, expand: boolean) => {
+    cmdSeq.current += 1;
+    setSectionCmds((prev) => ({ ...prev, [cls]: { seq: cmdSeq.current, expand } }));
+  };
+  const [fileCmds, setFileCmds] = useState<
+    Record<string, { seq: number; expand: boolean }>
+  >({});
+  const commandFile = (path: string, expand: boolean) => {
+    cmdSeq.current += 1;
+    setFileCmds((prev) => ({ ...prev, [path]: { seq: cmdSeq.current, expand } }));
+  };
+
+  // Symbol panel: click opens/retargets, hover retargets only while open
+  // (debounced), Esc closes. Occurrence search runs over whatever per-file
+  // hunks are already in the query cache — coverage grows as files stream in.
+  const [symbol, setSymbol] = useState<string | null>(null);
+  const hoverTimer = useRef<number>(0);
+  // Kill any pending hover retarget when the symbol is set directly, or a
+  // stale hover fires 350ms after a click/Esc and overrides it.
+  const symbolSet = (sym: string | null) => {
+    clearTimeout(hoverTimer.current);
+    setSymbol(sym);
+  };
+  const symbolClick = (sym: string) => symbolSet(sym);
+  const symbolHover = (sym: string) => {
+    clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(
+      () => setSymbol((cur) => (cur != null ? sym : cur)),
+      350,
+    );
+  };
+  useEffect(() => () => clearTimeout(hoverTimer.current), []);
+  useEffect(() => {
+    if (view !== "semantic") setSymbol(null);
+  }, [view]);
+
+  // Re-run the occurrence search when new file hunks land in the cache.
+  const [cacheTick, setCacheTick] = useState(0);
+  useEffect(() => {
+    if (symbol == null) return;
+    return qc.getQueryCache().subscribe((ev) => {
+      if ((ev.query.queryKey as unknown[])[0] === "diff-file") {
+        setCacheTick((t) => t + 1);
+      }
+    });
+  }, [qc, symbol]);
+
+  const symbolData = useMemo(() => {
+    if (symbol == null) return null;
+    const entries = qc.getQueriesData<FileDiffResponse>({
+      queryKey: ["diff-file", dir, base],
+    });
+    // Several cache entries can exist per path (older contentHashes); keep
+    // the freshest.
+    const byPath = new Map<string, FileDiffResponse>();
+    for (const [, data] of entries) {
+      if (!data) continue;
+      const cur = byPath.get(data.file.path);
+      if (!cur || data.computedAt > cur.computedAt) byPath.set(data.file.path, data);
+    }
+    const loaded = files
+      .filter((f) => byPath.has(f.path))
+      .map((f) => ({ path: f.path, hunks: byPath.get(f.path)!.file.hunks }));
+    const occurrences = findOccurrences(symbol, loaded);
+    const notLoaded = files.filter(
+      (f) => !byPath.has(f.path) && !f.binary && f.additions + f.deletions > 0,
+    ).length;
+    return {
+      occurrences,
+      notLoaded,
+      files: new Set(occurrences.map((o) => o.path)),
+    };
+    // cacheTick invalidates on new hunks landing; qc itself is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, files, dir, base, cacheTick]);
+
+  const loadAllHunks = () => {
+    for (const f of files) {
+      if (f.binary || f.additions + f.deletions === 0) continue;
+      qc.prefetchQuery({
+        queryKey: ["diff-file", dir, base, f.path, f.contentHash],
+        queryFn: () => api.getFileDiff(dir, base, f.path, f.oldPath),
+        staleTime: Infinity,
+      });
+    }
+  };
 
   // Route threads by file: to their file's DiffFile (which places them on
   // lines once its hunks load), or to the review-level panel (unanchored, or
@@ -262,6 +390,35 @@ export function Review() {
   };
   jumpToRef.current = jumpTo;
 
+  /**
+   * Jump to a specific occurrence row. The row may not exist yet (file
+   * collapsed or hunks still streaming): expand it, glide toward the file,
+   * and poll for the row for a few seconds before settling for the file top.
+   */
+  const jumpToOccurrence = (o: Occurrence) => {
+    commandFile(o.path, true);
+    jumpTo(o.path);
+    const sel = `[data-path="${CSS.escape(o.path)}"] tr[data-lk~="${o.side}:${o.line}"]`;
+    const t0 = performance.now();
+    const attempt = () => {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (el) {
+        cancelGlide();
+        window.scrollTo({
+          top: el.getBoundingClientRect().top + window.scrollY - HEADER_PX - 80,
+        });
+        el.classList.remove("hunk-flash");
+        void el.offsetWidth;
+        el.classList.add("hunk-flash");
+        setTimeout(() => el.classList.remove("hunk-flash"), 1300);
+        setCurrentPath(o.path);
+        return;
+      }
+      if (performance.now() - t0 < 3000) requestAnimationFrame(attempt);
+    };
+    requestAnimationFrame(attempt);
+  };
+
   // Hovering a diff claims focus; ignored mid-glide so a rail click isn't
   // hijacked by files sliding under the stationary-ish cursor.
   const hoverFocus = (path: string) => {
@@ -342,6 +499,7 @@ export function Review() {
         setHelp((h) => !h);
       } else if (e.key === "Escape") {
         setHelp(false);
+        symbolSet(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -449,6 +607,26 @@ export function Review() {
           </select>
         )}
         <div className="ml-auto flex items-center gap-3">
+          <div
+            role="radiogroup"
+            aria-label="Review view"
+            className="hidden overflow-hidden rounded-sm border border-edge sm:flex"
+          >
+            {(["classic", "semantic"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                aria-pressed={view === v}
+                className={cx(
+                  "px-2 py-0.5 font-mono text-[11px] transition-colors duration-150",
+                  view === v ? "bg-raise text-fg" : "text-faint hover:bg-raise/40 hover:text-mute",
+                )}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
           <div
             role="radiogroup"
             aria-label="Diff layout"
@@ -562,6 +740,8 @@ export function Review() {
           >
             <FileNav
               tree={tree}
+              sections={sections}
+              symbolFiles={symbolData?.files}
               unresolvedByFile={unresolvedByFile}
               currentPath={currentPath}
               onSelect={jumpTo}
@@ -570,7 +750,18 @@ export function Review() {
           </aside>
 
           <main className="flex min-w-0 flex-1 flex-col gap-3">
-            {files.map((f) => (
+            {(sections ?? [null]).map((s) => (
+              <Fragment key={s?.cls ?? "all"}>
+                {s && (
+                  <ClassSectionHeader
+                    section={s}
+                    onCollapseAll={(expand) => commandSection(s.cls, expand)}
+                    onToggleSeenAll={(seen) => {
+                      for (const f of s.files) toggleSeen(f, seen);
+                    }}
+                  />
+                )}
+                {(s?.files ?? files).map((f) => (
               <DiffFile
                 key={f.path}
                 dir={dir}
@@ -579,6 +770,17 @@ export function Review() {
                 mode={mode}
                 threads={threadsByFile.get(f.path) ?? []}
                 isCurrent={currentPath === f.path}
+                semantic={!!sections}
+                fileClass={s?.cls}
+                defaultCollapsed={s?.cls === "generated"}
+                collapseCmd={(() => {
+                  const a = fileCmds[f.path];
+                  const b = s ? sectionCmds[s.cls] : undefined;
+                  return a && b ? (a.seq > b.seq ? a : b) : a ?? b;
+                })()}
+                onSymbolClick={sections ? symbolClick : undefined}
+                onSymbolHover={sections ? symbolHover : undefined}
+                symbolActive={symbol != null}
                 onHover={() => hoverFocus(f.path)}
                 onToggleSeen={toggleSeen}
                 onCreateComment={(anchor, body) => createComment(anchor, body)}
@@ -594,6 +796,8 @@ export function Review() {
                   else hunkEls.current.delete(k);
                 }}
               />
+                ))}
+              </Fragment>
             ))}
 
             <section className="rounded-md border border-edge bg-panel">
@@ -627,10 +831,83 @@ export function Review() {
               j/k files · J/K unseen · n/p hunks · . seen · ? shortcuts
             </p>
           </main>
+
+          {symbol != null && symbolData && (
+            <aside
+              className="sticky hidden w-72 shrink-0 flex-col overflow-hidden rounded-md border border-edge bg-panel lg:flex"
+              style={{
+                top: HEADER_PX + 12,
+                maxHeight: `calc(100vh - ${HEADER_PX + 24}px)`,
+              }}
+            >
+              <SymbolPanel
+                symbol={symbol}
+                occurrences={symbolData.occurrences}
+                fileOrder={files.map((f) => f.path)}
+                currentPath={currentPath}
+                notLoaded={symbolData.notLoaded}
+                onLoadAll={loadAllHunks}
+                onJump={jumpToOccurrence}
+                onClose={() => symbolSet(null)}
+              />
+            </aside>
+          )}
         </div>
       )}
 
       {help && <HelpOverlay onClose={() => setHelp(false)} />}
+    </div>
+  );
+}
+
+function ClassSectionHeader({
+  section,
+  onCollapseAll,
+  onToggleSeenAll,
+}: {
+  section: ClassSection;
+  onCollapseAll: (expand: boolean) => void;
+  onToggleSeenAll: (seen: boolean) => void;
+}) {
+  const { cls, files } = section;
+  const totals = files.reduce(
+    (acc, f) => ({ add: acc.add + f.additions, del: acc.del + f.deletions }),
+    { add: 0, del: 0 },
+  );
+  const allSeen = files.length > 0 && files.every((f) => f.seen);
+  const someSeen = files.some((f) => f.seen);
+  return (
+    <div className="mt-2 flex items-center gap-2.5 px-1 first:mt-0">
+      <Checkbox
+        checked={allSeen}
+        indeterminate={someSeen && !allSeen}
+        title={allSeen ? "Mark section unseen" : "Mark section seen"}
+        onChange={onToggleSeenAll}
+      />
+      <h2 className="text-[12px] font-semibold uppercase tracking-wide text-mute">
+        {CLASS_LABEL[cls]}
+      </h2>
+      <span className="font-mono text-[11.5px] tabular-nums text-faint">
+        {files.length} file{files.length === 1 ? "" : "s"}{" "}
+        <span className="text-add">+{totals.add}</span>{" "}
+        <span className="text-del">−{totals.del}</span>
+      </span>
+      <div className="ml-auto flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => onCollapseAll(false)}
+          className="rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-faint transition-colors duration-150 hover:bg-raise hover:text-fg"
+        >
+          collapse all
+        </button>
+        <button
+          type="button"
+          onClick={() => onCollapseAll(true)}
+          className="rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-faint transition-colors duration-150 hover:bg-raise hover:text-fg"
+        >
+          expand all
+        </button>
+      </div>
     </div>
   );
 }

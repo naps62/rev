@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FileSummary } from "#shared/types";
+import { CLASS_LABEL, type ClassSection } from "../semantic/classify.ts";
 import type { DirNode, TreeNode } from "../tree";
 import { flattenTree } from "../tree";
 import { cx } from "../util";
@@ -15,6 +16,10 @@ const GLYPH: Record<FileSummary["status"], { g: string; cls: string }> = {
 
 interface FileNavProps {
   tree: TreeNode[];
+  /** Semantic view: class sections replace the top-level tree. */
+  sections?: ClassSection[] | null;
+  /** Files containing the active symbol — get a marker dot. */
+  symbolFiles?: Set<string>;
   unresolvedByFile: Map<string, number>;
   currentPath: string | null;
   onSelect: (path: string) => void;
@@ -23,6 +28,8 @@ interface FileNavProps {
 
 export function FileNav({
   tree,
+  sections,
+  symbolFiles,
   unresolvedByFile,
   currentPath,
   onSelect,
@@ -34,7 +41,9 @@ export function FileNav({
   useEffect(() => {
     if (!currentPath) return;
     setCollapsed((prev) => {
-      const next = [...prev].filter((d) => !currentPath.startsWith(`${d}/`));
+      const next = [...prev].filter(
+        (d) => d.startsWith("\0") || !currentPath.startsWith(`${d}/`),
+      );
       return next.length === prev.size ? prev : new Set(next);
     });
   }, [currentPath]);
@@ -47,18 +56,88 @@ export function FileNav({
       return next;
     });
 
+  const level = (nodes: TreeNode[]) => (
+    <TreeLevel
+      nodes={nodes}
+      depth={0}
+      collapsed={collapsed}
+      toggleDir={toggleDir}
+      unresolvedByFile={unresolvedByFile}
+      symbolFiles={symbolFiles}
+      currentPath={currentPath}
+      onSelect={onSelect}
+      onToggleSeen={onToggleSeen}
+    />
+  );
+
   return (
     <nav aria-label="Changed files" className="flex flex-col py-1">
-      <TreeLevel
-        nodes={tree}
-        depth={0}
-        collapsed={collapsed}
-        toggleDir={toggleDir}
-        unresolvedByFile={unresolvedByFile}
-        currentPath={currentPath}
-        onSelect={onSelect}
-        onToggleSeen={onToggleSeen}
-      />
+      {sections
+        ? sections.map((s) => {
+            // "\0"-prefixed key can't collide with a real directory path.
+            const key = `\0${s.cls}`;
+            const isCollapsed = collapsed.has(key);
+            const allSeen = s.files.length > 0 && s.files.every((f) => f.seen);
+            const someSeen = s.files.some((f) => f.seen);
+            const open = s.files.reduce(
+              (n, f) => n + (unresolvedByFile.get(f.path) ?? 0),
+              0,
+            );
+            return (
+              <div key={s.cls}>
+                <div
+                  onClick={() => toggleDir(key)}
+                  className="group flex w-full cursor-pointer items-center gap-1.5 py-1 pl-2 pr-2 hover:bg-raise/50"
+                >
+                  <Checkbox
+                    checked={allSeen}
+                    indeterminate={someSeen && !allSeen}
+                    title={allSeen ? "Mark section unseen" : "Mark section seen"}
+                    onChange={(checked) => {
+                      for (const f of s.files) onToggleSeen(f, checked);
+                    }}
+                  />
+                  <svg
+                    width="9"
+                    height="9"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden
+                    className={cx(
+                      "shrink-0 text-faint transition-transform duration-150",
+                      !isCollapsed && "rotate-90",
+                    )}
+                  >
+                    <path
+                      d="M5.5 3 11 8l-5.5 5"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  <span
+                    className={cx(
+                      "min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-wide text-mute",
+                      allSeen && "opacity-60",
+                    )}
+                  >
+                    {CLASS_LABEL[s.cls]}
+                  </span>
+                  {open > 0 && (
+                    <span className="shrink-0 rounded-sm bg-accent-soft px-1 font-mono text-[10.5px] leading-4 text-accent">
+                      {open}
+                    </span>
+                  )}
+                  <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-faint">
+                    {s.files.length}
+                  </span>
+                </div>
+                {!isCollapsed && level(s.tree)}
+              </div>
+            );
+          })
+        : level(tree)}
     </nav>
   );
 }
@@ -69,6 +148,7 @@ interface LevelProps {
   collapsed: Set<string>;
   toggleDir: (path: string) => void;
   unresolvedByFile: Map<string, number>;
+  symbolFiles?: Set<string>;
   currentPath: string | null;
   onSelect: (path: string) => void;
   onToggleSeen: (file: FileSummary, seen: boolean) => void;
@@ -172,10 +252,12 @@ function DirRow(props: LevelProps & { node: DirNode }) {
 }
 
 function FileRow(props: LevelProps & { file: FileSummary }) {
-  const { file: f, depth, unresolvedByFile, currentPath, onSelect, onToggleSeen } = props;
+  const { file: f, depth, unresolvedByFile, symbolFiles, currentPath, onSelect, onToggleSeen } =
+    props;
   const name = f.path.slice(f.path.lastIndexOf("/") + 1);
   const open = unresolvedByFile.get(f.path) ?? 0;
   const current = currentPath === f.path;
+  const hasSymbol = symbolFiles?.has(f.path) ?? false;
   return (
     // The whole row navigates (cursor + onClick); the inner button carries
     // keyboard focus, and the checkbox stops propagation so seen-toggling
@@ -208,6 +290,12 @@ function FileRow(props: LevelProps & { file: FileSummary }) {
       >
         <span className={cx(f.seen && !f.stale ? "text-mute" : "text-fg")}>{name}</span>
       </button>
+      {hasSymbol && (
+        <span
+          title="contains the active symbol"
+          className="size-1.5 shrink-0 rounded-full bg-agent"
+        />
+      )}
       {f.stale && (
         <span title="changed since seen" className="size-1.5 shrink-0 rounded-full bg-accent" />
       )}

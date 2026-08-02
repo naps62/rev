@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import type {
@@ -18,6 +19,9 @@ import { TUNING } from "#shared/tuning";
 import * as api from "../api";
 import { highlightLines, type TokenLine } from "../highlight";
 import { intralineSpans, type Span } from "../intraline";
+import type { FileClass } from "../semantic/classify.ts";
+import { importFolds, langOf, testFolds, type FoldRun } from "../semantic/fold.ts";
+import { isSymbol, tokenAt } from "../semantic/symbols.ts";
 import { cx, lineKey, type Thread } from "../util";
 import { AuthorChip, CommentThread, threadShell } from "./CommentThread";
 import { Checkbox } from "./Checkbox";
@@ -43,15 +47,29 @@ interface DiffFileProps {
   /** All threads anchored to this file; placed on lines once hunks load. */
   threads: Thread[];
   isCurrent: boolean;
+  /** Semantic view on: enables import/test-body folding (unified only). */
+  semantic?: boolean;
+  /** This file's class in semantic view; "tests" switches to body folding. */
+  fileClass?: FileClass;
+  /** Start collapsed regardless of size/seen (semantic "generated" class). */
+  defaultCollapsed?: boolean;
+  /** Section-level collapse/expand-all: acts once per seq bump. */
+  collapseCmd?: { seq: number; expand: boolean };
   /** Mouse moved over this file — claim focus (rail + yellow indicator). */
   onHover?: () => void;
   onToggleSeen: (file: FileSummary, seen: boolean) => void;
+  /** Click on an identifier — open/retarget the symbol panel. */
+  onSymbolClick?: (symbol: string) => void;
+  /** Hover over an identifier; only fired while the panel is open. */
+  onSymbolHover?: (symbol: string) => void;
+  /** Symbol panel is open: enables hover retargeting. */
+  symbolActive?: boolean;
   onCreateComment: (anchor: CommentAnchor, body: string) => void;
   onReply: (root: Comment, body: string) => void;
   onResolve: (root: Comment, resolved: boolean) => void;
   sectionRef: (el: HTMLElement | null) => void;
-  /** Registers rendered hunk-header rows for n/p navigation. */
-  hunkRef?: (hunkIdx: number, el: HTMLTableRowElement | null) => void;
+  /** Registers hunk-header rows and fold strips for n/p navigation. */
+  hunkRef?: (hunkId: number | string, el: HTMLTableRowElement | null) => void;
 }
 
 export function DiffFile({
@@ -61,8 +79,15 @@ export function DiffFile({
   mode,
   threads,
   isCurrent,
+  semantic,
+  fileClass,
+  defaultCollapsed,
+  collapseCmd,
   onHover,
   onToggleSeen,
+  onSymbolClick,
+  onSymbolHover,
+  symbolActive,
   onCreateComment,
   onReply,
   onResolve,
@@ -85,19 +110,58 @@ export function DiffFile({
     prevStale.current = file.stale;
   }, [file.stale]);
 
+  // Collapsed IS seen (one state, from main) — but the semantic view needs
+  // to open/close files without touching seen: section collapse-all,
+  // generated-class default-collapsed. `peek` overrides the derived state;
+  // null follows it. Any seen change clears the override.
+  const [peek, setPeek] = useState<boolean | null>(null);
+  const lastCmdSeq = useRef(collapseCmd?.seq ?? 0);
+  useEffect(() => {
+    if (!collapseCmd || collapseCmd.seq === lastCmdSeq.current) return;
+    lastCmdSeq.current = collapseCmd.seq;
+    setPeek(collapseCmd.expand);
+  }, [collapseCmd]);
+  const prevSeen = useRef(file.seen);
+  useEffect(() => {
+    if (file.seen !== prevSeen.current) {
+      prevSeen.current = file.seen;
+      setPeek(null);
+    }
+  }, [file.seen]);
+
   const status = STATUS_GLYPH[file.status];
   // Summary alone tells whether there is anything to show: binary and
   // mode-only changes have no lines; oversized untracked files report 0.
   const canExpand = !file.binary && changed > 0;
   const canEdit = !file.binary && file.status !== "deleted";
   // Collapsed IS seen — one state. Stale re-opens the file until re-marked.
-  const expanded = canExpand && (!file.seen || file.stale);
+  // peek (semantic view) overrides both; defaultCollapsed only the default.
+  const expanded =
+    canExpand && (peek ?? ((!file.seen && !defaultCollapsed) || file.stale));
   // Whether anything renders below the header (diff table or quick-edit).
   const open = editing || expanded;
 
   // A stale file is "needs review", so a click re-marks it seen rather than
   // unmarking it.
   const toggleSeen = () => onToggleSeen(file, !file.seen || file.stale);
+  /**
+   * Header/chevron click. Seen-collapsed and unseen-expanded keep main's
+   * toggle-seen behavior; peek-collapsed (section collapse-all, generated
+   * default) opens without unmarking, and peek-opened seen files close
+   * without marking anything.
+   */
+  const toggleOpen = () => {
+    if (!expanded && !file.seen && !file.stale) {
+      setPeek(true);
+      return;
+    }
+    if (expanded && file.seen && !file.stale) {
+      setPeek(null);
+      return;
+    }
+    setPeek(null);
+    toggleSeen();
+  };
 
   // Body stays mounted while the close animation slides it shut (250ms
   // transition in .file-body), then unmounts to free the rows.
@@ -170,6 +234,44 @@ export function DiffFile({
 
   const flat = useMemo(() => hunks.flatMap((h) => h.lines), [hunks]);
   const spans = useMemo(() => intralineSpans(hunks), [hunks]);
+
+  // Semantic folding: import runs everywhere, whole bodies in test files.
+  // Manually expanded strips are remembered per session.
+  const [expandedFolds, setExpandedFolds] = useState<Set<string>>(new Set());
+  const [showBodies, setShowBodies] = useState(false);
+  const foldBodies = semantic && fileClass === "tests" && !showBodies;
+  const foldsByHunk = useMemo(() => {
+    const lang = langOf(file.path);
+    if (!semantic || !lang) return null;
+    const m = new Map<number, FoldRun[]>();
+    hunks.forEach((h, hi) => {
+      const runs = foldBodies ? testFolds(h.lines, lang) : importFolds(h.lines, lang);
+      if (runs.length > 0) m.set(hi, runs);
+    });
+    return m.size > 0 ? m : null;
+  }, [semantic, file.path, hunks, foldBodies]);
+
+  // Symbol panel wiring: resolve the identifier under the pointer and filter
+  // through the language's stopwords before bubbling up.
+  const symbolHandlers = useMemo<SymbolHandlers | undefined>(() => {
+    if (!semantic || !onSymbolClick) return undefined;
+    const lang = langOf(file.path);
+    const extract = (e: MouseEvent<HTMLElement>, text: string) => {
+      const t = tokenFromPoint(e, text);
+      return t != null && isSymbol(t, lang) ? t : null;
+    };
+    return {
+      click: (e, text) => {
+        const t = extract(e, text);
+        if (t) onSymbolClick(t);
+      },
+      hover: (e, text) => {
+        if (!symbolActive || !onSymbolHover) return;
+        const t = extract(e, text);
+        if (t) onSymbolHover(t);
+      },
+    };
+  }, [semantic, onSymbolClick, onSymbolHover, symbolActive, file.path]);
   const [tokens, setTokens] = useState<TokenLine[] | null>(null);
   // Tokens align to `flat` by index — drop them the moment the diff changes,
   // but NOT on collapse, so colors survive the close animation.
@@ -305,8 +407,29 @@ export function DiffFile({
         ),
       );
 
+      // A fold with a thread or open composer inside must stay visible —
+      // a hidden comment is worse than a visible import block.
+      const hasWidget = (run: FoldRun) => {
+        for (let j = run.start; j < run.end; j++) {
+          const l = hunk.lines[j]!;
+          const keys = [
+            l.oldLine != null ? lineKey("old", l.oldLine) : null,
+            l.newLine != null ? lineKey("new", l.newLine) : null,
+          ];
+          for (const k of keys) {
+            if (k != null && (threadsByLine.has(k) || composerAt?.key === k)) return true;
+          }
+        }
+        return false;
+      };
+      const runs = foldsByHunk?.get(hi) ?? [];
+      const activeRun = (li: number) => {
+        const r = runs.find((x) => li >= x.start && li < x.end);
+        return r && !expandedFolds.has(`${hi}:${r.start}`) && !hasWidget(r) ? r : null;
+      };
+
       if (split) {
-        type Slot = { line: DiffLine; idx: number };
+        type Slot = { line: DiffLine; idx: number; li: number };
         const pairs: Array<{ l: Slot | null; r: Slot | null }> = [];
         let dels: Slot[] = [];
         let adds: Slot[] = [];
@@ -316,18 +439,47 @@ export function DiffFile({
           dels = [];
           adds = [];
         };
-        for (const line of hunk.lines) {
+        hunk.lines.forEach((line, li) => {
           const idx = flatIdx++;
-          if (line.kind === "del") dels.push({ line, idx });
-          else if (line.kind === "add") adds.push({ line, idx });
+          if (line.kind === "del") dels.push({ line, idx, li });
+          else if (line.kind === "add") adds.push({ line, idx, li });
           else {
             flush();
-            pairs.push({ l: { line, idx }, r: { line, idx } });
+            pairs.push({ l: { line, idx, li }, r: { line, idx, li } });
           }
-        }
+        });
         flush();
 
-        pairs.forEach((p, pi) => {
+        // A pair folds only when every populated slot sits in the same
+        // unexpanded run; consecutive such pairs collapse into one strip.
+        const pairRun = (p: { l: Slot | null; r: Slot | null }): FoldRun | null => {
+          const slots = [p.l, p.r].filter(Boolean) as Slot[];
+          if (slots.length === 0) return null;
+          const rs = slots.map((s) => activeRun(s.li));
+          const r = rs[0];
+          return r != null && rs.every((x) => x === r) ? r : null;
+        };
+
+        for (let pi = 0; pi < pairs.length; pi++) {
+          const p = pairs[pi]!;
+          const run = pairRun(p);
+          if (run) {
+            rows.push(
+              <FoldStrip
+                key={`f${hi}.${run.start}.${pi}`}
+                run={run}
+                split
+                stripRef={
+                  run.start > 0 ? (el) => hunkRef?.(`${hi}.${run.start}`, el) : undefined
+                }
+                onExpand={() =>
+                  setExpandedFolds((prev) => new Set(prev).add(`${hi}:${run.start}`))
+                }
+              />,
+            );
+            while (pi + 1 < pairs.length && pairRun(pairs[pi + 1]!) === run) pi++;
+            continue;
+          }
           rows.push(
             <SplitRow
               key={`s${hi}.${pi}`}
@@ -337,6 +489,7 @@ export function DiffFile({
               spans={spans}
               onCommentLeft={p.l ? () => toggleComposer("old", p.l!.line, hunk) : undefined}
               onCommentRight={p.r ? () => toggleComposer("new", p.r!.line, hunk) : undefined}
+              onSym={symbolHandlers}
             />,
           );
           const leftKey = p.l?.line.oldLine != null ? lineKey("old", p.l.line.oldLine) : null;
@@ -361,9 +514,29 @@ export function DiffFile({
               </tr>,
             );
           }
-        });
+        }
       } else {
-        hunk.lines.forEach((line, li) => {
+        for (let li = 0; li < hunk.lines.length; li++) {
+          const run = runs.find((r) => r.start === li);
+          if (run && !expandedFolds.has(`${hi}:${run.start}`) && !hasWidget(run)) {
+            rows.push(
+              <FoldStrip
+                key={`f${hi}.${run.start}`}
+                run={run}
+                // Strips right under the @@ header would double n/p stops.
+                stripRef={
+                  run.start > 0 ? (el) => hunkRef?.(`${hi}.${run.start}`, el) : undefined
+                }
+                onExpand={() =>
+                  setExpandedFolds((prev) => new Set(prev).add(`${hi}:${run.start}`))
+                }
+              />,
+            );
+            flatIdx += run.end - run.start;
+            li = run.end - 1;
+            continue;
+          }
+          const line = hunk.lines[li]!;
           const idx = flatIdx++;
           const side: "old" | "new" = line.kind === "del" ? "old" : "new";
           const num = (side === "old" ? line.oldLine : line.newLine) ?? 0;
@@ -375,6 +548,7 @@ export function DiffFile({
               tokens={tokens?.[idx] ?? null}
               span={spans.get(idx)}
               onComment={() => toggleComposer(side, line, hunk)}
+              onSym={symbolHandlers}
             />,
           );
           const keys =
@@ -394,7 +568,7 @@ export function DiffFile({
               </tr>,
             );
           }
-        });
+        }
       }
     });
   }
@@ -416,7 +590,7 @@ export function DiffFile({
       )}
     >
       <header
-        onClick={() => !editing && toggleSeen()}
+        onClick={() => !editing && toggleOpen()}
         className={cx(
           "sticky top-12 z-10 flex min-w-0 items-center gap-2.5 rounded-t-[5px] bg-raise px-2 py-1.5",
           showBody ? "border-b border-edge-soft" : "rounded-b-[5px]",
@@ -427,7 +601,7 @@ export function DiffFile({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            if (!editing) toggleSeen();
+            if (!editing) toggleOpen();
           }}
           disabled={!canExpand}
           aria-expanded={canExpand ? expanded : undefined}
@@ -480,6 +654,19 @@ export function DiffFile({
           </span>
         )}
         <div className="flex shrink-0 items-center gap-2.5">
+          {semantic && fileClass === "tests" && open && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowBodies((b) => !b);
+              }}
+              title={showBodies ? "Fold test bodies back to names" : "Show full test bodies"}
+              className="rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-mute transition-colors duration-150 hover:bg-panel hover:text-fg"
+            >
+              {showBodies ? "hide bodies" : "show bodies"}
+            </button>
+          )}
           {canEdit && (
             <button
               type="button"
@@ -615,6 +802,48 @@ export function DiffFile({
   );
 }
 
+/** Collapsed run of folded lines; click restores the real rows. */
+function FoldStrip({
+  run,
+  split,
+  stripRef,
+  onExpand,
+}: {
+  run: FoldRun;
+  split?: boolean;
+  stripRef?: (el: HTMLTableRowElement | null) => void;
+  onExpand: () => void;
+}) {
+  return (
+    <tr ref={stripRef}>
+      {!split && (
+        <td colSpan={2} className="select-none border-r border-edge-soft bg-raise/30" />
+      )}
+      <td colSpan={split ? 4 : 1} className="p-0">
+        <button
+          type="button"
+          onClick={onExpand}
+          title="Expand folded lines"
+          className="flex w-full items-center gap-1.5 py-1 pl-7 pr-4 text-left font-mono text-[11px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute"
+        >
+          <svg width="9" height="9" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path
+              d="M3 5.5 8 11l5-5.5"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          {run.end - run.start} {run.label}
+          <span className="text-add">+{run.adds}</span>
+          <span className="text-del">−{run.dels}</span>
+        </button>
+      </td>
+    </tr>
+  );
+}
+
 /**
  * Diff-line-shaped placeholder shown while a file's hunks load. Row count
  * approximates the incoming diff so the page doesn't jump when it lands.
@@ -709,19 +938,37 @@ function renderContent(
   return parts;
 }
 
+/** Pointer → symbol handlers, built once per file by DiffFile. */
+interface SymbolHandlers {
+  click: (e: MouseEvent<HTMLElement>, text: string) => void;
+  hover: (e: MouseEvent<HTMLElement>, text: string) => void;
+}
+
+/** `data-lk` value: every line key this row answers to (`old:N new:M`). */
+function lkAttr(line: DiffLine): string | undefined {
+  const keys = [
+    line.oldLine != null ? `old:${line.oldLine}` : null,
+    line.newLine != null ? `new:${line.newLine}` : null,
+  ].filter(Boolean);
+  return keys.length > 0 ? keys.join(" ") : undefined;
+}
+
 function LineRow({
   line,
   tokens,
   span,
   onComment,
+  onSym,
 }: {
   line: DiffLine;
   tokens: TokenLine | null;
   span: Span | undefined;
   onComment: () => void;
+  onSym?: SymbolHandlers;
 }) {
   return (
     <tr
+      data-lk={lkAttr(line)}
       className={cx(
         "group",
         line.kind === "add" && "bg-add-soft",
@@ -734,7 +981,11 @@ function LineRow({
       <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
         {line.newLine ?? ""}
       </td>
-      <td className="relative whitespace-pre-wrap break-all py-0 pl-5 pr-4 align-top font-mono text-[12.5px] leading-[1.7] text-fg">
+      <td
+        onClick={onSym ? (e) => onSym.click(e, line.text) : undefined}
+        onMouseMove={onSym ? (e) => onSym.hover(e, line.text) : undefined}
+        className="relative whitespace-pre-wrap break-all py-0 pl-5 pr-4 align-top font-mono text-[12.5px] leading-[1.7] text-fg"
+      >
         <button
           type="button"
           onClick={onComment}
@@ -757,6 +1008,7 @@ function SplitRow({
   spans,
   onCommentLeft,
   onCommentRight,
+  onSym,
 }: {
   left: { line: DiffLine; idx: number } | null;
   right: { line: DiffLine; idx: number } | null;
@@ -764,17 +1016,25 @@ function SplitRow({
   spans: Map<number, Span>;
   onCommentLeft?: () => void;
   onCommentRight?: () => void;
+  onSym?: SymbolHandlers;
 }) {
+  const lk =
+    [
+      left?.line.oldLine != null ? `old:${left.line.oldLine}` : null,
+      right?.line.newLine != null ? `new:${right.line.newLine}` : null,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
   return (
-    <tr>
+    <tr data-lk={lk}>
       <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
         {left?.line.oldLine ?? ""}
       </td>
-      <SplitCell slot={left} isLeft tokens={tokens} spans={spans} onComment={onCommentLeft} />
+      <SplitCell slot={left} isLeft tokens={tokens} spans={spans} onComment={onCommentLeft} onSym={onSym} />
       <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
         {right?.line.newLine ?? ""}
       </td>
-      <SplitCell slot={right} isLeft={false} tokens={tokens} spans={spans} onComment={onCommentRight} />
+      <SplitCell slot={right} isLeft={false} tokens={tokens} spans={spans} onComment={onCommentRight} onSym={onSym} />
     </tr>
   );
 }
@@ -785,12 +1045,14 @@ function SplitCell({
   tokens,
   spans,
   onComment,
+  onSym,
 }: {
   slot: { line: DiffLine; idx: number } | null;
   isLeft: boolean;
   tokens: TokenLine[] | null;
   spans: Map<number, Span>;
   onComment?: () => void;
+  onSym?: SymbolHandlers;
 }) {
   if (!slot) {
     // Padding cell keeping the panes aligned when one side has no counterpart.
@@ -800,6 +1062,8 @@ function SplitCell({
   const toks = tokens?.[idx] ?? null;
   return (
     <td
+      onClick={onSym ? (e) => onSym.click(e, line.text) : undefined}
+      onMouseMove={onSym ? (e) => onSym.hover(e, line.text) : undefined}
       className={cx(
         "group/cell relative whitespace-pre-wrap break-all py-0 pl-5 pr-3 align-top font-mono text-[12.5px] leading-[1.7] text-fg",
         line.kind === "add" && "bg-add-soft",
@@ -821,6 +1085,62 @@ function SplitCell({
       {renderContent(line, toks, spans.get(idx))}
     </td>
   );
+}
+
+/**
+ * Identifier under the pointer, resolved through the browser caret APIs.
+ * Offset accumulation skips the absolute-positioned overlays inside the cell
+ * (comment button, +/− marker) so it lines up with the DiffLine text.
+ */
+function tokenFromPoint(e: MouseEvent<HTMLElement>, lineText: string): string | null {
+  interface CaretPos {
+    offsetNode: Node;
+    offset: number;
+  }
+  const doc = document as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => CaretPos | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  let node: Node | null = null;
+  let offset = 0;
+  if (doc.caretPositionFromPoint) {
+    const p = doc.caretPositionFromPoint(e.clientX, e.clientY);
+    if (p) {
+      node = p.offsetNode;
+      offset = p.offset;
+    }
+  } else if (doc.caretRangeFromPoint) {
+    const r = doc.caretRangeFromPoint(e.clientX, e.clientY);
+    if (r) {
+      node = r.startContainer;
+      offset = r.startOffset;
+    }
+  }
+  if (node == null || node.nodeType !== Node.TEXT_NODE) return null;
+  const cell = e.currentTarget;
+  if (!cell.contains(node)) return null;
+  let acc = 0;
+  let found = false;
+  const walk = (n: Node): boolean => {
+    if (n === node) {
+      acc += offset;
+      found = true;
+      return true;
+    }
+    if (n.nodeType === Node.TEXT_NODE) {
+      acc += n.textContent?.length ?? 0;
+      return false;
+    }
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      const el = n as HTMLElement;
+      if (el.tagName === "BUTTON" || el.hasAttribute("aria-hidden")) return false;
+      for (const c of Array.from(n.childNodes)) if (walk(c)) return true;
+    }
+    return false;
+  };
+  walk(cell);
+  if (!found) return null;
+  return tokenAt(lineText, acc);
 }
 
 type EditState =

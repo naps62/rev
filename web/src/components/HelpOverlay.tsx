@@ -3,8 +3,9 @@ const KEYS: Array<[string, string]> = [
   ["J / K", "next / previous unseen or stale file"],
   ["n / p", "next / previous hunk"],
   ["v or .", "toggle seen on current file"],
+  ["click id", "semantic view: open symbol panel (hover retargets)"],
   ["?", "toggle this help"],
-  ["Esc", "close"],
+  ["Esc", "close help / symbol panel"],
 ];
 
 export function HelpOverlay({ onClose }: { onClose: () => void }) {
