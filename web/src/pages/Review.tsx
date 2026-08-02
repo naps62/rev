@@ -295,7 +295,8 @@ export function Review() {
       } else if (e.key === "u" || e.key === "U") {
         if (fs.length === 0) return;
         e.preventDefault();
-        const idx = fs.findIndex((f) => f.path === currentRef.current);
+        // -1 (no current file) behaves like being on the first file
+        const idx = Math.max(0, fs.findIndex((f) => f.path === currentRef.current));
         const wants = (f: (typeof fs)[number]) => !f.seen || f.stale;
         const order: typeof fs = [];
         if (e.key === "u") {
