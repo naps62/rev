@@ -66,6 +66,9 @@ otherwise; "option" means a follow-up you can pick or drop.
 - Split (side-by-side) view not built; unified only.
 - `WATCH_IGNORE` matches directory names anywhere — a source dir literally
   named `build` would be invisible to watch/scan.
+- chokidar v4 on Bun emits nothing for dotfile creation or mtime-only
+  touches; content edits and normal-name adds work. Diff refresh can miss a
+  brand-new dotfile until something else changes.
 
 ## Scope
 
