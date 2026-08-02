@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "wouter";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation } from "wouter";
 import type { RepoInfo } from "#shared/types";
 import { TUNING } from "#shared/tuning";
 import * as api from "../api";
@@ -106,12 +106,123 @@ function scopeOrder(repos: RepoInfo[]): string[] {
   return [...latest.entries()].sort((a, b) => b[1] - a[1]).map(([s]) => s);
 }
 
-const SCOPE_KEY = "rev.scope";
+// ---------------------------------------------------------------------------
+// Filter
+// ---------------------------------------------------------------------------
 
-const GRID = "grid grid-cols-[minmax(14rem,2fr)_minmax(12rem,1.5fr)_6rem_7rem_7rem] items-center gap-x-4";
+interface Term {
+  kind: "text" | "is" | "has";
+  value: string;
+}
+
+function parseQuery(q: string): Term[] {
+  return q
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => {
+      if (t.startsWith("is:")) return { kind: "is" as const, value: t.slice(3) };
+      if (t.startsWith("has:")) return { kind: "has" as const, value: t.slice(4) };
+      return { kind: "text" as const, value: t };
+    });
+}
+
+function matchRepo(r: RepoInfo, terms: Term[], now: number): boolean {
+  return terms.every((t) => {
+    switch (t.kind) {
+      case "is":
+        switch (t.value) {
+          case "dirty": return r.dirty;
+          case "clean": return !r.dirty;
+          case "behind": return (r.behindBase ?? 0) > 0;
+          case "ahead": return (r.aheadBase ?? 0) > 0;
+          case "active": return isActive(r, now);
+          case "stale": return !isActive(r, now);
+          case "worktree": return r.isWorktree;
+          default: return false;
+        }
+      case "has":
+        return t.value === "comments" && r.openComments > 0;
+      case "text": {
+        const hay = `${r.name} ${r.branch ?? ""} ${r.dir} ${r.scope}`.toLowerCase();
+        return hay.includes(t.value);
+      }
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// View model: what each card actually renders, in default and filtered modes
+// ---------------------------------------------------------------------------
+
+interface CardRow {
+  repo: RepoInfo;
+  dim: boolean;
+}
+
+interface Card {
+  entry: RepoEntry;
+  dim: boolean;
+  rows: CardRow[];
+  /** Stale worktrees behind the per-card toggle; 0 while filtering. */
+  staleCount: number;
+  /** Where Enter on the filter input should land for the first card. */
+  primary: RepoInfo;
+}
+
+function buildCards(
+  groups: Group[],
+  terms: Term[],
+  now: number,
+  showInactive: boolean,
+  staleOpen: Set<string>,
+): { label: string; cards: Card[] }[] {
+  return groups
+    .map((g) => ({
+      label: g.label,
+      cards: g.entries
+        .map((e): Card | null => {
+          if (terms.length === 0) {
+            if (!e.active && !showInactive) return null;
+            const open = staleOpen.has(e.repo.dir);
+            return {
+              entry: e,
+              dim: !e.active,
+              rows: [
+                ...e.activeWorktrees.map((repo) => ({ repo, dim: false })),
+                ...(open ? e.staleWorktrees.map((repo) => ({ repo, dim: true })) : []),
+              ],
+              staleCount: e.staleWorktrees.length,
+              primary: e.repo,
+            };
+          }
+          const repoMatch = matchRepo(e.repo, terms, now);
+          const all = [...e.activeWorktrees, ...e.staleWorktrees].sort(
+            (a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0),
+          );
+          const matched = all.filter((w) => matchRepo(w, terms, now));
+          if (!repoMatch && matched.length === 0) return null;
+          const shown = repoMatch ? all : matched;
+          const staleSet = new Set(e.staleWorktrees.map((w) => w.dir));
+          return {
+            entry: e,
+            dim: !e.active,
+            rows: shown.map((repo) => ({ repo, dim: staleSet.has(repo.dir) })),
+            staleCount: 0,
+            primary: repoMatch ? e.repo : matched[0]!,
+          };
+        })
+        .filter((c): c is Card => c !== null),
+    }))
+    .filter((g) => g.cards.length > 0);
+}
+
+const SCOPE_KEY = "rev.scope";
 
 export function Repos() {
   const qc = useQueryClient();
+  const [, navigate] = useLocation();
   const reposQ = useQuery({ queryKey: ["repos"], queryFn: api.getRepos });
 
   const status = useRevSocket(undefined, (msg) => {
@@ -130,6 +241,10 @@ export function Repos() {
   const [scope, setScope] = useState<string | null>(() => localStorage.getItem(SCOPE_KEY));
   const [showInactive, setShowInactive] = useState(false);
   const [staleOpen, setStaleOpen] = useState<Set<string>>(new Set);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const terms = useMemo(() => parseQuery(query), [query]);
 
   // Fall back to the busiest scope when nothing (or a vanished scope) is saved.
   const currentScope =
@@ -141,6 +256,29 @@ export function Repos() {
     setShowInactive(false);
     setStaleOpen(new Set());
   };
+
+  // "/" pulls focus back to the filter from anywhere on the page.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const matchCounts = useMemo(() => {
+    if (terms.length === 0) return null;
+    const counts = new Map<string, number>();
+    for (const s of scopes) {
+      counts.set(s, repos.filter((r) => r.scope === s && matchRepo(r, terms, now)).length);
+    }
+    return counts;
+  }, [repos, scopes, terms, now]);
 
   const activeCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -157,11 +295,13 @@ export function Repos() {
     [repos, currentScope, now],
   );
   const inactiveCount = groups.flatMap((g) => g.entries).filter((e) => !e.active).length;
-  const visibleGroups = showInactive
-    ? groups
-    : groups
-        .map((g) => ({ ...g, entries: g.entries.filter((e) => e.active) }))
-        .filter((g) => g.entries.length > 0);
+
+  const visibleGroups = useMemo(
+    () => buildCards(groups, terms, now, showInactive, staleOpen),
+    [groups, terms, now, showInactive, staleOpen],
+  );
+
+  const firstTarget = visibleGroups[0]?.cards[0]?.primary ?? null;
 
   const toggleStale = (dir: string) =>
     setStaleOpen((prev) => {
@@ -170,6 +310,11 @@ export function Repos() {
       else next.add(dir);
       return next;
     });
+
+  const otherScopeMatches =
+    matchCounts == null
+      ? []
+      : scopes.filter((s) => s !== currentScope && (matchCounts.get(s) ?? 0) > 0);
 
   return (
     <div className="min-h-screen">
@@ -209,27 +354,57 @@ export function Repos() {
                 <span
                   className={cx(
                     "font-mono text-[10.5px] tabular-nums",
-                    s === currentScope ? "text-accent" : "text-faint",
+                    (matchCounts != null
+                      ? (matchCounts.get(s) ?? 0) > 0
+                      : s === currentScope)
+                      ? "text-accent"
+                      : "text-faint",
                   )}
                 >
-                  {activeCounts.get(s) ?? 0}
+                  {matchCounts != null ? matchCounts.get(s) ?? 0 : activeCounts.get(s) ?? 0}
                 </span>
               </button>
             ))}
           </nav>
         )}
-  
+
+        <input
+          ref={searchRef}
+          // biome-ignore lint/a11y/noAutofocus: the filter is this page's primary control
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              if (query) setQuery("");
+              else e.currentTarget.blur();
+            }
+            if (e.key === "Enter" && firstTarget) {
+              navigate(
+                api.href("/review", {
+                  dir: firstTarget.dir,
+                  base: firstTarget.defaultBase ?? "main",
+                }),
+              );
+            }
+          }}
+          placeholder="filter — name, branch, is:dirty, is:behind, has:comments"
+          aria-label="Filter projects"
+          className="mb-3 w-full rounded-md border border-edge bg-panel px-3 py-1.5 font-mono text-[12px] text-fg transition-colors duration-150 placeholder:text-faint focus:border-accent/50"
+        />
+
         {reposQ.isPending && (
-          <ul className="divide-y divide-edge-soft rounded-md border border-edge bg-panel">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(23rem,100%),1fr))] items-start gap-3">
             {[0, 1, 2].map((i) => (
-              <li key={i} className="animate-pulse px-3 py-3">
+              <div key={i} className="animate-pulse rounded-md border border-edge bg-panel px-3 py-3">
                 <div className="h-3.5 w-40 rounded-sm bg-raise" />
-                <div className="mt-2 h-2.5 w-64 rounded-sm bg-raise/70" />
-              </li>
+                <div className="mt-2 h-2.5 w-56 rounded-sm bg-raise/70" />
+                <div className="mt-3 h-2.5 w-48 rounded-sm bg-raise/50" />
+              </div>
             ))}
-          </ul>
+          </div>
         )}
-  
+
         {reposQ.error && (
           <div className="rounded-md border border-del/40 bg-panel px-4 py-3">
             <p className="text-[13px] text-del">{(reposQ.error as Error).message}</p>
@@ -242,7 +417,7 @@ export function Repos() {
             </button>
           </div>
         )}
-  
+
         {reposQ.data && groups.length === 0 && (
           <div className="rounded-md border border-edge bg-panel px-4 py-8 text-center">
             <p className="text-[13px] text-mute">No git repos discovered under the configured roots.</p>
@@ -251,159 +426,202 @@ export function Repos() {
             </p>
           </div>
         )}
-  
-        {groups.length > 0 && (
-          <div className="overflow-hidden rounded-md border border-edge bg-panel">
-            <div
-              className={cx(
-                GRID,
-                "border-b border-edge px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-faint",
-              )}
-            >
-              <span>Repo</span>
-              <span>Branch → base</span>
-              <span className="text-right">Changed</span>
-              <span className="text-right">Comments</span>
-              <span className="text-right">Activity</span>
-            </div>
-            {visibleGroups.length === 0 && (
-              <p className="px-3 py-6 text-center text-[12.5px] text-mute">
-                Nothing in active development here right now.
-              </p>
-            )}
-            <div className="divide-y divide-edge-soft">
-              {visibleGroups.map((g) => (
-                <div key={g.label || "(root)"}>
-                  {g.label && (
-                    <p className="px-3 pb-0.5 pt-2 font-mono text-[11px] text-faint">
-                      {g.label}/
-                    </p>
-                  )}
-                  {g.entries.map((e) => (
-                    <div key={e.repo.dir} className={cx(!e.active && "opacity-55")}>
-                      <RepoRow repo={e.repo} indent={g.label ? 1 : 0} />
-                      {e.activeWorktrees.map((w) => (
-                        <RepoRow key={w.dir} repo={w} indent={(g.label ? 1 : 0) + 1} isWorktree />
-                      ))}
-                      {e.staleWorktrees.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => toggleStale(e.repo.dir)}
-                          className="block w-full px-3 py-1 text-left font-mono text-[11px] text-faint transition-colors duration-150 hover:text-mute"
-                          style={{ paddingLeft: 12 + ((g.label ? 1 : 0) + 1) * 16 }}
-                        >
-                          {staleOpen.has(e.repo.dir)
-                            ? "hide stale worktrees"
-                            : `show ${e.staleWorktrees.length} stale worktree${e.staleWorktrees.length === 1 ? "" : "s"}`}
-                        </button>
-                      )}
-                      {staleOpen.has(e.repo.dir) &&
-                        e.staleWorktrees.map((w) => (
-                          <div key={w.dir} className="opacity-55">
-                            <RepoRow repo={w} indent={(g.label ? 1 : 0) + 1} isWorktree />
-                          </div>
-                        ))}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-            {inactiveCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowInactive((v) => !v)}
-                className="block w-full border-t border-edge-soft px-3 py-2 text-left font-mono text-[11.5px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute"
-              >
-                {showInactive
-                  ? "hide inactive projects"
-                  : `show ${inactiveCount} inactive project${inactiveCount === 1 ? "" : "s"}`}
-              </button>
+
+        {groups.length > 0 && visibleGroups.length === 0 && (
+          <div className="rounded-md border border-edge bg-panel px-4 py-8 text-center">
+            {terms.length > 0 ? (
+              <>
+                <p className="text-[13px] text-mute">
+                  No matches for <span className="font-mono text-fg">{query.trim()}</span>
+                  {currentScope && <> in <span className="font-mono">{currentScope}</span></>}.
+                </p>
+                {otherScopeMatches.length > 0 && (
+                  <p className="mt-2 flex items-center justify-center gap-2 text-[12px] text-faint">
+                    {otherScopeMatches.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => selectScope(s)}
+                        className="rounded-sm border border-edge px-2 py-0.5 font-mono text-[11.5px] text-mute transition-colors duration-150 hover:border-accent/50 hover:text-fg"
+                      >
+                        {matchCounts?.get(s)} in {s}
+                      </button>
+                    ))}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-[12.5px] text-mute">Nothing in active development here right now.</p>
             )}
           </div>
+        )}
+
+        {visibleGroups.map((g) => (
+          <section key={g.label || "(root)"} className="mb-4">
+            {g.label && (
+              <p className="mb-1.5 font-mono text-[11px] text-faint">{g.label}/</p>
+            )}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(23rem,100%),1fr))] items-start gap-3">
+              {g.cards.map((c) => (
+                <ProjectCard
+                  key={c.entry.repo.dir}
+                  card={c}
+                  staleOpen={staleOpen.has(c.entry.repo.dir)}
+                  onToggleStale={() => toggleStale(c.entry.repo.dir)}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
+
+        {terms.length === 0 && inactiveCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowInactive((v) => !v)}
+            className="block w-full rounded-md border border-edge px-3 py-2 text-left font-mono text-[11.5px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute"
+          >
+            {showInactive
+              ? "hide inactive projects"
+              : `show ${inactiveCount} inactive project${inactiveCount === 1 ? "" : "s"}`}
+          </button>
         )}
       </div>
     </div>
   );
 }
 
-function RepoRow({
-  repo: r,
-  indent,
-  isWorktree,
+function DirtyDot({ dirty }: { dirty: boolean }) {
+  return (
+    <span
+      title={dirty ? "uncommitted changes" : "clean"}
+      className={cx("size-1.5 shrink-0 rounded-full", dirty ? "bg-accent" : "bg-edge")}
+    />
+  );
+}
+
+function Drift({ repo: r }: { repo: RepoInfo }) {
+  return (
+    <>
+      {(r.behindBase ?? 0) > 0 && (
+        <span
+          title={`${r.behindBase} commit${r.behindBase === 1 ? "" : "s"} behind ${r.defaultBase} — needs rebase or merge`}
+          className="shrink-0 rounded-sm bg-del-soft px-1 py-px font-mono text-[10.5px] font-medium text-del"
+        >
+          ↓{r.behindBase}
+        </span>
+      )}
+      {(r.aheadBase ?? 0) > 0 && (
+        <span
+          title={`${r.aheadBase} commit${r.aheadBase === 1 ? "" : "s"} ahead of ${r.defaultBase}`}
+          className="shrink-0 font-mono text-[10.5px] text-faint"
+        >
+          ↑{r.aheadBase}
+        </span>
+      )}
+    </>
+  );
+}
+
+function Meta({ repo: r }: { repo: RepoInfo }) {
+  return (
+    <span className="ml-auto flex shrink-0 items-center gap-2">
+      {r.openComments > 0 && (
+        <span className="rounded-sm bg-accent-soft px-1.5 py-0.5 font-mono text-[10.5px] font-medium text-accent">
+          {r.openComments} open
+        </span>
+      )}
+      {r.changedFiles != null && r.changedFiles > 0 && (
+        <span className="font-mono text-[11px] tabular-nums text-mute">
+          {r.changedFiles} file{r.changedFiles === 1 ? "" : "s"}
+        </span>
+      )}
+      <span className="w-14 text-right text-[11px] text-faint">
+        {relativeTime(r.lastActivity)}
+      </span>
+    </span>
+  );
+}
+
+function ProjectCard({
+  card: c,
+  staleOpen,
+  onToggleStale,
 }: {
-  repo: RepoInfo;
-  indent: number;
-  isWorktree?: boolean;
+  card: Card;
+  staleOpen: boolean;
+  onToggleStale: () => void;
 }) {
-  // A worktree's dir name repeats its branch — the branch IS its identity,
-  // so worktree rows lead with it and the branch column keeps only "→ base".
+  const r = c.entry.repo;
+  const checkout = r.branch ?? `detached @ ${r.head}`;
+  return (
+    <section
+      className={cx(
+        "overflow-hidden rounded-md border border-edge bg-panel",
+        c.dim && "opacity-55",
+      )}
+    >
+      <Link
+        href={api.href("/review", { dir: r.dir, base: r.defaultBase ?? "main" })}
+        title={r.dir}
+        className="block px-3 pb-2 pt-2.5 transition-colors duration-150 hover:bg-raise/60"
+      >
+        <span className="flex items-center gap-2">
+          <DirtyDot dirty={r.dirty} />
+          <span className="min-w-0 truncate text-[13px] font-semibold text-fg">
+            {basename(r.dir)}
+          </span>
+          <Meta repo={r} />
+        </span>
+        <span className="mt-1 flex min-w-0 items-center gap-1.5 pl-3.5">
+          <span className="truncate font-mono text-[11.5px] text-mute">
+            {checkout}
+            {r.defaultBase && r.branch !== r.defaultBase && (
+              <span className="text-faint"> → {r.defaultBase}</span>
+            )}
+          </span>
+          <Drift repo={r} />
+        </span>
+      </Link>
+
+      {c.rows.length > 0 && (
+        <div className="divide-y divide-edge-soft border-t border-edge-soft">
+          {c.rows.map((row) => (
+            <WorktreeRow key={row.repo.dir} repo={row.repo} dim={row.dim} />
+          ))}
+        </div>
+      )}
+
+      {c.staleCount > 0 && (
+        <button
+          type="button"
+          onClick={onToggleStale}
+          className="block w-full border-t border-edge-soft px-3 py-1.5 text-left font-mono text-[11px] text-faint transition-colors duration-150 hover:text-mute"
+        >
+          {staleOpen
+            ? "hide stale worktrees"
+            : `show ${c.staleCount} stale worktree${c.staleCount === 1 ? "" : "s"}`}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function WorktreeRow({ repo: r, dim }: { repo: RepoInfo; dim: boolean }) {
+  // A worktree's dir name repeats its branch — the branch IS its identity.
   const checkout = r.branch ?? `detached @ ${r.head}`;
   return (
     <Link
       href={api.href("/review", { dir: r.dir, base: r.defaultBase ?? "main" })}
       title={r.dir}
-      className={cx(GRID, "px-3 py-2 transition-colors duration-150 hover:bg-raise/60")}
+      className={cx(
+        "flex items-center gap-2 px-3 py-1.5 transition-colors duration-150 hover:bg-raise/60",
+        dim && "opacity-55",
+      )}
     >
-      <span
-        className="flex min-w-0 items-center gap-2"
-        style={{ paddingLeft: indent * 16 }}
-      >
-        {isWorktree && (
-          <span aria-hidden className="shrink-0 font-mono text-[11px] leading-none text-faint">
-            └
-          </span>
-        )}
-        <span
-          title={r.dirty ? "uncommitted changes" : "clean"}
-          className={cx(
-            "size-1.5 shrink-0 rounded-full",
-            r.dirty ? "bg-accent" : "bg-edge",
-          )}
-        />
-        <span className="truncate text-[13px] font-medium text-fg">
-          {isWorktree ? checkout : basename(r.dir)}
-        </span>
-        {isWorktree && (
-          <span className="shrink-0 rounded-sm bg-raise px-1 py-px font-mono text-[10.5px] text-faint">
-            worktree
-          </span>
-        )}
-      </span>
-      <span className="truncate font-mono text-[11.5px] text-mute">
-        {!isWorktree && checkout}
-        {r.defaultBase && <span className="text-faint">{isWorktree ? "→ " : " → "}{r.defaultBase}</span>}
-        {(r.behindBase ?? 0) > 0 && (
-          <span
-            title={`${r.behindBase} commit${r.behindBase === 1 ? "" : "s"} behind ${r.defaultBase} — needs rebase or merge`}
-            className="ml-1.5 rounded-sm bg-del-soft px-1 py-px text-[10.5px] font-medium text-del"
-          >
-            ↓{r.behindBase}
-          </span>
-        )}
-        {(r.aheadBase ?? 0) > 0 && (
-          <span
-            title={`${r.aheadBase} commit${r.aheadBase === 1 ? "" : "s"} ahead of ${r.defaultBase}`}
-            className="ml-1.5 text-[10.5px] text-faint"
-          >
-            ↑{r.aheadBase}
-          </span>
-        )}
-      </span>
-      <span className="text-right font-mono text-[11px] tabular-nums text-mute">
-        {r.changedFiles != null
-          ? `${r.changedFiles} file${r.changedFiles === 1 ? "" : "s"}`
-          : "—"}
-      </span>
-      <span className="text-right">
-        {r.openComments > 0 ? (
-          <span className="rounded-sm bg-accent-soft px-1.5 py-0.5 font-mono text-[11px] font-medium text-accent">
-            {r.openComments} open
-          </span>
-        ) : (
-          <span className="font-mono text-[11px] text-faint">—</span>
-        )}
-      </span>
-      <span className="text-right text-[11px] text-faint">{relativeTime(r.lastActivity)}</span>
+      <DirtyDot dirty={r.dirty} />
+      <span className="min-w-0 truncate font-mono text-[12px] text-fg">{checkout}</span>
+      <Drift repo={r} />
+      <Meta repo={r} />
     </Link>
   );
 }
