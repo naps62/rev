@@ -94,6 +94,23 @@ export function DiffFile({
   // Whether anything renders below the header (diff table or quick-edit).
   const open = editing || (expanded && canExpand);
 
+  // Body stays mounted while the close animation slides it shut (250ms
+  // transition in .file-body), then unmounts to free the rows.
+  const [lingering, setLingering] = useState(false);
+  const everOpened = useRef(open);
+  useEffect(() => {
+    if (open) {
+      everOpened.current = true;
+      setLingering(false);
+      return;
+    }
+    if (!everOpened.current) return;
+    setLingering(true);
+    const t = setTimeout(() => setLingering(false), 300);
+    return () => clearTimeout(t);
+  }, [open]);
+  const showBody = open || lingering;
+
   // Hunks stream in per file: fetched only once expanded AND near the
   // viewport, so opening a huge review costs nothing up front.
   const ownRef = useRef<HTMLElement | null>(null);
@@ -121,8 +138,10 @@ export function DiffFile({
   const flat = useMemo(() => hunks.flatMap((h) => h.lines), [hunks]);
   const spans = useMemo(() => intralineSpans(hunks), [hunks]);
   const [tokens, setTokens] = useState<TokenLine[] | null>(null);
+  // Tokens align to `flat` by index — drop them the moment the diff changes,
+  // but NOT on collapse, so colors survive the close animation.
+  useEffect(() => setTokens(null), [flat]);
   useEffect(() => {
-    setTokens(null);
     if (!expanded || file.binary || flat.length === 0) return;
     let live = true;
     highlightLines(file.path, file.contentHash, flat.map((l) => l.text)).then(
@@ -243,7 +262,7 @@ export function DiffFile({
   // spliced in directly under their anchored line (in the right pane when split).
   const split = mode === "split";
   const rows: ReactNode[] = [];
-  if (expanded && !editing) {
+  if ((expanded || lingering) && !editing) {
     let flatIdx = 0;
     hunks.forEach((hunk, hi) => {
       rows.push(
@@ -378,7 +397,7 @@ export function DiffFile({
         onClick={() => canExpand && !editing && setExpanded((e) => !e)}
         className={cx(
           "sticky top-12 z-10 flex min-w-0 items-center gap-2.5 rounded-t-[5px] bg-raise px-2 py-1.5",
-          open ? "border-b border-edge-soft" : "rounded-b-[5px]",
+          showBody ? "border-b border-edge-soft" : "rounded-b-[5px]",
           canExpand && !editing && "cursor-pointer",
         )}
       >
@@ -467,10 +486,11 @@ export function DiffFile({
         </div>
       </header>
 
-      <div className="overflow-hidden rounded-b-[5px]">
+      <div className="file-body" data-open={open || undefined}>
+      <div className="min-h-0 overflow-hidden rounded-b-[5px]">
       {editing ? (
         <QuickEditPanel dir={dir} path={file.path} onClose={() => setEditing(false)} />
-      ) : !open ? null : hunksQ.data == null ? (
+      ) : !showBody ? null : hunksQ.data == null ? (
         hunksQ.isError ? (
           <div className="flex items-center gap-3 px-4 py-3">
             <p className="font-mono text-[12px] text-del">{(hunksQ.error as Error).message}</p>
@@ -505,7 +525,7 @@ export function DiffFile({
         </table>
       )}
 
-      {expanded && !editing && hunksQ.data != null && detached.length > 0 && (
+      {(expanded || lingering) && !editing && hunksQ.data != null && detached.length > 0 && (
         <div className="border-t border-edge-soft">
           <p className="px-3 pt-2 text-[11px] text-faint">
             Couldn't re-anchor — the commented lines no longer exist:
@@ -526,6 +546,7 @@ export function DiffFile({
           ))}
         </div>
       )}
+      </div>
       </div>
     </section>
   );
