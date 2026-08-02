@@ -334,6 +334,9 @@ function RepoRow({
   indent: number;
   isWorktree?: boolean;
 }) {
+  // A worktree's dir name repeats its branch — the branch IS its identity,
+  // so worktree rows lead with it and the branch column keeps only "→ base".
+  const checkout = r.branch ?? `detached @ ${r.head}`;
   return (
     <Link
       href={api.href("/review", { dir: r.dir, base: r.defaultBase ?? "main" })}
@@ -356,7 +359,9 @@ function RepoRow({
             r.dirty ? "bg-accent" : "bg-edge",
           )}
         />
-        <span className="truncate text-[13px] font-medium text-fg">{basename(r.dir)}</span>
+        <span className="truncate text-[13px] font-medium text-fg">
+          {isWorktree ? checkout : basename(r.dir)}
+        </span>
         {isWorktree && (
           <span className="shrink-0 rounded-sm bg-raise px-1 py-px font-mono text-[10.5px] text-faint">
             worktree
@@ -364,8 +369,8 @@ function RepoRow({
         )}
       </span>
       <span className="truncate font-mono text-[11.5px] text-mute">
-        {r.branch ?? `detached @ ${r.head}`}
-        {r.defaultBase && <span className="text-faint"> → {r.defaultBase}</span>}
+        {!isWorktree && checkout}
+        {r.defaultBase && <span className="text-faint">{isWorktree ? "→ " : " → "}{r.defaultBase}</span>}
         {(r.behindBase ?? 0) > 0 && (
           <span
             title={`${r.behindBase} commit${r.behindBase === 1 ? "" : "s"} behind ${r.defaultBase} — needs rebase or merge`}

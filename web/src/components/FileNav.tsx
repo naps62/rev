@@ -157,9 +157,13 @@ function FileRow(props: LevelProps & { file: FileSummary }) {
   const open = unresolvedByFile.get(f.path) ?? 0;
   const current = currentPath === f.path;
   return (
+    // The whole row navigates (cursor + onClick); the inner button carries
+    // keyboard focus, and the checkbox stops propagation so seen-toggling
+    // doesn't also jump.
     <div
+      onClick={() => onSelect(f.path)}
       className={cx(
-        "group flex items-center gap-2 border-l py-1 pr-2",
+        "group flex cursor-pointer items-center gap-2 border-l py-1 pr-2",
         current ? "border-accent bg-raise" : "border-transparent hover:bg-raise/50",
       )}
       style={{ paddingLeft: 8 + depth * 14 }}
@@ -168,6 +172,7 @@ function FileRow(props: LevelProps & { file: FileSummary }) {
         type="checkbox"
         checked={f.seen}
         title={f.seen ? "Mark unseen" : "Mark seen"}
+        onClick={(e) => e.stopPropagation()}
         onChange={(e) => onToggleSeen(f, e.target.checked)}
         className="size-3 shrink-0 accent-accent"
       />
@@ -181,7 +186,6 @@ function FileRow(props: LevelProps & { file: FileSummary }) {
       </span>
       <button
         type="button"
-        onClick={() => onSelect(f.path)}
         title={f.path}
         className="min-w-0 flex-1 truncate text-left font-mono text-[11.5px]"
       >

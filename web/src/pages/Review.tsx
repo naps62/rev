@@ -293,19 +293,16 @@ export function Review() {
         </Link>
         <span className="text-faint max-sm:hidden">/</span>
         <span
-          className="max-w-48 shrink-0 truncate text-[13px] font-medium text-fg max-sm:max-w-20"
+          className="max-w-56 shrink-0 truncate text-[13px] font-medium text-fg max-sm:max-w-24"
           title={dir}
         >
-          {dir ? basename(dir) : "review"}
+          {diffQ.data
+            ? diffQ.data.branch ?? `detached @ ${shortSha(diffQ.data.head)}`
+            : dir
+              ? basename(dir)
+              : "review"}
         </span>
-        {diffQ.data && (
-          <span className="hidden items-center gap-1.5 font-mono text-[12px] text-mute sm:flex">
-            <span className="max-w-44 truncate" title={diffQ.data.branch ?? undefined}>
-              {diffQ.data.branch ?? `detached @ ${shortSha(diffQ.data.head)}`}
-            </span>
-            <span className="text-faint">→</span>
-          </span>
-        )}
+        <span className="text-faint max-sm:hidden">→</span>
         <form
           className="shrink-0"
           onSubmit={(e) => {
@@ -522,11 +519,6 @@ export function Review() {
               <h2 className="border-b border-edge-soft px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-mute">
                 Review notes
               </h2>
-              {reviewLevel.length === 0 && (
-                <p className="px-3 pt-2 text-[12px] text-faint">
-                  Notes that aren't tied to a line — scope, follow-ups, verdicts.
-                </p>
-              )}
               <div className="flex flex-col">
                 {reviewLevel.map((t) => (
                   <CommentThread
