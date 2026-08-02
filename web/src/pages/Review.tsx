@@ -334,7 +334,8 @@ export function Review() {
             base,
             path: f.path,
             contentHash: f.contentHash,
-            seen: !f.seen,
+            // stale = needs review again, so the toggle re-marks it seen
+            seen: !f.seen || f.stale,
           });
         }
       } else if (e.key === "?") {

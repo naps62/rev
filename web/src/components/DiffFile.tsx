@@ -70,10 +70,6 @@ export function DiffFile({
   hunkRef,
 }: DiffFileProps) {
   const changed = file.additions + file.deletions;
-  const tooBig = changed > TUNING.COLLAPSE_THRESHOLD_LINES;
-  const [expanded, setExpanded] = useState(
-    () => file.stale || !(file.seen || file.binary || file.status === "deleted" || tooBig),
-  );
   const [flash, setFlash] = useState(false);
   const [editing, setEditing] = useState(false);
   const [composerAt, setComposerAt] = useState<{ key: string; anchor: CommentAnchor } | null>(null);
@@ -81,7 +77,6 @@ export function DiffFile({
 
   useEffect(() => {
     if (file.stale && !prevStale.current) {
-      setExpanded(true);
       setFlash(true);
       const t = setTimeout(() => setFlash(false), 1700);
       prevStale.current = file.stale;
@@ -95,8 +90,14 @@ export function DiffFile({
   // mode-only changes have no lines; oversized untracked files report 0.
   const canExpand = !file.binary && changed > 0;
   const canEdit = !file.binary && file.status !== "deleted";
+  // Collapsed IS seen — one state. Stale re-opens the file until re-marked.
+  const expanded = canExpand && (!file.seen || file.stale);
   // Whether anything renders below the header (diff table or quick-edit).
-  const open = editing || (expanded && canExpand);
+  const open = editing || expanded;
+
+  // A stale file is "needs review", so a click re-marks it seen rather than
+  // unmarking it.
+  const toggleSeen = () => onToggleSeen(file, !file.seen || file.stale);
 
   // Body stays mounted while the close animation slides it shut (250ms
   // transition in .file-body), then unmounts to free the rows.
@@ -217,25 +218,13 @@ export function DiffFile({
     [threads],
   );
 
-  // Collapse on mark-seen, expand on unmark — regardless of which control
-  // (header checkbox, file nav, `v` key) flipped it.
-  const prevSeen = useRef(file.seen);
-  useEffect(() => {
-    if (file.seen !== prevSeen.current) {
-      prevSeen.current = file.seen;
-      setExpanded(file.seen ? false : !tooBig);
-    }
-  }, [file.seen, tooBig]);
-
   const collapsedNote = file.binary
     ? "binary"
     : file.status === "deleted"
       ? `deleted · ${file.deletions} lines`
       : file.seen
         ? "seen"
-        : tooBig
-          ? `large diff · ${changed.toLocaleString()} lines`
-          : "collapsed";
+        : "collapsed";
 
   const toggleComposer = (side: "old" | "new", line: DiffLine, hunk: DiffHunk) => {
     const num = (side === "old" ? line.oldLine : line.newLine) ?? 0;
@@ -427,22 +416,22 @@ export function DiffFile({
       )}
     >
       <header
-        onClick={() => canExpand && !editing && setExpanded((e) => !e)}
+        onClick={() => !editing && toggleSeen()}
         className={cx(
           "sticky top-12 z-10 flex min-w-0 items-center gap-2.5 rounded-t-[5px] bg-raise px-2 py-1.5",
           showBody ? "border-b border-edge-soft" : "rounded-b-[5px]",
-          canExpand && !editing && "cursor-pointer",
+          !editing && "cursor-pointer",
         )}
       >
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            if (canExpand && !editing) setExpanded((x) => !x);
+            if (!editing) toggleSeen();
           }}
           disabled={!canExpand}
           aria-expanded={canExpand ? expanded : undefined}
-          aria-label={expanded ? "Collapse file" : "Expand file"}
+          aria-label={expanded ? "Mark seen and collapse" : "Mark unseen and expand"}
           className="grid size-5 shrink-0 place-items-center rounded-sm text-mute transition-colors duration-150 hover:bg-panel hover:text-fg disabled:cursor-default disabled:text-faint"
         >
           <svg
@@ -497,7 +486,6 @@ export function DiffFile({
               onClick={(e) => {
                 e.stopPropagation();
                 setEditing(true);
-                setExpanded(true);
               }}
               className="rounded-sm px-1.5 py-0.5 text-[12px] text-mute transition-colors duration-150 hover:bg-panel hover:text-fg"
             >

@@ -49,9 +49,6 @@ export const TUNING = {
   /** Diff context lines, matching git's default so hunks look familiar. */
   DIFF_CONTEXT_LINES: 3,
 
-  /** Files above this many changed lines render collapsed by default; keeps first paint snappy on lockfile-sized diffs. */
-  COLLAPSE_THRESHOLD_LINES: 400,
-
   /** Expanded files start fetching their hunks this many px before entering the viewport. */
   HUNK_PREFETCH_MARGIN_PX: 1200,
 
