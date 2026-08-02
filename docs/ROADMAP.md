@@ -54,4 +54,16 @@ ARCHITECTURE.md for the design and rejected options.
 
 ## Corrections
 
-(recorded as they happen)
+- The M5 tree-rail commit shipped an infinite-recursion crash (JSX spread
+  overwrote `node` back to the parent in FileNav) that killed the renderer
+  on any diff with a directory holding both files and a subdirectory —
+  i.e. most real repos, including the pm-signer diff this project uses as
+  its own demo. It passed verification because the fixture and livetest
+  diffs happened to have only single-kind directories. Lesson recorded:
+  fixtures must include a dir with files + subdir; verification of diff UIs
+  must include at least one real multi-dir repo. Fixed in 5888203 after
+  CDP-based bisection (profile → component ablation).
+- The overnight session process died at ~22:30 and the scheduled wakeup died
+  with it; ~7h of planned iteration was lost. The rev service itself ran
+  uninterrupted all night. (Codex/live-agent testing and the M7 feature
+  batch resumed at 05:30.)
