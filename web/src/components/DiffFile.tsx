@@ -21,6 +21,7 @@ import { highlightLines, type TokenLine } from "../highlight";
 import { intralineSpans, type Span } from "../intraline";
 import type { FileClass } from "../semantic/classify.ts";
 import { importFolds, langOf, testFolds, type FoldRun } from "../semantic/fold.ts";
+import { loadFoldState, saveFoldState } from "../semantic/foldStore.ts";
 import { isSymbol, tokenAt } from "../semantic/symbols.ts";
 import { cx, lineKey, type Thread } from "../util";
 import { AuthorChip, CommentThread, threadShell } from "./CommentThread";
@@ -236,10 +237,42 @@ export function DiffFile({
   const spans = useMemo(() => intralineSpans(hunks), [hunks]);
 
   // Semantic folding: import runs everywhere, whole bodies in test files.
-  // Manually expanded strips are remembered per session.
-  const [expandedFolds, setExpandedFolds] = useState<Set<string>>(new Set());
-  const [showBodies, setShowBodies] = useState(false);
+  // Manually expanded strips and the show-bodies toggle persist per file,
+  // pinned to contentHash — a content change invalidates the hunk-relative
+  // fold keys, so the state resets with it.
+  const persistedFolds = useMemo(
+    () => loadFoldState(dir, file.path, file.contentHash),
+    [dir, file.path, file.contentHash],
+  );
+  const [expandedFolds, setExpandedFolds] = useState<Set<string>>(
+    () => new Set(persistedFolds?.folds ?? []),
+  );
+  const [showBodies, setShowBodies] = useState(persistedFolds?.showBodies ?? false);
+  useEffect(() => {
+    setExpandedFolds(new Set(persistedFolds?.folds ?? []));
+    setShowBodies(persistedFolds?.showBodies ?? false);
+  }, [persistedFolds]);
+  useEffect(() => {
+    saveFoldState(dir, file.path, file.contentHash, {
+      folds: [...expandedFolds],
+      showBodies,
+    });
+  }, [dir, file.path, file.contentHash, expandedFolds, showBodies]);
+  const toggleFold = useCallback(
+    (key: string) =>
+      setExpandedFolds((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      }),
+    [],
+  );
   const foldBodies = semantic && fileClass === "tests" && !showBodies;
+  // Import and test-body folds share hunk offsets; the prefix keeps a key
+  // expanded in one mode from leaking into the other.
+  const foldKey = (hi: number, run: FoldRun) =>
+    `${foldBodies ? "t" : "i"}:${hi}:${run.start}`;
   const foldsByHunk = useMemo(() => {
     const lang = langOf(file.path);
     if (!semantic || !lang) return null;
@@ -423,9 +456,9 @@ export function DiffFile({
         return false;
       };
       const runs = foldsByHunk?.get(hi) ?? [];
-      const activeRun = (li: number) => {
+      const runAt = (li: number) => {
         const r = runs.find((x) => li >= x.start && li < x.end);
-        return r && !expandedFolds.has(`${hi}:${r.start}`) && !hasWidget(r) ? r : null;
+        return r && !hasWidget(r) ? r : null;
       };
 
       if (split) {
@@ -450,35 +483,44 @@ export function DiffFile({
         });
         flush();
 
-        // A pair folds only when every populated slot sits in the same
-        // unexpanded run; consecutive such pairs collapse into one strip.
+        // A pair folds only when every populated slot sits in the same run;
+        // consecutive such pairs collapse into one strip.
         const pairRun = (p: { l: Slot | null; r: Slot | null }): FoldRun | null => {
           const slots = [p.l, p.r].filter(Boolean) as Slot[];
           if (slots.length === 0) return null;
-          const rs = slots.map((s) => activeRun(s.li));
+          const rs = slots.map((s) => runAt(s.li));
           const r = rs[0];
           return r != null && rs.every((x) => x === r) ? r : null;
         };
 
+        // Expanded runs keep their strip (now a collapse control) above the
+        // real rows; this tracks which runs already got one.
+        const stripped = new Set<FoldRun>();
         for (let pi = 0; pi < pairs.length; pi++) {
           const p = pairs[pi]!;
           const run = pairRun(p);
           if (run) {
-            rows.push(
-              <FoldStrip
-                key={`f${hi}.${run.start}.${pi}`}
-                run={run}
-                split
-                stripRef={
-                  run.start > 0 ? (el) => hunkRef?.(`${hi}.${run.start}`, el) : undefined
-                }
-                onExpand={() =>
-                  setExpandedFolds((prev) => new Set(prev).add(`${hi}:${run.start}`))
-                }
-              />,
-            );
-            while (pi + 1 < pairs.length && pairRun(pairs[pi + 1]!) === run) pi++;
-            continue;
+            const fk = foldKey(hi, run);
+            const isOpen = expandedFolds.has(fk);
+            if (!stripped.has(run)) {
+              stripped.add(run);
+              rows.push(
+                <FoldStrip
+                  key={`f${hi}.${run.start}.${pi}`}
+                  run={run}
+                  split
+                  expanded={isOpen}
+                  stripRef={
+                    run.start > 0 ? (el) => hunkRef?.(`${hi}.${run.start}`, el) : undefined
+                  }
+                  onToggle={() => toggleFold(fk)}
+                />,
+              );
+            }
+            if (!isOpen) {
+              while (pi + 1 < pairs.length && pairRun(pairs[pi + 1]!) === run) pi++;
+              continue;
+            }
           }
           rows.push(
             <SplitRow
@@ -518,23 +560,26 @@ export function DiffFile({
       } else {
         for (let li = 0; li < hunk.lines.length; li++) {
           const run = runs.find((r) => r.start === li);
-          if (run && !expandedFolds.has(`${hi}:${run.start}`) && !hasWidget(run)) {
+          if (run && !hasWidget(run)) {
+            const fk = foldKey(hi, run);
+            const isOpen = expandedFolds.has(fk);
             rows.push(
               <FoldStrip
                 key={`f${hi}.${run.start}`}
                 run={run}
+                expanded={isOpen}
                 // Strips right under the @@ header would double n/p stops.
                 stripRef={
                   run.start > 0 ? (el) => hunkRef?.(`${hi}.${run.start}`, el) : undefined
                 }
-                onExpand={() =>
-                  setExpandedFolds((prev) => new Set(prev).add(`${hi}:${run.start}`))
-                }
+                onToggle={() => toggleFold(fk)}
               />,
             );
-            flatIdx += run.end - run.start;
-            li = run.end - 1;
-            continue;
+            if (!isOpen) {
+              flatIdx += run.end - run.start;
+              li = run.end - 1;
+              continue;
+            }
           }
           const line = hunk.lines[li]!;
           const idx = flatIdx++;
@@ -802,17 +847,19 @@ export function DiffFile({
   );
 }
 
-/** Collapsed run of folded lines; click restores the real rows. */
+/** Collapsed run of folded lines; click toggles the real rows in and out. */
 function FoldStrip({
   run,
   split,
+  expanded,
   stripRef,
-  onExpand,
+  onToggle,
 }: {
   run: FoldRun;
   split?: boolean;
+  expanded?: boolean;
   stripRef?: (el: HTMLTableRowElement | null) => void;
-  onExpand: () => void;
+  onToggle: () => void;
 }) {
   return (
     <tr ref={stripRef}>
@@ -822,11 +869,19 @@ function FoldStrip({
       <td colSpan={split ? 4 : 1} className="p-0">
         <button
           type="button"
-          onClick={onExpand}
-          title="Expand folded lines"
+          onClick={onToggle}
+          aria-expanded={expanded ?? false}
+          title={expanded ? "Fold these lines back" : "Expand folded lines"}
           className="flex w-full items-center gap-1.5 py-1 pl-7 pr-4 text-left font-mono text-[11px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute"
         >
-          <svg width="9" height="9" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <svg
+            width="9"
+            height="9"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden
+            className={cx("transition-transform duration-150", expanded && "rotate-180")}
+          >
             <path
               d="M3 5.5 8 11l5-5.5"
               stroke="currentColor"
