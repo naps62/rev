@@ -3,7 +3,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import type {
   Comment,
@@ -19,42 +19,41 @@ import * as api from "../api";
 import { AppHeader, HEADER_PX } from "../components/AppHeader";
 import { CommentThread } from "../components/CommentThread";
 import { Composer } from "../components/Composer";
+import { DiffStat } from "../components/DiffStat";
 import { DiffFile, type DiffMode } from "../components/DiffFile";
 import { FileNav } from "../components/FileNav";
 import { HelpOverlay } from "../components/HelpOverlay";
+import { FeatureMenu } from "../components/FeatureMenu";
 import { LayoutToggle } from "../components/LayoutToggle";
 import { LiveDot } from "../components/LiveDot";
+import { ReviewProgress } from "../components/ReviewProgress";
 import { Checkbox } from "../components/Checkbox";
+import { EntityPanel } from "../components/EntityPanel";
+import { RollupPanel } from "../components/RollupPanel";
 import { SymbolPanel } from "../components/SymbolPanel";
 import {
   buildClassSections,
   CLASS_LABEL,
+  classifyFile,
   type ClassSection,
   type FileClass,
 } from "../semantic/classify.ts";
 import { entityAnchor } from "../semantic/entities.ts";
+import { buildRollup } from "../semantic/rollup.ts";
 import { findOccurrences, type Occurrence } from "../semantic/symbols.ts";
 import { attachCrosshair } from "../crosshair";
+import { type FeatureFlags, loadFeatures, saveFeatures } from "../features";
 import { buildFileTree, flattenTree } from "../tree";
 import { basename, buildThreads, cx, shortSha, type Thread } from "../util";
 import { useRevSocket } from "../ws";
 
 const MODE_KEY = "rev.diffMode";
-const VIEW_KEY = "rev.viewMode";
-const XHAIR_KEY = "rev.crosshair";
-
-export type ViewMode = "classic" | "semantic";
 
 function initialMode(params: URLSearchParams): DiffMode {
   const p = params.get("mode");
-  if (p === "split" || p === "unified") return p;
-  return localStorage.getItem(MODE_KEY) === "split" ? "split" : "unified";
-}
-
-function initialView(params: URLSearchParams): ViewMode {
-  const p = params.get("view");
-  if (p === "semantic" || p === "classic") return p;
-  return localStorage.getItem(VIEW_KEY) === "semantic" ? "semantic" : "classic";
+  if (p === "split" || p === "unified" || p === "mixed") return p;
+  const stored = localStorage.getItem(MODE_KEY);
+  return stored === "split" || stored === "mixed" ? stored : "unified";
 }
 
 export function Review() {
@@ -173,10 +172,15 @@ export function Review() {
     setModeState(m);
     localStorage.setItem(MODE_KEY, m);
   };
-  const [view, setViewState] = useState<ViewMode>(() => initialView(params));
-  const setView = (v: ViewMode) => {
-    setViewState(v);
-    localStorage.setItem(VIEW_KEY, v);
+  const [features, setFeaturesState] = useState<FeatureFlags>(() => loadFeatures(params));
+  const setFeatures = (
+    f: FeatureFlags | ((prev: FeatureFlags) => FeatureFlags),
+  ) => {
+    setFeaturesState((prev) => {
+      const next = typeof f === "function" ? f(prev) : f;
+      saveFeatures(next);
+      return next;
+    });
   };
 
   // Entity-level diff from the optional sem CLI; available:false (binary
@@ -184,22 +188,22 @@ export function Review() {
   const semQ = useQuery({
     queryKey: ["semantic", dir, base],
     queryFn: () => api.getSemanticDiff(dir, base),
-    enabled: !!dir && !!base && view === "semantic",
+    enabled: !!dir && !!base && features.entities,
   });
   const entitiesByPath = useMemo(() => {
     const m = new Map<string, EntityChange[]>();
-    if (semQ.data?.available) {
+    if (features.entities && semQ.data?.available) {
       for (const f of semQ.data.files) m.set(f.path, f.entities);
     }
     return m;
-  }, [semQ.data]);
+  }, [features.entities, semQ.data]);
 
   // Tree (visual) order drives everything: the rail, the diff pane, scroll-spy
-  // and j/k all agree on it. In semantic view the order is class sections
+  // and j/k all agree on it. With grouping on the order is class sections
   // first, tree order within each.
   const sections = useMemo(
-    () => (view === "semantic" ? buildClassSections(diffQ.data?.files ?? []) : null),
-    [view, diffQ.data],
+    () => (features.grouping ? buildClassSections(diffQ.data?.files ?? []) : null),
+    [features.grouping, diffQ.data],
   );
   const tree = useMemo(
     () => (sections ? [] : buildFileTree(diffQ.data?.files ?? [])),
@@ -233,8 +237,8 @@ export function Review() {
   // grows as files stream in.
   const [symbol, setSymbol] = useState<string | null>(null);
   useEffect(() => {
-    if (view !== "semantic") setSymbol(null);
-  }, [view]);
+    if (!features.symbols) setSymbol(null);
+  }, [features.symbols]);
 
   // Re-run the occurrence search when new file hunks land in the cache.
   const [cacheTick, setCacheTick] = useState(0);
@@ -275,6 +279,10 @@ export function Review() {
     // cacheTick invalidates on new hunks landing; qc itself is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, files, dir, base, cacheTick]);
+
+  // Last-shown panel content stays mounted so the close slide has something
+  // to show; the aside itself animates via .side-panel[data-open].
+  const heldPanel = useRef<ReactNode>(null);
 
   const loadAllHunks = () => {
     for (const f of files) {
@@ -424,6 +432,16 @@ export function Review() {
     requestAnimationFrame(attempt);
   };
 
+  const jumpToEntityIn = (path: string, e: EntityChange) => {
+    const a = entityAnchor(e);
+    if (a) jumpToOccurrence({ path, side: a.side, line: a.line, kind: "context", text: "" });
+  };
+
+  const rollup = useMemo(
+    () => (features.entities && semQ.data?.available ? buildRollup(semQ.data.files) : null),
+    [features.entities, semQ.data],
+  );
+
   // Hovering a diff claims focus; ignored mid-glide so a rail click isn't
   // hijacked by files sliding under the stationary-ish cursor.
   const hoverFocus = (path: string) => {
@@ -432,13 +450,36 @@ export function Review() {
   };
 
   // Pointer crosshair over the diff tables (x toggles, persisted).
-  const [xhair, setXhair] = useState(() => localStorage.getItem(XHAIR_KEY) !== "off");
   const mainRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const el = mainRef.current;
-    if (!xhair || !el) return;
+    if (!features.crosshair || !el) return;
     return attachCrosshair(el);
-  }, [xhair, diffQ.data]);
+  }, [features.crosshair, diffQ.data]);
+
+  // The panel's resting position tracks the current file's section top;
+  // sticky top still caps it once the file scrolls past. Re-measured on
+  // main resizes so collapse/expand slides keep it aligned.
+  const panelRef = useRef<HTMLElement | null>(null);
+  const [panelTop, setPanelTop] = useState(0);
+  useEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const measure = () => {
+      const el = currentPath ? sectionEls.current.get(currentPath) : undefined;
+      if (!el || !el.isConnected) {
+        setPanelTop(0);
+        return;
+      }
+      const aside = panelRef.current;
+      const max = aside ? Math.max(0, main.offsetHeight - aside.offsetHeight) : 0;
+      setPanelTop(Math.max(0, Math.min(el.offsetTop, max)));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(main);
+    return () => ro.disconnect();
+  }, [currentPath, files]);
 
   const [help, setHelp] = useState(false);
   const filesRef = useRef(files);
@@ -510,10 +551,7 @@ export function Review() {
           });
         }
       } else if (e.key === "x") {
-        setXhair((v) => {
-          localStorage.setItem(XHAIR_KEY, v ? "off" : "on");
-          return !v;
-        });
+        setFeatures((p) => ({ ...p, crosshair: !p.crosshair }));
       } else if (e.key === "?") {
         setHelp((h) => !h);
       } else if (e.key === "Escape") {
@@ -529,152 +567,102 @@ export function Review() {
   const [baseInput, setBaseInput] = useState(base);
   useEffect(() => setBaseInput(base), [base]);
 
-  const totals = useMemo(
-    () =>
-      files.reduce(
-        (acc, f) => ({ add: acc.add + f.additions, del: acc.del + f.deletions }),
-        { add: 0, del: 0 },
-      ),
-    [files],
-  );
-  const seenCount = files.filter((f) => f.seen).length;
-
   return (
     <div className="min-h-screen">
       <AppHeader>
+        <div className="flex min-w-0 flex-1 basis-0 items-center gap-3 md:min-w-fit">
         <span className="text-faint max-sm:hidden">/</span>
-        <span
-          className="max-w-56 shrink-0 truncate text-[13px] font-medium text-fg max-sm:max-w-24"
-          title={dir}
-        >
-          {diffQ.data
-            ? diffQ.data.branch ?? `detached @ ${shortSha(diffQ.data.head)}`
-            : dir
-              ? basename(dir)
-              : "review"}
-        </span>
-        <span className="text-faint max-sm:hidden">→</span>
-        <form
-          className="shrink-0"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const v = baseInput.trim();
-            if (v && v !== base) navigate(api.href("/review", { dir, base: v }));
-          }}
-        >
-          <input
-            value={baseInput}
-            onChange={(e) => setBaseInput(e.target.value)}
-            spellCheck={false}
-            aria-label="Base ref"
-            title="Base ref — press Enter to re-diff"
-            list="base-refs"
-            className="w-24 rounded-sm border border-edge bg-bg px-1.5 py-0.5 font-mono text-[12px] text-fg focus:border-accent/60 focus:outline-none max-sm:w-16"
-          />
-          <datalist id="base-refs">
-            {(refsQ.data?.refs ?? []).map((r) => (
-              <option key={r} value={r} />
-            ))}
-          </datalist>
-        </form>
-        {diffQ.data && (
           <span
-            className="hidden text-[11px] text-faint md:inline"
-            title={diffQ.data.mergeBase}
+            className="max-w-56 shrink-0 truncate text-[13px] font-medium text-fg max-sm:max-w-24"
+            title={dir}
           >
-            merge-base {shortSha(diffQ.data.mergeBase)}
+            {diffQ.data
+              ? diffQ.data.branch ?? `detached @ ${shortSha(diffQ.data.head)}`
+              : dir
+                ? basename(dir)
+                : "review"}
           </span>
-        )}
-        {diffQ.data != null &&
-          diffQ.data.baseBehind != null &&
-          diffQ.data.baseBehind > 0 && (
-            <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
-              <span className="font-mono text-[11px] text-accent">
-                base {diffQ.data.baseBehind} behind origin
-              </span>
-              <button
-                type="button"
-                onClick={() => fetchMut.mutate()}
-                disabled={fetchMut.isPending}
-                title={`git fetch ${base}'s upstream, then re-diff`}
-                className="rounded-sm border border-accent/40 px-1.5 py-px font-mono text-[11px] text-accent transition-colors duration-150 hover:bg-accent hover:text-bg disabled:cursor-default disabled:border-edge disabled:bg-transparent disabled:text-faint"
-              >
-                {fetchMut.isPending ? "fetching…" : "fetch"}
-              </button>
-              {fetchMut.error != null && (
-                <span
-                  className="max-w-44 truncate text-[11px] text-del"
-                  title={(fetchMut.error as Error).message}
-                >
-                  {(fetchMut.error as Error).message}
-                </span>
-              )}
-            </span>
-          )}
-        {files.length > 0 && (
-          <select
-            value={currentPath ?? ""}
-            onChange={(e) => jumpTo(e.target.value)}
-            aria-label="Jump to file"
-            className="min-w-0 flex-1 rounded-sm border border-edge bg-bg px-1 py-0.5 font-mono text-[11px] text-fg md:hidden"
+          <span className="text-faint max-sm:hidden">→</span>
+          <form
+            className="shrink-0"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const v = baseInput.trim();
+              if (v && v !== base) navigate(api.href("/review", { dir, base: v }));
+            }}
           >
-            {files.map((f) => (
-              <option key={f.path} value={f.path}>
-                {f.path}
-              </option>
-            ))}
-          </select>
-        )}
-        <div className="ml-auto flex items-center gap-3 self-stretch">
-          <div
-            role="radiogroup"
-            aria-label="Review view"
-            className="hidden self-stretch divide-x divide-edge border-x border-edge sm:flex"
-          >
-            {(["classic", "semantic"] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setView(v)}
-                aria-pressed={view === v}
-                className={cx(
-                  "relative flex items-center px-3 font-mono text-[12px] transition-colors duration-150",
-                  view === v
-                    ? "bg-accent-soft text-accent"
-                    : "text-mute hover:bg-raise/60 hover:text-fg",
-                )}
-              >
-                {v}
-                {view === v && (
-                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" />
-                )}
-              </button>
-            ))}
-          </div>
-          {view === "semantic" && semQ.data?.available && (
+            <input
+              value={baseInput}
+              onChange={(e) => setBaseInput(e.target.value)}
+              spellCheck={false}
+              aria-label="Base ref"
+              title="Base ref — press Enter to re-diff"
+              list="base-refs"
+              className="w-24 rounded-sm border border-edge bg-bg px-1.5 py-0.5 font-mono text-[12px] text-fg focus:border-accent/60 focus:outline-none max-sm:w-16"
+            />
+            <datalist id="base-refs">
+              {(refsQ.data?.refs ?? []).map((r) => (
+                <option key={r} value={r} />
+              ))}
+            </datalist>
+          </form>
+          {diffQ.data && (
             <span
-              className="hidden rounded-sm border border-accent/40 px-1 font-mono text-[10px] text-accent sm:inline"
-              title="entity-level data from the sem CLI is active"
+              className="hidden whitespace-nowrap text-[11px] text-faint md:inline"
+              title={diffQ.data.mergeBase}
             >
-              sem
+              merge-base {shortSha(diffQ.data.mergeBase)}
             </span>
           )}
-          <LayoutToggle mode={mode} onChange={setMode} />
+          {diffQ.data != null &&
+            diffQ.data.baseBehind != null &&
+            diffQ.data.baseBehind > 0 && (
+              <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
+                <span className="font-mono text-[11px] text-accent">
+                  base {diffQ.data.baseBehind} behind origin
+                </span>
+                <button
+                  type="button"
+                  onClick={() => fetchMut.mutate()}
+                  disabled={fetchMut.isPending}
+                  title={`git fetch ${base}'s upstream, then re-diff`}
+                  className="rounded-sm border border-accent/40 px-1.5 py-px font-mono text-[11px] text-accent transition-colors duration-150 hover:bg-accent hover:text-bg disabled:cursor-default disabled:border-edge disabled:bg-transparent disabled:text-faint"
+                >
+                  {fetchMut.isPending ? "fetching…" : "fetch"}
+                </button>
+                {fetchMut.error != null && (
+                  <span
+                    className="max-w-44 truncate text-[11px] text-del"
+                    title={(fetchMut.error as Error).message}
+                  >
+                    {(fetchMut.error as Error).message}
+                  </span>
+                )}
+              </span>
+            )}
           {files.length > 0 && (
-            <>
-              <span className="hidden font-mono text-[11.5px] tabular-nums text-mute sm:inline">
-                {files.length} file{files.length === 1 ? "" : "s"}{" "}
-                <span className="text-add">+{totals.add}</span>{" "}
-                <span className="text-del">−{totals.del}</span>
-              </span>
-              <span
-                className="whitespace-nowrap font-mono text-[11.5px] tabular-nums text-mute"
-                title="files marked seen"
-              >
-                {seenCount}/{files.length} seen
-              </span>
-            </>
+            <select
+              value={currentPath ?? ""}
+              onChange={(e) => jumpTo(e.target.value)}
+              aria-label="Jump to file"
+              className="min-w-0 flex-1 rounded-sm border border-edge bg-bg px-1 py-0.5 font-mono text-[11px] text-fg md:hidden"
+            >
+              {files.map((f) => (
+                <option key={f.path} value={f.path}>
+                  {f.path}
+                </option>
+              ))}
+            </select>
           )}
+        </div>
+        {files.length > 0 && (
+          <ReviewProgress files={files} currentPath={currentPath} onJump={jumpTo} />
+        )}
+        <div className="flex min-w-0 flex-1 basis-0 items-center justify-end gap-3 self-stretch md:min-w-fit">
+          <div className="hidden items-stretch divide-x divide-edge self-stretch border-x border-edge sm:flex">
+            <FeatureMenu features={features} onChange={setFeatures} />
+            <LayoutToggle mode={mode} onChange={setMode} />
+          </div>
           <LiveDot status={wsStatus} />
           <button
             type="button"
@@ -763,6 +751,7 @@ export function Review() {
           </aside>
 
           <main ref={mainRef} className="relative flex min-w-0 flex-1 flex-col gap-3">
+            {rollup && <RollupPanel groups={rollup} onJump={jumpToEntityIn} />}
             {(sections ?? [null]).map((s) => (
               <Fragment key={s?.cls ?? "all"}>
                 {s && (
@@ -774,7 +763,11 @@ export function Review() {
                     }}
                   />
                 )}
-                {(s?.files ?? files).map((f) => (
+                {(s?.files ?? files).map((f) => {
+                  const cls = features.classDefaults
+                    ? s?.cls ?? classifyFile(f.path)
+                    : undefined;
+                  return (
               <DiffFile
                 key={f.path}
                 dir={dir}
@@ -783,22 +776,15 @@ export function Review() {
                 mode={mode}
                 threads={threadsByFile.get(f.path) ?? []}
                 isCurrent={currentPath === f.path}
-                semantic={!!sections}
-                entities={entitiesByPath.get(f.path)}
-                onJumpToEntity={(e) => {
-                  const a = entityAnchor(e);
-                  if (a) {
-                    jumpToOccurrence({ path: f.path, side: a.side, line: a.line, kind: "context", text: "" });
-                  }
-                }}
-                fileClass={s?.cls}
-                defaultCollapsed={s?.cls === "generated"}
+                foldImports={features.importFolds}
+                fileClass={cls}
+                defaultCollapsed={cls === "generated"}
                 collapseCmd={(() => {
                   const a = fileCmds[f.path];
                   const b = s ? sectionCmds[s.cls] : undefined;
                   return a && b ? (a.seq > b.seq ? a : b) : a ?? b;
                 })()}
-                onSymbolClick={sections ? setSymbol : undefined}
+                onSymbolClick={features.symbols ? setSymbol : undefined}
                 onHover={() => hoverFocus(f.path)}
                 onToggleSeen={toggleSeen}
                 onCreateComment={(anchor, body) => createComment(anchor, body)}
@@ -809,12 +795,13 @@ export function Review() {
                   else sectionEls.current.delete(f.path);
                 }}
                 hunkRef={(hi, el) => {
-                  const k = `${f.path} ${hi}`;
+                  const k = `${f.path} ${hi}`;
                   if (el) hunkEls.current.set(k, el);
                   else hunkEls.current.delete(k);
                 }}
               />
-                ))}
+                  );
+                })}
               </Fragment>
             ))}
 
@@ -850,26 +837,48 @@ export function Review() {
             </p>
           </main>
 
-          {symbol != null && symbolData && (
-            <aside
-              className="sticky hidden w-72 shrink-0 flex-col overflow-hidden rounded-md border border-edge bg-panel lg:flex"
-              style={{
-                top: HEADER_PX + 8,
-                maxHeight: `calc(100vh - ${HEADER_PX + 16}px)`,
-              }}
-            >
-              <SymbolPanel
-                symbol={symbol}
-                occurrences={symbolData.occurrences}
-                fileOrder={files.map((f) => f.path)}
-                currentPath={currentPath}
-                notLoaded={symbolData.notLoaded}
-                onLoadAll={loadAllHunks}
-                onJump={jumpToOccurrence}
-                onClose={() => setSymbol(null)}
-              />
-            </aside>
-          )}
+          {(() => {
+            const currentEntities =
+              currentPath != null ? entitiesByPath.get(currentPath) : undefined;
+            const live =
+              symbol != null && symbolData ? (
+                <SymbolPanel
+                  symbol={symbol}
+                  occurrences={symbolData.occurrences}
+                  fileOrder={files.map((f) => f.path)}
+                  currentPath={currentPath}
+                  notLoaded={symbolData.notLoaded}
+                  onLoadAll={loadAllHunks}
+                  onJump={jumpToOccurrence}
+                  onClose={() => setSymbol(null)}
+                />
+              ) : rollup && currentPath ? (
+                <EntityPanel
+                  path={currentPath}
+                  entities={currentEntities ?? []}
+                  onJump={jumpToEntityIn}
+                />
+              ) : null;
+            if (live) heldPanel.current = live;
+            return (
+              <aside
+                ref={panelRef}
+                data-open={live ? "" : undefined}
+                className="side-panel sticky hidden shrink-0 justify-end overflow-hidden lg:flex"
+                style={{
+                  top: HEADER_PX + 8,
+                  marginTop: panelTop,
+                  maxHeight: `calc(100vh - ${HEADER_PX + 16}px)`,
+                }}
+              >
+                {heldPanel.current && (
+                  <div className="flex w-72 shrink-0 flex-col overflow-hidden rounded-md border border-edge bg-panel">
+                    {heldPanel.current}
+                  </div>
+                )}
+              </aside>
+            );
+          })()}
         </div>
       )}
 
@@ -907,8 +916,7 @@ function ClassSectionHeader({
       </h2>
       <span className="font-mono text-[11.5px] tabular-nums text-faint">
         {files.length} file{files.length === 1 ? "" : "s"}{" "}
-        <span className="text-add">+{totals.add}</span>{" "}
-        <span className="text-del">−{totals.del}</span>
+        <DiffStat add={totals.add} del={totals.del} />
       </span>
       <div className="ml-auto flex items-center gap-1.5">
         <button

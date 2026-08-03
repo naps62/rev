@@ -3,9 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#0e1115" />
     <title>rev</title>
+    <script>
+      // Pre-paint theme resolution; src/theme.ts takes over after mount.
+      var p = null;
+      try {
+        p = localStorage.getItem("rev.theme");
+      } catch {}
+      var s =
+        p === "light" || p === "dark"
+          ? p
+          : matchMedia("(prefers-color-scheme: light)").matches
+            ? "light"
+            : "dark";
+      document.documentElement.dataset.theme = s;
+      if (s === "light")
+        document
+          .querySelector('meta[name="theme-color"]')
+          .setAttribute("content", "#f4f5f7");
+    </script>
   </head>
   <body>
     <!--

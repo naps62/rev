@@ -5,6 +5,7 @@ import type { RepoInfo } from "#shared/types";
 import { TUNING } from "#shared/tuning";
 import * as api from "../api";
 import { AppHeader } from "../components/AppHeader";
+import { DiffStat } from "../components/DiffStat";
 import { LiveDot } from "../components/LiveDot";
 import { basename, cx, relativeTime } from "../util";
 import { useRevSocket } from "../ws";
@@ -573,8 +574,7 @@ function Meta({ repo: r }: { repo: RepoInfo }) {
       )}
       {r.additions != null && total > 0 ? (
         <span title={filesTitle} className="font-mono text-[11px] tabular-nums">
-          <span className="text-add">+{r.additions}</span>{" "}
-          <span className="text-del">−{r.deletions}</span>
+          <DiffStat add={r.additions ?? 0} del={r.deletions ?? 0} />
         </span>
       ) : (
         r.changedFiles != null &&

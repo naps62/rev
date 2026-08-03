@@ -20,6 +20,8 @@
   --color-agent: #85bcd9;
   --color-reviewer: #b48ead;
 
+  --shadow-pop: 0 8px 28px rgb(0 0 0 / 0.5);
+
   --font-sans:
     system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --font-mono:
@@ -27,9 +29,37 @@
     monospace;
 }
 
+/* Paper counterpart of the graphite world: same hairline edges, same single
+   amber; hue tokens re-inked darker so every text/surface pair clears 4.5:1.
+   Raise sits BELOW panel in lightness — hover washes must darken on paper. */
+:root[data-theme="light"] {
+  --color-bg: #f4f5f7;
+  --color-panel: #fcfcfd;
+  --color-raise: #e9ebee;
+  --color-edge: #d8dce2;
+  --color-edge-soft: #e3e6eb;
+  --color-fg: #23282f;
+  --color-mute: #57616e;
+  --color-faint: #616b78;
+  --color-accent: #8a5d00;
+  --color-accent-soft: rgb(226 180 92 / 0.25);
+  --color-add: #177433;
+  --color-add-soft: rgb(23 116 51 / 0.09);
+  --color-add-hi: rgb(23 116 51 / 0.2);
+  --color-del: #b1341f;
+  --color-del-soft: rgb(177 52 31 / 0.07);
+  --color-del-hi: rgb(177 52 31 / 0.18);
+  --color-agent: #276f90;
+  --shadow-pop: 0 8px 28px rgb(23 32 45 / 0.16);
+}
+
 html {
   color-scheme: dark;
   background: var(--color-bg);
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
 }
 
 body {
@@ -41,12 +71,13 @@ body {
 }
 
 ::selection {
-  background: rgb(226 180 92 / 0.25);
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2c3540 transparent;
+  scrollbar-color: color-mix(in srgb, var(--color-mute) 40%, transparent)
+    transparent;
 }
 
 :focus-visible {
@@ -126,20 +157,51 @@ summary {
   background: var(--color-bg);
 }
 
-/* File body open/close: 0fr↔1fr grid slide. Expo-out curve matches the
-   rail-click glide (exponential approach, ~250ms settle). */
-.file-body {
+/* Open/close (file body, inline composers): 0fr↔1fr grid slide. Expo-out
+   curve matches the rail-click glide (exponential approach, ~250ms settle). */
+.file-body,
+.reveal {
   display: grid;
   grid-template-rows: 0fr;
   transition: grid-template-rows 250ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.file-body[data-open] {
+.file-body[data-open],
+.reveal[data-open] {
   grid-template-rows: 1fr;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .file-body {
+  .file-body,
+  .reveal {
+    transition: none;
+  }
+}
+
+/* Symbol panel open/close: 0↔18rem width slide with the .file-body glide.
+   Negative margin swallows the parent flex gap when closed; visibility flips
+   after the slide so the closed panel is untabbable. margin-top glides the
+   resting position to the current file's section top. */
+.side-panel {
+  width: 0;
+  margin-left: -0.5rem;
+  visibility: hidden;
+  transition:
+    width 250ms cubic-bezier(0.16, 1, 0.3, 1),
+    margin-left 250ms cubic-bezier(0.16, 1, 0.3, 1),
+    margin-top 250ms cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s 250ms;
+}
+
+.side-panel[data-open] {
+  width: 18rem;
+  margin-left: 0;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .side-panel {
     transition: none;
   }
 }
@@ -147,7 +209,7 @@ summary {
 /* Amber wash that fades out; applied when a file turns stale under the user. */
 @keyframes stale-flash {
   0% {
-    background-color: rgb(226 180 92 / 0.16);
+    background-color: color-mix(in srgb, var(--color-accent) 16%, transparent);
   }
   100% {
     background-color: transparent;
@@ -162,10 +224,10 @@ summary {
    the row's resting tint (raise at 50%) so removal doesn't pop. */
 @keyframes hunk-flash {
   0% {
-    background-color: rgb(226 180 92 / 0.24);
+    background-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
   }
   100% {
-    background-color: rgb(26 32 39 / 0.5);
+    background-color: color-mix(in srgb, var(--color-raise) 50%, transparent);
   }
 }
 
@@ -176,7 +238,8 @@ summary {
 /* Wash over an expanded fold run while its gutter rail is hovered. Inset
    shadow instead of background so add/del row tints stay visible under it. */
 .fold-hot > td {
-  box-shadow: inset 0 0 0 100vmax rgb(141 151 165 / 0.08);
+  box-shadow: inset 0 0 0 100vmax
+    color-mix(in srgb, var(--color-mute) 8%, transparent);
 }
 
 /* Pointer crosshair (x toggles): cursorline/cursorcolumn washes, word and
@@ -195,18 +258,18 @@ summary {
 
 .xh-line,
 .xh-col {
-  background: rgb(213 219 228 / 0.05);
+  background: color-mix(in srgb, var(--color-fg) 5%, transparent);
 }
 
 .xh-word {
-  background: rgb(133 188 217 / 0.13);
-  outline: 1px solid rgb(133 188 217 / 0.35);
+  background: color-mix(in srgb, var(--color-agent) 13%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--color-agent) 35%, transparent);
   border-radius: 2px;
 }
 
 .xh-char {
-  background: rgb(226 180 92 / 0.3);
-  outline: 1px solid rgb(226 180 92 / 0.8);
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--color-accent) 80%, transparent);
   border-radius: 1px;
 }
 
@@ -219,6 +282,27 @@ summary {
   background: var(--color-raise);
   border: 1px solid var(--color-edge);
   border-radius: 3px;
+}
+
+/* One-shot green radiate when the last file is marked seen. */
+@keyframes progress-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(78 190 104 / 0.5);
+  }
+  100% {
+    box-shadow: 0 0 10px 7px rgb(78 190 104 / 0);
+  }
+}
+
+.progress-pulse {
+  border-radius: 4px;
+  animation: progress-pulse 0.9s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-pulse {
+    animation: none;
+  }
 }
 
 @keyframes overlay-in {

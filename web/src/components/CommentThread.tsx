@@ -3,6 +3,7 @@ import type { Comment } from "#shared/types";
 import { Markdown } from "../markdown";
 import { cx, relativeTime, type Thread } from "../util";
 import { Composer } from "./Composer";
+import { Reveal } from "./Reveal";
 
 export function AuthorChip({ author }: { author: Comment["author"] }) {
   const user = author === "user";
@@ -82,6 +83,8 @@ export function CommentThread({
   const expanded = override ?? !resolved;
   useEffect(() => setOverride(null), [resolved]);
   const [replying, setReplying] = useState(false);
+  // True while the reply composer slides shut; it unmounts when Reveal exits.
+  const [replyClosing, setReplyClosing] = useState(false);
 
   if (resolved && !expanded) {
     return (
@@ -160,19 +163,27 @@ export function CommentThread({
         )}
       </div>
       {replying && (
-        <div className="border-t border-edge-soft">
-          <Composer
-            placeholder="Reply…"
-            submitLabel="Reply"
-            autoFocus
-            busy={busy}
-            onSubmit={(body) => {
-              onReply(body);
-              setReplying(false);
-            }}
-            onCancel={() => setReplying(false)}
-          />
-        </div>
+        <Reveal
+          open={!replyClosing}
+          onExited={() => {
+            setReplying(false);
+            setReplyClosing(false);
+          }}
+        >
+          <div className="border-t border-edge-soft">
+            <Composer
+              placeholder="Reply…"
+              submitLabel="Reply"
+              autoFocus
+              busy={busy}
+              onSubmit={(body) => {
+                onReply(body);
+                setReplying(false);
+              }}
+              onCancel={() => setReplyClosing(true)}
+            />
+          </div>
+        </Reveal>
       )}
     </div>
   );

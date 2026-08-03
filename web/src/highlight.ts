@@ -5,13 +5,18 @@
  * grammars below are bundled (as lazy chunks), no wasm.
  */
 
+import type { Scheme } from "./theme";
+
 export interface Token {
   content: string;
   color?: string;
 }
 export type TokenLine = Token[];
 
-const THEME = "github-dark-default";
+const THEMES: Record<Scheme, string> = {
+  dark: "github-dark-default",
+  light: "github-light-default",
+};
 
 const LANG_LOADERS = {
   typescript: () => import("shiki/langs/typescript.mjs"),
@@ -76,7 +81,10 @@ async function getHighlighter(): Promise<HighlighterCore> {
     const [{ createHighlighterCore }, { createJavaScriptRegexEngine }] =
       await Promise.all([import("shiki/core"), import("shiki/engine/javascript")]);
     return createHighlighterCore({
-      themes: [import("shiki/themes/github-dark-default.mjs")],
+      themes: [
+        import("shiki/themes/github-dark-default.mjs"),
+        import("shiki/themes/github-light-default.mjs"),
+      ],
       langs: [],
       engine: createJavaScriptRegexEngine({ forgiving: true }),
     });
@@ -93,11 +101,12 @@ export function highlightLines(
   path: string,
   contentHash: string,
   lines: string[],
+  scheme: Scheme,
 ): Promise<TokenLine[] | null> {
   const lang = langForPath(path);
   if (!lang) return Promise.resolve(null);
 
-  const key = `${path}@${contentHash}:${lines.length}`;
+  const key = `${path}@${contentHash}:${scheme}:${lines.length}`;
   let entry = cache.get(key);
   if (!entry) {
     entry = (async () => {
@@ -109,7 +118,7 @@ export function highlightLines(
         }
         const tokens = hl.codeToTokensBase(lines.join("\n"), {
           lang,
-          theme: THEME,
+          theme: THEMES[scheme],
         });
         if (tokens.length < lines.length) return null;
         return tokens

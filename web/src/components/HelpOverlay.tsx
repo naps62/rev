@@ -4,7 +4,7 @@ const KEYS: Array<[string, string]> = [
   ["n / p", "next / previous hunk"],
   ["s, v or .", "toggle seen on current file"],
   ["x", "toggle pointer crosshair (line/column/word/char)"],
-  ["click id", "semantic view: open symbol panel"],
+  ["click id", "symbol panel on: list occurrences of an identifier"],
   ["?", "toggle this help"],
   ["Esc", "close help / symbol panel"],
 ];
@@ -18,7 +18,7 @@ export function HelpOverlay({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="overlay-in w-72 rounded-md border border-edge bg-panel p-4 shadow-[0_8px_28px_rgb(0_0_0/0.5)]"
+        className="overlay-in w-72 rounded-md border border-edge bg-panel p-4 shadow-pop"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-[13px] font-semibold text-fg">Keyboard</h2>

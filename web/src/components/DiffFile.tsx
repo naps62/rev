@@ -13,22 +13,23 @@ import type {
   CommentAnchor,
   DiffHunk,
   DiffLine,
-  EntityChange,
   FileSummary,
 } from "#shared/types";
 import { TUNING } from "#shared/tuning";
 import * as api from "../api";
+import { DiffStat } from "./DiffStat";
 import { highlightLines, type TokenLine } from "../highlight";
 import { intralineSpans, type Span } from "../intraline";
 import type { FileClass } from "../semantic/classify.ts";
-import { CHANGE_GLYPH, entityLabel } from "../semantic/entities.ts";
 import { importFolds, langOf, testFolds, type FoldRun } from "../semantic/fold.ts";
 import { loadFoldState, saveFoldState } from "../semantic/foldStore.ts";
 import { isSymbol, tokenAt } from "../semantic/symbols.ts";
+import { useScheme } from "../theme";
 import { cx, lineKey, type Thread } from "../util";
 import { AuthorChip, CommentThread, threadShell } from "./CommentThread";
 import { Checkbox } from "./Checkbox";
 import { Composer } from "./Composer";
+import { Reveal } from "./Reveal";
 
 // "M" stays neutral so amber only ever means attention (stale, open, current).
 const STATUS_GLYPH: Record<FileSummary["status"], { glyph: string; cls: string; label: string }> = {
@@ -39,7 +40,7 @@ const STATUS_GLYPH: Record<FileSummary["status"], { glyph: string; cls: string; 
   untracked: { glyph: "U", cls: "text-add", label: "untracked" },
 };
 
-export type DiffMode = "unified" | "split";
+export type DiffMode = "unified" | "split" | "mixed";
 
 interface DiffFileProps {
   dir: string;
@@ -50,15 +51,11 @@ interface DiffFileProps {
   /** All threads anchored to this file; placed on lines once hunks load. */
   threads: Thread[];
   isCurrent: boolean;
-  /** Semantic view on: enables import/test-body folding (unified only). */
-  semantic?: boolean;
-  /** Entity-level changes from sem (semantic view); absent → no strip. */
-  entities?: EntityChange[];
-  /** Click on an entity in the strip — scroll its first line into view. */
-  onJumpToEntity?: (e: EntityChange) => void;
-  /** This file's class in semantic view; "tests" switches to body folding. */
+  /** Fold import blocks (unified only). */
+  foldImports?: boolean;
+  /** This file's class; "tests" switches to body folding. */
   fileClass?: FileClass;
-  /** Start collapsed regardless of size/seen (semantic "generated" class). */
+  /** Start collapsed regardless of size/seen (the "generated" class). */
   defaultCollapsed?: boolean;
   /** Section-level collapse/expand-all: acts once per seq bump. */
   collapseCmd?: { seq: number; expand: boolean };
@@ -82,9 +79,7 @@ export function DiffFile({
   mode,
   threads,
   isCurrent,
-  semantic,
-  entities,
-  onJumpToEntity,
+  foldImports,
   fileClass,
   defaultCollapsed,
   collapseCmd,
@@ -101,6 +96,8 @@ export function DiffFile({
   const [flash, setFlash] = useState(false);
   const [editing, setEditing] = useState(false);
   const [composerAt, setComposerAt] = useState<{ key: string; anchor: CommentAnchor } | null>(null);
+  // True while the composer slides shut; it unmounts when Reveal exits.
+  const [composerClosing, setComposerClosing] = useState(false);
   const prevStale = useRef(file.stale);
 
   useEffect(() => {
@@ -271,26 +268,26 @@ export function DiffFile({
       return next;
     });
   }, []);
-  const foldBodies = semantic && fileClass === "tests" && !showBodies;
+  const foldBodies = fileClass === "tests" && !showBodies;
   // Import and test-body folds share hunk offsets; the prefix keeps a key
   // expanded in one mode from leaking into the other.
   const foldKey = (hi: number, run: FoldRun) =>
     `${foldBodies ? "t" : "i"}:${hi}:${run.start}`;
   const foldsByHunk = useMemo(() => {
     const lang = langOf(file.path);
-    if (!semantic || !lang) return null;
+    if (!lang || (!foldBodies && !foldImports)) return null;
     const m = new Map<number, FoldRun[]>();
     hunks.forEach((h, hi) => {
       const runs = foldBodies ? testFolds(h.lines, lang) : importFolds(h.lines, lang);
       if (runs.length > 0) m.set(hi, runs);
     });
     return m.size > 0 ? m : null;
-  }, [semantic, file.path, hunks, foldBodies]);
+  }, [foldImports, file.path, hunks, foldBodies]);
 
   // Symbol panel wiring: resolve the identifier under the pointer and filter
   // through the language's stopwords before bubbling up.
   const symbolHandlers = useMemo<SymbolHandlers | undefined>(() => {
-    if (!semantic || !onSymbolClick) return undefined;
+    if (!onSymbolClick) return undefined;
     const lang = langOf(file.path);
     const extract = (e: MouseEvent<HTMLElement>, text: string) => {
       const t = tokenFromPoint(e, text);
@@ -302,7 +299,8 @@ export function DiffFile({
         if (t) onSymbolClick(t);
       },
     };
-  }, [semantic, onSymbolClick, file.path]);
+  }, [onSymbolClick, file.path]);
+  const scheme = useScheme();
   const [tokens, setTokens] = useState<TokenLine[] | null>(null);
   // Tokens align to `flat` by index — drop them the moment the diff changes,
   // but NOT on collapse, so colors survive the close animation.
@@ -310,13 +308,16 @@ export function DiffFile({
   useEffect(() => {
     if (!expanded || file.binary || flat.length === 0) return;
     let live = true;
-    highlightLines(file.path, file.contentHash, flat.map((l) => l.text)).then(
-      (t) => live && setTokens(t),
-    );
+    highlightLines(
+      file.path,
+      file.contentHash,
+      flat.map((l) => l.text),
+      scheme,
+    ).then((t) => live && setTokens(t));
     return () => {
       live = false;
     };
-  }, [expanded, file.binary, file.path, file.contentHash, flat]);
+  }, [expanded, file.binary, file.path, file.contentHash, flat, scheme]);
 
   // Place threads on their lines (server-re-anchored resolvedLine first,
   // original anchor as fallback); the rest are detached. Placement needs
@@ -359,44 +360,57 @@ export function DiffFile({
         ? "seen"
         : "collapsed";
 
+  const closeComposer = () => setComposerClosing(true);
+
   const toggleComposer = (side: "old" | "new", line: DiffLine, hunk: DiffHunk) => {
     const num = (side === "old" ? line.oldLine : line.newLine) ?? 0;
     const key = lineKey(side, num);
-    setComposerAt((cur) =>
-      cur?.key === key
-        ? null
-        : {
-            key,
-            anchor: {
-              file: file.path,
-              side,
-              line: num,
-              snippet: line.text.trim(),
-              context: anchorContext(hunk, line, side),
-            },
-          },
-    );
+    if (composerAt?.key === key) {
+      // Already closing (the click's own mousedown blur-dismissed the empty
+      // composer): swallow the toggle so it doesn't reopen.
+      if (!composerClosing) closeComposer();
+      return;
+    }
+    setComposerClosing(false);
+    setComposerAt({
+      key,
+      anchor: {
+        file: file.path,
+        side,
+        line: num,
+        snippet: line.text.trim(),
+        context: anchorContext(hunk, line, side),
+      },
+    });
   };
 
   const composerNode = (key: string) =>
     composerAt?.key === key ? (
-      <div className={threadShell}>
-        <div className="flex items-baseline gap-2 border-b border-edge-soft bg-panel px-3 py-1">
-          <AuthorChip author="user" />
-          <span className="min-w-0 truncate font-mono text-[11px] text-faint">
-            {file.path}:{composerAt.anchor.line}
-          </span>
+      <Reveal
+        open={!composerClosing}
+        onExited={() => {
+          setComposerAt(null);
+          setComposerClosing(false);
+        }}
+      >
+        <div className={threadShell}>
+          <div className="flex items-baseline gap-2 border-b border-edge-soft bg-panel px-3 py-1">
+            <AuthorChip author="user" />
+            <span className="min-w-0 truncate font-mono text-[11px] text-faint">
+              {file.path}:{composerAt.anchor.line}
+            </span>
+          </div>
+          <Composer
+            placeholder="Write a comment…"
+            autoFocus
+            onSubmit={(body) => {
+              onCreateComment(composerAt.anchor, body);
+              setComposerAt(null);
+            }}
+            onCancel={closeComposer}
+          />
         </div>
-        <Composer
-          placeholder="Write a comment…"
-          autoFocus
-          onSubmit={(body) => {
-            onCreateComment(composerAt.anchor, body);
-            setComposerAt(null);
-          }}
-          onCancel={() => setComposerAt(null)}
-        />
-      </div>
+      </Reveal>
     ) : null;
 
   const threadNodes = (key: string | null): ReactNode[] =>
@@ -414,7 +428,13 @@ export function DiffFile({
 
   // Rows are built imperatively so comment threads and the composer can be
   // spliced in directly under their anchored line (in the right pane when split).
-  const split = mode === "split";
+  // "mixed" is split, except fully one-sided files (new/deleted: every line
+  // an add, or every line a del) drop to unified — split wastes half the width.
+  const oneSided =
+    hunks.length > 0 &&
+    (hunks.every((h) => h.lines.every((l) => l.kind === "add")) ||
+      hunks.every((h) => h.lines.every((l) => l.kind === "del")));
+  const split = mode === "split" || (mode === "mixed" && !oneSided);
   const rows: ReactNode[] = [];
   if ((expanded || lingering) && !editing) {
     let flatIdx = 0;
@@ -701,10 +721,9 @@ export function DiffFile({
         {!open && (
           <span className="shrink-0 font-mono text-[11px] text-faint">{collapsedNote}</span>
         )}
-        {!file.binary && (
+        {!file.binary && file.additions + file.deletions > 0 && (
           <span className="shrink-0 font-mono text-[11.5px] tabular-nums">
-            <span className="text-add">+{file.additions}</span>{" "}
-            <span className="text-del">−{file.deletions}</span>
+            <DiffStat add={file.additions} del={file.deletions} />
           </span>
         )}
         {file.stale && (
@@ -718,7 +737,7 @@ export function DiffFile({
           </span>
         )}
         <div className="flex shrink-0 items-center gap-2.5">
-          {semantic && fileClass === "tests" && open && (
+          {fileClass === "tests" && open && (
             <button
               type="button"
               onClick={(e) => {
@@ -758,17 +777,13 @@ export function DiffFile({
 
       <div className="file-body" data-open={open || undefined}>
       <div className="min-h-0 overflow-hidden rounded-b-[5px] max-sm:rounded-none">
-      {showBody && !editing && semantic && entities != null && entities.length > 0 && (
-        <EntityStrip entities={entities} onJump={onJumpToEntity} />
-      )}
       {showBody && !editing && file.stale && interQ.data != null && (
         <div className="flex items-baseline gap-2 border-b border-edge-soft bg-accent-soft/60 px-3 py-1 font-mono text-[11px] text-mute">
           {deltaActive ? (
             <>
               <span>
                 changes since last seen{" "}
-                <span className="text-add">+{interQ.data.file.additions}</span>{" "}
-                <span className="text-del">−{interQ.data.file.deletions}</span>
+                <DiffStat add={interQ.data.file.additions} del={interQ.data.file.deletions} />
               </span>
               <button
                 type="button"
@@ -866,54 +881,6 @@ export function DiffFile({
       </div>
       </div>
     </section>
-  );
-}
-
-const ENTITY_STRIP_CAP = 12;
-
-const ENTITY_CLS: Record<EntityChange["change"], string> = {
-  added: "text-add",
-  modified: "text-mute",
-  deleted: "text-del",
-  renamed: "text-agent",
-  moved: "text-agent",
-  reordered: "text-agent",
-};
-
-/** What changed at entity level ("~ authenticate · + gamma"), from sem. */
-function EntityStrip({
-  entities,
-  onJump,
-}: {
-  entities: EntityChange[];
-  onJump?: (e: EntityChange) => void;
-}) {
-  const [showAll, setShowAll] = useState(false);
-  const shown = showAll ? entities : entities.slice(0, ENTITY_STRIP_CAP);
-  return (
-    <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 border-b border-edge-soft bg-raise/30 px-3 py-1 font-mono text-[11px]">
-      {shown.map((e, i) => (
-        <button
-          key={`${e.entityType}:${e.name}:${i}`}
-          type="button"
-          onClick={() => onJump?.(e)}
-          title={`${e.entityType} ${e.change}${e.startLine != null ? ` · line ${e.startLine}` : ""}`}
-          className="group max-w-72 truncate text-mute transition-colors duration-150 hover:text-fg"
-        >
-          <span className={ENTITY_CLS[e.change]}>{CHANGE_GLYPH[e.change]}</span>{" "}
-          <span className="group-hover:underline">{entityLabel(e)}</span>
-        </button>
-      ))}
-      {!showAll && entities.length > ENTITY_STRIP_CAP && (
-        <button
-          type="button"
-          onClick={() => setShowAll(true)}
-          className="text-faint hover:text-mute"
-        >
-          +{entities.length - ENTITY_STRIP_CAP} more
-        </button>
-      )}
-    </div>
   );
 }
 
