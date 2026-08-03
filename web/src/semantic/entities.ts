@@ -11,6 +11,24 @@ export const CHANGE_GLYPH: Record<EntityChange["change"], string> = {
   reordered: "↕",
 };
 
+export const CHANGE_CLS: Record<EntityChange["change"], string> = {
+  added: "text-add",
+  modified: "text-mute",
+  deleted: "text-del",
+  renamed: "text-agent",
+  moved: "text-agent",
+  reordered: "text-agent",
+};
+
+export const CHANGE_LABEL: Record<EntityChange["change"], string> = {
+  added: "new",
+  modified: "modified",
+  deleted: "deleted",
+  renamed: "renamed",
+  moved: "moved",
+  reordered: "reordered",
+};
+
 /** Where a strip click should land: the new side while the entity exists. */
 export function entityAnchor(e: EntityChange): { side: "old" | "new"; line: number } | null {
   if (e.startLine != null) return { side: "new", line: e.startLine };

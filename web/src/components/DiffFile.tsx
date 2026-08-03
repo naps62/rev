@@ -13,7 +13,6 @@ import type {
   CommentAnchor,
   DiffHunk,
   DiffLine,
-  EntityChange,
   FileSummary,
 } from "#shared/types";
 import { TUNING } from "#shared/tuning";
@@ -21,7 +20,6 @@ import * as api from "../api";
 import { highlightLines, type TokenLine } from "../highlight";
 import { intralineSpans, type Span } from "../intraline";
 import type { FileClass } from "../semantic/classify.ts";
-import { CHANGE_GLYPH, entityLabel } from "../semantic/entities.ts";
 import { importFolds, langOf, testFolds, type FoldRun } from "../semantic/fold.ts";
 import { loadFoldState, saveFoldState } from "../semantic/foldStore.ts";
 import { isSymbol, tokenAt } from "../semantic/symbols.ts";
@@ -52,10 +50,6 @@ interface DiffFileProps {
   isCurrent: boolean;
   /** Semantic view on: enables import/test-body folding (unified only). */
   semantic?: boolean;
-  /** Entity-level changes from sem (semantic view); absent → no strip. */
-  entities?: EntityChange[];
-  /** Click on an entity in the strip — scroll its first line into view. */
-  onJumpToEntity?: (e: EntityChange) => void;
   /** This file's class in semantic view; "tests" switches to body folding. */
   fileClass?: FileClass;
   /** Start collapsed regardless of size/seen (semantic "generated" class). */
@@ -83,8 +77,6 @@ export function DiffFile({
   threads,
   isCurrent,
   semantic,
-  entities,
-  onJumpToEntity,
   fileClass,
   defaultCollapsed,
   collapseCmd,
@@ -758,9 +750,6 @@ export function DiffFile({
 
       <div className="file-body" data-open={open || undefined}>
       <div className="min-h-0 overflow-hidden rounded-b-[5px] max-sm:rounded-none">
-      {showBody && !editing && semantic && entities != null && entities.length > 0 && (
-        <EntityStrip entities={entities} onJump={onJumpToEntity} />
-      )}
       {showBody && !editing && file.stale && interQ.data != null && (
         <div className="flex items-baseline gap-2 border-b border-edge-soft bg-accent-soft/60 px-3 py-1 font-mono text-[11px] text-mute">
           {deltaActive ? (
@@ -866,54 +855,6 @@ export function DiffFile({
       </div>
       </div>
     </section>
-  );
-}
-
-const ENTITY_STRIP_CAP = 12;
-
-const ENTITY_CLS: Record<EntityChange["change"], string> = {
-  added: "text-add",
-  modified: "text-mute",
-  deleted: "text-del",
-  renamed: "text-agent",
-  moved: "text-agent",
-  reordered: "text-agent",
-};
-
-/** What changed at entity level ("~ authenticate · + gamma"), from sem. */
-function EntityStrip({
-  entities,
-  onJump,
-}: {
-  entities: EntityChange[];
-  onJump?: (e: EntityChange) => void;
-}) {
-  const [showAll, setShowAll] = useState(false);
-  const shown = showAll ? entities : entities.slice(0, ENTITY_STRIP_CAP);
-  return (
-    <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 border-b border-edge-soft bg-raise/30 px-3 py-1 font-mono text-[11px]">
-      {shown.map((e, i) => (
-        <button
-          key={`${e.entityType}:${e.name}:${i}`}
-          type="button"
-          onClick={() => onJump?.(e)}
-          title={`${e.entityType} ${e.change}${e.startLine != null ? ` · line ${e.startLine}` : ""}`}
-          className="group max-w-72 truncate text-mute transition-colors duration-150 hover:text-fg"
-        >
-          <span className={ENTITY_CLS[e.change]}>{CHANGE_GLYPH[e.change]}</span>{" "}
-          <span className="group-hover:underline">{entityLabel(e)}</span>
-        </button>
-      ))}
-      {!showAll && entities.length > ENTITY_STRIP_CAP && (
-        <button
-          type="button"
-          onClick={() => setShowAll(true)}
-          className="text-faint hover:text-mute"
-        >
-          +{entities.length - ENTITY_STRIP_CAP} more
-        </button>
-      )}
-    </div>
   );
 }
 

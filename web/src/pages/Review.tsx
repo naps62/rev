@@ -26,6 +26,8 @@ import { LayoutToggle } from "../components/LayoutToggle";
 import { ViewToggle } from "../components/ViewToggle";
 import { LiveDot } from "../components/LiveDot";
 import { Checkbox } from "../components/Checkbox";
+import { EntityPanel } from "../components/EntityPanel";
+import { RollupPanel } from "../components/RollupPanel";
 import { SymbolPanel } from "../components/SymbolPanel";
 import {
   buildClassSections,
@@ -34,6 +36,7 @@ import {
   type FileClass,
 } from "../semantic/classify.ts";
 import { entityAnchor } from "../semantic/entities.ts";
+import { buildRollup } from "../semantic/rollup.ts";
 import { findOccurrences, type Occurrence } from "../semantic/symbols.ts";
 import { attachCrosshair } from "../crosshair";
 import { buildFileTree, flattenTree } from "../tree";
@@ -425,6 +428,16 @@ export function Review() {
     requestAnimationFrame(attempt);
   };
 
+  const jumpToEntityIn = (path: string, e: EntityChange) => {
+    const a = entityAnchor(e);
+    if (a) jumpToOccurrence({ path, side: a.side, line: a.line, kind: "context", text: "" });
+  };
+
+  const rollup = useMemo(
+    () => (sections && semQ.data?.available ? buildRollup(semQ.data.files) : null),
+    [sections, semQ.data],
+  );
+
   // Hovering a diff claims focus; ignored mid-glide so a rail click isn't
   // hijacked by files sliding under the stationary-ish cursor.
   const hoverFocus = (path: string) => {
@@ -740,6 +753,7 @@ export function Review() {
           </aside>
 
           <main ref={mainRef} className="relative flex min-w-0 flex-1 flex-col gap-3">
+            {rollup && <RollupPanel groups={rollup} onJump={jumpToEntityIn} />}
             {(sections ?? [null]).map((s) => (
               <Fragment key={s?.cls ?? "all"}>
                 {s && (
@@ -761,13 +775,6 @@ export function Review() {
                 threads={threadsByFile.get(f.path) ?? []}
                 isCurrent={currentPath === f.path}
                 semantic={!!sections}
-                entities={entitiesByPath.get(f.path)}
-                onJumpToEntity={(e) => {
-                  const a = entityAnchor(e);
-                  if (a) {
-                    jumpToOccurrence({ path: f.path, side: a.side, line: a.line, kind: "context", text: "" });
-                  }
-                }}
                 fileClass={s?.cls}
                 defaultCollapsed={s?.cls === "generated"}
                 collapseCmd={(() => {
@@ -786,7 +793,7 @@ export function Review() {
                   else sectionEls.current.delete(f.path);
                 }}
                 hunkRef={(hi, el) => {
-                  const k = `${f.path} ${hi}`;
+                  const k = `${f.path} ${hi}`;
                   if (el) hunkEls.current.set(k, el);
                   else hunkEls.current.delete(k);
                 }}
@@ -827,26 +834,42 @@ export function Review() {
             </p>
           </main>
 
-          {symbol != null && symbolData && (
-            <aside
-              className="sticky hidden w-72 shrink-0 flex-col overflow-hidden rounded-md border border-edge bg-panel lg:flex"
-              style={{
-                top: HEADER_PX + 8,
-                maxHeight: `calc(100vh - ${HEADER_PX + 16}px)`,
-              }}
-            >
-              <SymbolPanel
-                symbol={symbol}
-                occurrences={symbolData.occurrences}
-                fileOrder={files.map((f) => f.path)}
-                currentPath={currentPath}
-                notLoaded={symbolData.notLoaded}
-                onLoadAll={loadAllHunks}
-                onJump={jumpToOccurrence}
-                onClose={() => setSymbol(null)}
-              />
-            </aside>
-          )}
+          {(() => {
+            const currentEntities =
+              sections && currentPath ? entitiesByPath.get(currentPath) : undefined;
+            const panel =
+              symbol != null && symbolData ? (
+                <SymbolPanel
+                  symbol={symbol}
+                  occurrences={symbolData.occurrences}
+                  fileOrder={files.map((f) => f.path)}
+                  currentPath={currentPath}
+                  notLoaded={symbolData.notLoaded}
+                  onLoadAll={loadAllHunks}
+                  onJump={jumpToOccurrence}
+                  onClose={() => setSymbol(null)}
+                />
+              ) : rollup && currentPath ? (
+                <EntityPanel
+                  path={currentPath}
+                  entities={currentEntities ?? []}
+                  onJump={jumpToEntityIn}
+                />
+              ) : null;
+            return (
+              panel && (
+                <aside
+                  className="sticky hidden w-72 shrink-0 flex-col overflow-hidden rounded-md border border-edge bg-panel lg:flex"
+                  style={{
+                    top: HEADER_PX + 8,
+                    maxHeight: `calc(100vh - ${HEADER_PX + 16}px)`,
+                  }}
+                >
+                  {panel}
+                </aside>
+              )
+            );
+          })()}
         </div>
       )}
 
