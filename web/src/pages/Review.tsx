@@ -25,6 +25,7 @@ import { HelpOverlay } from "../components/HelpOverlay";
 import { FeatureMenu } from "../components/FeatureMenu";
 import { LayoutToggle } from "../components/LayoutToggle";
 import { LiveDot } from "../components/LiveDot";
+import { ReviewProgress } from "../components/ReviewProgress";
 import { Checkbox } from "../components/Checkbox";
 import { EntityPanel } from "../components/EntityPanel";
 import { RollupPanel } from "../components/RollupPanel";
@@ -564,16 +565,6 @@ export function Review() {
   const [baseInput, setBaseInput] = useState(base);
   useEffect(() => setBaseInput(base), [base]);
 
-  const totals = useMemo(
-    () =>
-      files.reduce(
-        (acc, f) => ({ add: acc.add + f.additions, del: acc.del + f.deletions }),
-        { add: 0, del: 0 },
-      ),
-    [files],
-  );
-  const seenCount = files.filter((f) => f.seen).length;
-
   return (
     <div className="min-h-screen">
       <AppHeader>
@@ -660,26 +651,14 @@ export function Review() {
             ))}
           </select>
         )}
+        {files.length > 0 && (
+          <ReviewProgress files={files} currentPath={currentPath} onJump={jumpTo} />
+        )}
         <div className="ml-auto flex items-center gap-3 self-stretch">
           <div className="hidden items-stretch divide-x divide-edge self-stretch border-x border-edge sm:flex">
             <FeatureMenu features={features} onChange={setFeatures} />
             <LayoutToggle mode={mode} onChange={setMode} />
           </div>
-          {files.length > 0 && (
-            <>
-              <span className="hidden font-mono text-[11.5px] tabular-nums text-mute sm:inline">
-                {files.length} file{files.length === 1 ? "" : "s"}{" "}
-                <span className="text-add">+{totals.add}</span>{" "}
-                <span className="text-del">−{totals.del}</span>
-              </span>
-              <span
-                className="whitespace-nowrap font-mono text-[11.5px] tabular-nums text-mute"
-                title="files marked seen"
-              >
-                {seenCount}/{files.length} seen
-              </span>
-            </>
-          )}
           <LiveDot status={wsStatus} />
           <button
             type="button"
