@@ -616,32 +616,39 @@ export function Review() {
               merge-base {shortSha(diffQ.data.mergeBase)}
             </span>
           )}
-          {diffQ.data != null &&
-            diffQ.data.baseBehind != null &&
-            diffQ.data.baseBehind > 0 && (
-              <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
+          {/* baseBehind is null only when base has no remote at all; a remote-
+              tracking base reads 0 forever, so gate the button on fetchability,
+              not on the count. */}
+          {diffQ.data != null && diffQ.data.baseBehind != null && (
+            <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
+              {diffQ.data.baseBehind > 0 && (
                 <span className="font-mono text-[11px] text-accent">
                   base {diffQ.data.baseBehind} behind origin
                 </span>
-                <button
-                  type="button"
-                  onClick={() => fetchMut.mutate()}
-                  disabled={fetchMut.isPending}
-                  title={`git fetch ${base}'s upstream, then re-diff`}
-                  className="rounded-sm border border-accent/40 px-1.5 py-px font-mono text-[11px] text-accent transition-colors duration-150 hover:bg-accent hover:text-bg disabled:cursor-default disabled:border-edge disabled:bg-transparent disabled:text-faint"
+              )}
+              <button
+                type="button"
+                onClick={() => fetchMut.mutate()}
+                disabled={fetchMut.isPending}
+                title={`git fetch ${base}'s upstream, then re-diff`}
+                className={`rounded-sm border px-1.5 py-px font-mono text-[11px] transition-colors duration-150 hover:bg-accent hover:text-bg disabled:cursor-default disabled:border-edge disabled:bg-transparent disabled:text-faint ${
+                  diffQ.data.baseBehind > 0
+                    ? "border-accent/40 text-accent"
+                    : "border-edge text-faint"
+                }`}
+              >
+                {fetchMut.isPending ? "fetching…" : "fetch"}
+              </button>
+              {fetchMut.error != null && (
+                <span
+                  className="max-w-44 truncate text-[11px] text-del"
+                  title={(fetchMut.error as Error).message}
                 >
-                  {fetchMut.isPending ? "fetching…" : "fetch"}
-                </button>
-                {fetchMut.error != null && (
-                  <span
-                    className="max-w-44 truncate text-[11px] text-del"
-                    title={(fetchMut.error as Error).message}
-                  >
-                    {(fetchMut.error as Error).message}
-                  </span>
-                )}
-              </span>
-            )}
+                  {(fetchMut.error as Error).message}
+                </span>
+              )}
+            </span>
+          )}
           {files.length > 0 && (
             <select
               value={currentPath ?? ""}
