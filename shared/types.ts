@@ -254,6 +254,13 @@ export interface FileWriteRequest {
 
 export type Author = "user" | "agent" | "reviewer";
 
+/**
+ * Delivery lifecycle toward the agent: "pending" = invisible to agent polling
+ * until submitted; "submitted" = visible, not yet delivered; "picked_up" = a
+ * watcher acked delivery.
+ */
+export type CommentStatus = "pending" | "submitted" | "picked_up";
+
 export interface CommentAnchor {
   /** Repo-relative path the comment is attached to. */
   file: string;
@@ -287,8 +294,15 @@ export interface Comment {
   createdAt: number;
   /** Set when the thread root is resolved. Only meaningful on roots. */
   resolvedAt: number | null;
-  /** Monotonic per-server sequence, the `since` cursor for agent polling. */
+  /** Monotonic per-server creation sequence. UI ordering; NOT the agent cursor. */
   seq: number;
+  status: CommentStatus;
+  /**
+   * Monotonic per-server sequence assigned at submission — the `since` cursor
+   * for agent polling (`submitted=1`). Null while pending. Distinct from
+   * `seq` because submission order differs from creation order.
+   */
+  submittedSeq: number | null;
   /**
    * Where the anchored line lives in the CURRENT working tree, re-located by
    * the server at read time ("new"-side anchors only). Equal to anchor.line
@@ -306,6 +320,24 @@ export interface CommentCreateRequest {
   parentId?: string;
   author: Author;
   body: string;
+  /**
+   * true → created as "pending" (invisible to agent polling until submitted).
+   * Default false: submitted immediately — agents and API callers keep the
+   * old fire-and-forget behavior.
+   */
+  pending?: boolean;
+}
+
+/** Submits every pending comment under `dir`, in creation order. */
+export interface CommentsSubmitRequest {
+  dir: string;
+}
+
+/** Watcher delivery ack: marks submitted comments ≤ upTo as picked up. */
+export interface CommentsAckRequest {
+  dir: string;
+  /** The submittedSeq cursor the watcher delivered through. */
+  upTo: number;
 }
 
 export interface CommentPatchRequest {
@@ -315,7 +347,11 @@ export interface CommentPatchRequest {
 
 export interface CommentListResponse {
   comments: Comment[];
-  /** Highest seq in the full store for this dir (not just this page). */
+  /**
+   * Highest seq in the full store for this dir (not just this page). With
+   * `submitted=1` it is the highest submittedSeq instead — the value to pass
+   * back as `since` and to ack after delivering.
+   */
   cursor: number;
 }
 
@@ -372,10 +408,15 @@ export type ServerMessage =
 //        diff via the optional sem CLI; available:false when sem can't deliver)
 // GET    /api/file?dir&path[&rev]            → FileContentResponse
 // PUT    /api/file                           ← FileWriteRequest → FileContentResponse
-// GET    /api/comments?dir[&base][&since]    → CommentListResponse
-//        `since` compares against seq; use for agent polling. Add `wait=1`
-//        to long-poll up to LONG_POLL_MS when nothing is newer than `since`.
+// GET    /api/comments?dir[&base][&since][&submitted=1] → CommentListResponse
+//        Agent polling passes submitted=1: only submitted comments, `since`
+//        and `cursor` on the submittedSeq axis. Without it (UI): every
+//        comment including pending, seq axis. Add `wait=1` to long-poll up
+//        to LONG_POLL_MS when nothing is newer than `since`.
 // POST   /api/comments                       ← CommentCreateRequest → Comment
+// POST   /api/comments/submit                ← CommentsSubmitRequest
+//        → { submitted: number; cursor: number }
+// POST   /api/comments/ack                   ← CommentsAckRequest → { acked: number }
 // PATCH  /api/comments/:id                   ← CommentPatchRequest  → Comment
 // PUT    /api/seen                           ← SeenRequest → { ok: true }
 // POST   /api/fetch                          ← { dir, base } → { ok, baseBehind }

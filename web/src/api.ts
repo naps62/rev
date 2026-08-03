@@ -145,6 +145,11 @@ export async function postComment(req: CommentCreateRequest): Promise<Comment> {
   return request("/api/comments", { method: "POST", body: JSON.stringify(req) });
 }
 
+export async function submitComments(dir: string): Promise<{ submitted: number; cursor: number }> {
+  if (isFixture()) return tick((await fx()).fxSubmitComments(dir));
+  return request("/api/comments/submit", { method: "POST", body: JSON.stringify({ dir }) });
+}
+
 export async function patchComment(id: string, patch: CommentPatchRequest): Promise<Comment> {
   if (isFixture()) return tick((await fx()).fxPatchComment(id, patch));
   return request(`/api/comments/${encodeURIComponent(id)}`, {

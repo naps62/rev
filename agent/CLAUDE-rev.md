@@ -18,9 +18,9 @@ Arm it now if it isn't already armed this session — via the Bash tool with
 
     {{WATCH}} {{DIR}}
 
-It blocks until the user leaves review comments, waits for the burst to
-settle, then exits printing the batch as JSON — which re-invokes you. When
-that happens:
+It blocks until the user submits review comments (the UI batches a review
+pass and sends it explicitly or on idle), then exits printing the batch as
+JSON — which re-invokes you. When that happens:
 
 1. Address each comment (make the change it asks for).
 2. Reply in-thread, briefly, after the change lands:

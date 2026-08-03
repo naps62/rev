@@ -22,16 +22,18 @@ export function openDb(path: string = config.dbPath): void {
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec(`
     CREATE TABLE IF NOT EXISTS comments (
-      id          TEXT PRIMARY KEY,
-      dir         TEXT NOT NULL,
-      base        TEXT NOT NULL,
-      anchor      TEXT,
-      parent_id   TEXT REFERENCES comments(id),
-      author      TEXT NOT NULL,
-      body        TEXT NOT NULL,
-      created_at  INTEGER NOT NULL,
-      resolved_at INTEGER,
-      seq         INTEGER NOT NULL UNIQUE
+      id            TEXT PRIMARY KEY,
+      dir           TEXT NOT NULL,
+      base          TEXT NOT NULL,
+      anchor        TEXT,
+      parent_id     TEXT REFERENCES comments(id),
+      author        TEXT NOT NULL,
+      body          TEXT NOT NULL,
+      created_at    INTEGER NOT NULL,
+      resolved_at   INTEGER,
+      seq           INTEGER NOT NULL UNIQUE,
+      submitted_seq INTEGER,
+      picked_up_at  INTEGER
     );
     CREATE INDEX IF NOT EXISTS comments_dir_seq ON comments (dir, seq);
     CREATE TABLE IF NOT EXISTS seen (
@@ -52,6 +54,16 @@ export function openDb(path: string = config.dbPath): void {
     );
     DROP TABLE IF EXISTS seen_segments;
   `);
+  // Pre-pending-states DBs: add the columns and backfill submitted_seq = seq,
+  // so watcher cursor files (which held seq values) stay valid.
+  const cols = db.prepare("PRAGMA table_info(comments)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "submitted_seq")) {
+    db.exec(`
+      ALTER TABLE comments ADD COLUMN submitted_seq INTEGER;
+      ALTER TABLE comments ADD COLUMN picked_up_at INTEGER;
+      UPDATE comments SET submitted_seq = seq;
+    `);
+  }
 }
 
 export function closeDb(): void {
@@ -88,6 +100,8 @@ interface CommentRow {
   created_at: number;
   resolved_at: number | null;
   seq: number;
+  submitted_seq: number | null;
+  picked_up_at: number | null;
 }
 
 function rowToComment(r: CommentRow): Comment {
@@ -102,11 +116,23 @@ function rowToComment(r: CommentRow): Comment {
     createdAt: r.created_at,
     resolvedAt: r.resolved_at,
     seq: r.seq,
+    status:
+      r.submitted_seq == null ? "pending" : r.picked_up_at == null ? "submitted" : "picked_up",
+    submittedSeq: r.submitted_seq,
   };
 }
 
 function getRow(d: DatabaseSync, id: string): CommentRow | null {
   return (d.prepare("SELECT * FROM comments WHERE id = ?").get(id) as CommentRow | undefined) ?? null;
+}
+
+/** Next value on the submission axis (independent of the creation axis, seq). */
+function nextSubmittedSeq(d: DatabaseSync): number {
+  return (
+    d.prepare("SELECT COALESCE(MAX(submitted_seq), 0) + 1 AS s FROM comments").get() as {
+      s: number;
+    }
+  ).s;
 }
 
 /** Insert; assigns id, seq (monotonic), createdAt. Replies must reference an existing root. */
@@ -125,12 +151,41 @@ export function createComment(req: CommentCreateRequest): Comment {
       anchor = null;
     }
     const seq = (d.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS s FROM comments").get() as { s: number }).s;
+    const submittedSeq = req.pending ? null : nextSubmittedSeq(d);
     d.prepare(
-      `INSERT INTO comments (id, dir, base, anchor, parent_id, author, body, created_at, resolved_at, seq)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
-    ).run(id, req.dir, req.base, anchor, parentId, req.author, req.body, createdAt, seq);
+      `INSERT INTO comments (id, dir, base, anchor, parent_id, author, body, created_at, resolved_at, seq, submitted_seq)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+    ).run(id, req.dir, req.base, anchor, parentId, req.author, req.body, createdAt, seq, submittedSeq);
   });
   return rowToComment(getRow(d, id)!);
+}
+
+/**
+ * Assign submitted_seq to every pending comment under dir, in creation order.
+ * Returns the number submitted and the dir's post-submit cursor.
+ */
+export function submitPending(dir: string): { submitted: number; cursor: number } {
+  const d = must();
+  return transaction(d, () => {
+    const rows = d
+      .prepare("SELECT id FROM comments WHERE dir = ? AND submitted_seq IS NULL ORDER BY seq ASC")
+      .all(dir) as unknown as Array<{ id: string }>;
+    for (const r of rows) {
+      d.prepare("UPDATE comments SET submitted_seq = ? WHERE id = ?").run(nextSubmittedSeq(d), r.id);
+    }
+    return { submitted: rows.length, cursor: submittedCursor(d, dir) };
+  });
+}
+
+/** Mark submitted comments with submitted_seq ≤ upTo as picked up. Returns count newly marked. */
+export function ackPickedUp(dir: string, upTo: number): number {
+  const result = must()
+    .prepare(
+      `UPDATE comments SET picked_up_at = ?
+       WHERE dir = ? AND submitted_seq IS NOT NULL AND submitted_seq <= ? AND picked_up_at IS NULL`,
+    )
+    .run(Date.now(), dir, upTo);
+  return Number(result.changes);
 }
 
 /** Patch body and/or resolved flag (resolve applies to thread roots). Throws on unknown id. */
@@ -151,28 +206,51 @@ export function patchComment(id: string, patch: { body?: string; resolved?: bool
   return rowToComment(getRow(d, id)!);
 }
 
+function submittedCursor(d: DatabaseSync, dir: string): number {
+  return (
+    d
+      .prepare("SELECT COALESCE(MAX(submitted_seq), 0) AS c FROM comments WHERE dir = ?")
+      .get(dir) as { c: number }
+  ).c;
+}
+
 /**
  * Comments for a dir (optionally filtered by base), seq-ascending.
  * `since` returns only seq > since. Also returns the store-wide max seq for
  * this dir as the long-poll cursor.
+ *
+ * `submittedOnly` (agent polling) switches every axis to submitted_seq:
+ * pending comments are excluded, `since` compares submitted_seq, ordering
+ * follows submission order, and the cursor is the dir's max submitted_seq.
  */
-export function listComments(dir: string, base?: string, since?: number): { comments: Comment[]; cursor: number } {
+export function listComments(
+  dir: string,
+  base?: string,
+  since?: number,
+  submittedOnly = false,
+): { comments: Comment[]; cursor: number } {
   const d = must();
+  const axis = submittedOnly ? "submitted_seq" : "seq";
   let sql = "SELECT * FROM comments WHERE dir = ?";
   const params: (string | number)[] = [dir];
+  if (submittedOnly) sql += " AND submitted_seq IS NOT NULL";
   if (base !== undefined) {
     sql += " AND base = ?";
     params.push(base);
   }
   if (since !== undefined) {
-    sql += " AND seq > ?";
+    sql += ` AND ${axis} > ?`;
     params.push(since);
   }
-  sql += " ORDER BY seq ASC";
+  sql += ` ORDER BY ${axis} ASC`;
   const rows = d.prepare(sql).all(...params) as unknown as CommentRow[];
-  const cursor = (
-    d.prepare("SELECT COALESCE(MAX(seq), 0) AS c FROM comments WHERE dir = ?").get(dir) as { c: number }
-  ).c;
+  const cursor = submittedOnly
+    ? submittedCursor(d, dir)
+    : (
+        d.prepare("SELECT COALESCE(MAX(seq), 0) AS c FROM comments WHERE dir = ?").get(dir) as {
+          c: number;
+        }
+      ).c;
   return { comments: rows.map(rowToComment), cursor };
 }
 

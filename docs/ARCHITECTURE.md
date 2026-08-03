@@ -61,8 +61,9 @@ Prod: `pnpm build && pnpm start` — server serves `web/dist` statically.
   Debounced; emits `diff-invalidated` with the changed paths. Watching only
   viewed repos keeps the daemon cheap with dozens of repos discovered.
 - **db.ts** — `node:sqlite` at `~/.local/share/rev/rev.db`. Tables: comments
-  (threaded via `parentId`, resolvable), seen-state per (dir, base, file,
-  contentHash). Content-hash is how "seen" survives refreshes and how
+  (threaded via `parentId`, resolvable, delivery lifecycle
+  pending → submitted → picked_up on a separate `submitted_seq` axis),
+  seen-state per (dir, base, file, contentHash). Content-hash is how "seen" survives refreshes and how
   staleness is detected.
 - **routes.ts** — REST per `shared/types.ts`. No auth: LAN-trusted, same
   model as every other dev daemon on this box.
@@ -86,9 +87,15 @@ The agent's side of a review, documented in `agent/CLAUDE-rev.md`:
 
 1. Push/commit (or not — working tree is enough), send the user
    `/review?dir=…&base=…`.
-2. Long-poll `GET /api/comments?dir=…&since=<cursor>` for new comments.
-3. Reply with `POST /api/comments` (`parentId` set, `author: "agent"`).
-4. User sees replies in realtime over WS, resolves threads in the UI.
+2. Long-poll `GET /api/comments?dir=…&since=<cursor>&submitted=1` for new
+   comments. User comments start pending (drafts, invisible on this channel);
+   the UI submits the batch explicitly, on idle, or on leaving the page —
+   `since`/`cursor` run on the submission axis (`submittedSeq`), not `seq`,
+   because submission order differs from creation order.
+3. After delivering, ack with `POST /api/comments/ack` (`{dir, upTo: cursor}`)
+   so the UI shows the batch as picked up.
+4. Reply with `POST /api/comments` (`parentId` set, `author: "agent"`).
+5. User sees replies in realtime over WS, resolves threads in the UI.
 
 ## Rejected along the way
 

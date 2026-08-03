@@ -46,6 +46,16 @@ export const TUNING = {
   /** Long-poll ceiling for GET /api/comments?wait=1. Below common proxy/idle timeouts. */
   LONG_POLL_MS: 25_000,
 
+  /** Pending comments auto-submit after this long without a new comment (page focused). */
+  PENDING_IDLE_SUBMIT_MS: 2 * 60_000,
+
+  /**
+   * Pending comments auto-submit this long after the page loses visibility.
+   * Long enough that alt-tabbing to an editor to check something doesn't
+   * ship a half-finished review.
+   */
+  PENDING_BLUR_SUBMIT_MS: 30_000,
+
   /** Diff context lines, matching git's default so hunks look familiar. */
   DIFF_CONTEXT_LINES: 3,
 

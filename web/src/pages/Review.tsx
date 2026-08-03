@@ -19,6 +19,7 @@ import * as api from "../api";
 import { AppHeader, HEADER_PX } from "../components/AppHeader";
 import { CommentThread } from "../components/CommentThread";
 import { Composer } from "../components/Composer";
+import { PendingSubmit } from "../components/PendingSubmit";
 import { DiffStat } from "../components/DiffStat";
 import { DiffFile, type DiffMode } from "../components/DiffFile";
 import { FileNav } from "../components/FileNav";
@@ -156,10 +157,11 @@ export function Review() {
 
   const toggleSeen = (file: FileSummary, seen: boolean) =>
     seenMut.mutate({ dir, base, path: file.path, contentHash: file.contentHash, seen });
+  // User comments start pending; PendingSubmit ships the batch to the agent.
   const createComment = (anchor: CommentAnchor | null, body: string) =>
-    createMut.mutate({ dir, base, anchor: anchor ?? undefined, author: "user", body });
+    createMut.mutate({ dir, base, anchor: anchor ?? undefined, author: "user", body, pending: true });
   const reply = (root: Comment, body: string) =>
-    createMut.mutate({ dir, base, parentId: root.id, author: "user", body });
+    createMut.mutate({ dir, base, parentId: root.id, author: "user", body, pending: true });
   const resolve = (root: Comment, resolved: boolean) =>
     patchMut.mutate({ id: root.id, patch: { resolved } });
 
@@ -660,6 +662,8 @@ export function Review() {
         )}
         <div className="min-w-0 flex-1 basis-0" aria-hidden />
       </AppHeader>
+
+      {dir && <PendingSubmit dir={dir} comments={commentsQ.data?.comments ?? []} />}
 
       {!dir || !base ? (
         <CenterPanel>

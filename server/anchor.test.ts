@@ -52,6 +52,8 @@ describe("resolveComments", () => {
       createdAt: 0,
       resolvedAt: null,
       seq: 1,
+      status: "submitted",
+      submittedSeq: 1,
       ...over,
     };
   }

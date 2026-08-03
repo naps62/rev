@@ -19,8 +19,9 @@ summary=$(curl -sfG --max-time 2 "$REV_HOST/api/diff/summary" \
 mkdir -p "$REV_STATE"
 printf '%s' "$summary" >"$REV_STATE/$(rev_key "$root").known"
 
+# submitted=1: pending comments are unsent drafts — not the agent's business
 comments=$(curl -sfG --max-time 2 "$REV_HOST/api/comments" \
-  --data-urlencode "dir=$root" 2>/dev/null) || comments='{"comments":[]}'
+  --data-urlencode "dir=$root" --data-urlencode "submitted=1" 2>/dev/null) || comments='{"comments":[]}'
 
 SUMMARY="$summary" COMMENTS="$comments" ROOT="$root" BASE="$base" \
 HOST="$REV_HOST" WATCH="$SCRIPT_DIR/rev-watch.sh" \

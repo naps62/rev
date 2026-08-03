@@ -31,6 +31,26 @@ export function AuthorChip({ author }: { author: Comment["author"] }) {
 export const threadShell =
   "mx-3 my-2 overflow-hidden rounded-md border border-edge bg-bg font-sans";
 
+/**
+ * Delivery state toward the agent, on user comments only. Steady state
+ * (picked_up) is unlabeled; agent/reviewer comments have no delivery story.
+ */
+function StatusChip({ comment }: { comment: Comment }) {
+  if (comment.author !== "user" || comment.status === "picked_up") return null;
+  return comment.status === "pending" ? (
+    <span
+      title="Not yet sent to the agent — sends on idle, on leaving the page, or via Send now"
+      className="rounded-sm border border-accent/40 px-1 text-[10.5px] leading-4 text-accent"
+    >
+      pending
+    </span>
+  ) : (
+    <span title="Sent — waiting for the agent to pick it up" className="text-[10.5px] text-faint">
+      sent
+    </span>
+  );
+}
+
 function CommentBlock({ comment, baseLabel }: { comment: Comment; baseLabel?: string }) {
   return (
     <div>
@@ -39,6 +59,7 @@ function CommentBlock({ comment, baseLabel }: { comment: Comment; baseLabel?: st
         <span className="text-[11px] text-faint">
           {relativeTime(comment.createdAt)}
         </span>
+        <StatusChip comment={comment} />
         {baseLabel && (
           <span
             title={`written against base ${baseLabel}`}

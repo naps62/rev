@@ -644,13 +644,19 @@ const state = {
 // ---------------------------------------------------------------------------
 
 function seedComment(
-  c: Omit<Comment, "id" | "seq" | "dir" | "base"> & { id?: string; base?: string },
+  c: Omit<Comment, "id" | "seq" | "dir" | "base" | "status" | "submittedSeq"> & {
+    id?: string;
+    base?: string;
+    status?: Comment["status"];
+  },
 ): Comment {
+  const seq = ++state.seq;
+  const status = c.status ?? "picked_up";
   const full: Comment = {
-    id: c.id ?? `fx-${state.seq + 1}`,
+    id: c.id ?? `fx-${seq}`,
     dir: state.diff.dir,
     base: c.base ?? state.diff.base,
-    seq: ++state.seq,
+    seq,
     anchor: c.anchor,
     parentId: c.parentId,
     author: c.author,
@@ -658,6 +664,8 @@ function seedComment(
     createdAt: c.createdAt,
     resolvedAt: c.resolvedAt,
     resolvedLine: c.resolvedLine,
+    status,
+    submittedSeq: status === "pending" ? null : seq,
   };
   state.comments.push(full);
   return full;
@@ -907,8 +915,9 @@ export function fxGetComments(dir: string): { comments: Comment[]; cursor: numbe
 }
 
 export function fxPostComment(req: CommentCreateRequest): Comment {
+  const seq = ++state.seq;
   const c: Comment = {
-    id: `fx-${state.seq + 1}`,
+    id: `fx-${seq}`,
     dir: req.dir,
     base: req.base,
     anchor: req.anchor ?? null,
@@ -917,11 +926,25 @@ export function fxPostComment(req: CommentCreateRequest): Comment {
     body: req.body,
     createdAt: Date.now(),
     resolvedAt: null,
-    seq: ++state.seq,
+    seq,
     resolvedLine: req.anchor ? req.anchor.line : undefined,
+    status: req.pending ? "pending" : "submitted",
+    submittedSeq: req.pending ? null : seq,
   };
   state.comments.push(c);
   return clone(c);
+}
+
+export function fxSubmitComments(dir: string): { submitted: number; cursor: number } {
+  void dir;
+  const pending = state.comments
+    .filter((c) => c.status === "pending")
+    .sort((a, b) => a.seq - b.seq);
+  for (const c of pending) {
+    c.status = "submitted";
+    c.submittedSeq = ++state.seq;
+  }
+  return { submitted: pending.length, cursor: state.seq };
 }
 
 export function fxPostFetch(req: {

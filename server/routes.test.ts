@@ -165,6 +165,61 @@ describe("routes", () => {
     expect(((await since.json()) as CommentListResponse).comments.map((c) => c.id)).toEqual([reply.id]);
   });
 
+  test("pending: hidden from submitted channel until submit; ack flips picked_up", async () => {
+    const dir = makeRepo("routes-pending");
+    sent.length = 0;
+
+    const immediate = (await (
+      await json("POST", "/comments", { dir, base: "main", author: "user", body: "now" })
+    ).json()) as Comment;
+    expect(immediate.status).toBe("submitted");
+    const draft = (await (
+      await json("POST", "/comments", { dir, base: "main", author: "user", body: "later", pending: true })
+    ).json()) as Comment;
+    expect(draft.status).toBe("pending");
+    expect(draft.submittedSeq).toBeNull();
+
+    const chan = `/comments?dir=${encodeURIComponent(dir)}&submitted=1`;
+    let res = (await (await app.request(chan)).json()) as CommentListResponse;
+    expect(res.comments.map((c) => c.body)).toEqual(["now"]);
+    expect(res.cursor).toBe(immediate.submittedSeq);
+
+    sent.length = 0;
+    const submit = await json("POST", "/comments/submit", { dir });
+    expect(submit.status).toBe(200);
+    const { submitted, cursor } = (await submit.json()) as { submitted: number; cursor: number };
+    expect(submitted).toBe(1);
+    expect(sent.some((m) => m.type === "comments-changed" && m.dir === dir)).toBe(true);
+
+    res = (await (await app.request(chan)).json()) as CommentListResponse;
+    expect(res.comments.map((c) => c.body)).toEqual(["now", "later"]);
+    expect(res.cursor).toBe(cursor);
+
+    const ack = await json("POST", "/comments/ack", { dir, upTo: cursor });
+    expect((await ack.json()) as { acked: number }).toEqual({ acked: 2 });
+    res = (await (await app.request(chan)).json()) as CommentListResponse;
+    expect(res.comments.map((c) => c.status)).toEqual(["picked_up", "picked_up"]);
+
+    const badPending = await json("POST", "/comments", { dir, base: "main", author: "user", body: "x", pending: "yes" });
+    expect(badPending.status).toBe(400);
+    const badAck = await json("POST", "/comments/ack", { dir, upTo: "nope" });
+    expect(badAck.status).toBe(400);
+  });
+
+  test("submitted-channel long-poll resolves on submit, not on pending create", async () => {
+    const dir = makeRepo("routes-poll-submitted");
+    await json("POST", "/comments", { dir, base: "main", author: "user", body: "draft", pending: true });
+    const t0 = Date.now();
+    const waiting = app.request(
+      `/comments?dir=${encodeURIComponent(dir)}&since=0&wait=1&submitted=1`,
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    await json("POST", "/comments/submit", { dir });
+    const res = (await (await waiting).json()) as CommentListResponse;
+    expect(res.comments.map((c) => c.body)).toEqual(["draft"]);
+    expect(Date.now() - t0).toBeLessThan(5_000);
+  });
+
   test("long-poll resolves early when a comment lands", async () => {
     const dir = makeRepo("routes-poll");
     const t0 = Date.now();

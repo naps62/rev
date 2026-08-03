@@ -17,12 +17,15 @@ import type {
   CommentCreateRequest,
   CommentListResponse,
   CommentPatchRequest,
+  CommentsAckRequest,
+  CommentsSubmitRequest,
   FileWriteRequest,
   SeenRequest,
   ServerMessage,
 } from "#shared/types";
 import { TUNING } from "#shared/tuning";
 import {
+  ackPickedUp,
   createComment,
   DbError,
   deleteSeenSnapshot,
@@ -32,6 +35,7 @@ import {
   putSeenSnapshot,
   seenHashes,
   setSeen,
+  submitPending,
 } from "./db.ts";
 import { resolveComments } from "./anchor.ts";
 import { computeSemanticDiff } from "./semantic.ts";
@@ -85,6 +89,7 @@ interface Waiter {
   dir: string;
   base?: string;
   since: number;
+  submittedOnly: boolean;
   resolve: (r: CommentListResponse) => void;
 }
 
@@ -96,24 +101,33 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   function notifyWaiters(dir: string): void {
     for (const w of [...waiters]) {
       if (w.dir !== dir) continue;
-      const res = listComments(w.dir, w.base, w.since);
+      const res = listComments(w.dir, w.base, w.since, w.submittedOnly);
       if (res.comments.length > 0) w.resolve(res);
     }
   }
 
-  function waitForComments(dir: string, base: string | undefined, since: number): Promise<CommentListResponse> {
+  function waitForComments(
+    dir: string,
+    base: string | undefined,
+    since: number,
+    submittedOnly: boolean,
+  ): Promise<CommentListResponse> {
     return new Promise((resolvePromise) => {
       const w: Waiter = {
         dir,
         base,
         since,
+        submittedOnly,
         resolve: (r) => {
           waiters.delete(w);
           clearTimeout(timer);
           resolvePromise(r);
         },
       };
-      const timer = setTimeout(() => w.resolve(listComments(dir, base, since)), TUNING.LONG_POLL_MS);
+      const timer = setTimeout(
+        () => w.resolve(listComments(dir, base, since, submittedOnly)),
+        TUNING.LONG_POLL_MS,
+      );
       waiters.add(w);
     });
   }
@@ -280,9 +294,10 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     const sinceRaw = c.req.query("since");
     const since = sinceRaw === undefined ? undefined : Number(sinceRaw);
     if (since !== undefined && !Number.isFinite(since)) return c.json({ error: "bad since" }, 400);
-    let res = listComments(dir, base, since);
+    const submittedOnly = c.req.query("submitted") === "1";
+    let res = listComments(dir, base, since, submittedOnly);
     if (c.req.query("wait") === "1" && res.comments.length === 0) {
-      res = await waitForComments(dir, base, since ?? res.cursor);
+      res = await waitForComments(dir, base, since ?? res.cursor, submittedOnly);
     }
     await resolveComments(dir, res.comments);
     return c.json(res);
@@ -303,6 +318,9 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     if (b.parentId !== undefined && typeof b.parentId !== "string") {
       return c.json({ error: "parentId must be a string" }, 400);
     }
+    if (b.pending !== undefined && typeof b.pending !== "boolean") {
+      return c.json({ error: "pending must be a boolean" }, 400);
+    }
     if (
       b.anchor !== undefined &&
       (typeof b.anchor !== "object" ||
@@ -319,6 +337,29 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     broadcast({ type: "comments-changed", dir: comment.dir, seq: comment.seq });
     notifyWaiters(comment.dir);
     return c.json(comment, 201);
+  });
+
+  app.post("/comments/submit", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as CommentsSubmitRequest | null;
+    if (!b || typeof b.dir !== "string") return c.json({ error: "dir is required" }, 400);
+    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    const res = submitPending(b.dir);
+    if (res.submitted > 0) {
+      broadcast({ type: "comments-changed", dir: b.dir, seq: res.cursor });
+      notifyWaiters(b.dir);
+    }
+    return c.json(res);
+  });
+
+  app.post("/comments/ack", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as CommentsAckRequest | null;
+    if (!b || typeof b.dir !== "string" || typeof b.upTo !== "number" || !Number.isFinite(b.upTo)) {
+      return c.json({ error: "dir and numeric upTo are required" }, 400);
+    }
+    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    const acked = ackPickedUp(b.dir, b.upTo);
+    if (acked > 0) broadcast({ type: "comments-changed", dir: b.dir, seq: b.upTo });
+    return c.json({ acked });
   });
 
   app.patch("/comments/:id", async (c) => {

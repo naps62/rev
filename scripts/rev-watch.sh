@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # rev-watch.sh <dir> [cursor]
-# Blocks until rev has comments for <dir> newer than the shared per-dir
-# cursor, debounces a burst, prints the batch as JSON, advances the cursor.
-# No timeout; server errors retry with backoff. Exit 0: delivered. 2: usage.
+# Blocks until rev has SUBMITTED comments for <dir> newer than the shared
+# per-dir cursor (the UI batches at submit time), prints the batch as JSON,
+# advances the cursor, acks the delivery. No timeout; server errors retry
+# with backoff. Exit 0: delivered. 2: usage.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -11,7 +12,7 @@ source "$SCRIPT_DIR/rev-lib.sh"
 
 DIR="${1:?usage: rev-watch.sh <dir> [cursor]}"
 CURSOR="${2:-}"
-QUIET="${REV_WATCH_QUIET:-10}"
+QUIET="${REV_WATCH_QUIET:-0}"
 CAP="${REV_WATCH_CAP:-60}"
 
 mkdir -p "$REV_STATE"
@@ -32,6 +33,7 @@ orphaned() { [[ "$(ps -o ppid= -p $$ | tr -d ' ')" == "1" ]]; }
 
 fetch() { # fetch <since> <wait|""> <max-time-secs>
   local args=(-sfG --max-time "$3" --data-urlencode "dir=$DIR" --data-urlencode "since=$1")
+  args+=(--data-urlencode "submitted=1")
   [[ -n "$2" ]] && args+=(--data-urlencode "wait=1")
   curl "${args[@]}" "$REV_HOST/api/comments"
 }
@@ -82,9 +84,9 @@ while :; do
   break
 done
 
-# Debounce: re-fetch from the ORIGINAL cursor (each response is the full
-# batch so far) until QUIET secs pass with no new comment, capped at CAP
-# secs total so a steady stream can't postpone delivery forever.
+# Optional coalescing (QUIET=0 skips it — the UI already batched at submit
+# time): re-fetch from the ORIGINAL cursor (each response is the full batch
+# so far) until QUIET secs pass with no new comment, capped at CAP secs.
 first=$SECONDS last_change=$SECONDS final="$resp" prev=$count
 while (( SECONDS - last_change < QUIET && SECONDS - first < CAP )); do
   sleep 2
@@ -95,10 +97,16 @@ while (( SECONDS - last_change < QUIET && SECONDS - first < CAP )); do
 done
 
 orphaned && exit 0
+NEW_CURSOR=$(printf '%s' "$final" | jfield cursor)
 exec 9>"$LOCK_FILE"
 flock 9
-printf '%s\n' "$(printf '%s' "$final" | jfield cursor)" >"$CURSOR_FILE"
+printf '%s\n' "$NEW_CURSOR" >"$CURSOR_FILE"
 flock -u 9
+
+# Best-effort delivery ack: flips the batch to "picked up" in the UI.
+ack=$(python3 -c 'import json,sys; print(json.dumps({"dir": sys.argv[1], "upTo": int(sys.argv[2])}))' "$DIR" "$NEW_CURSOR") &&
+  curl -sf --max-time 5 -X POST "$REV_HOST/api/comments/ack" \
+    -H 'content-type: application/json' -d "$ack" >/dev/null || true
 
 printf '%s\n' "$final"
 printf 'rev: %s new review comment(s) on %s. Address each one, reply in-thread (POST %s/api/comments with author "agent" and parentId = the root comment id), then re-arm this watcher as a background task.\n' \

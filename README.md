@@ -66,11 +66,15 @@ update behavior machine-wide:
   once with the arm command. Self-heals first-arm, re-arm after delivery, and
   watcher crashes.
 
-Delivery is `scripts/rev-watch.sh`, run by the agent as a background task: it
-long-polls `/api/comments`, debounces a comment burst (10s quiet / 60s cap),
-prints the batch, and exits — which re-invokes the session. A shared per-dir
-cursor in `~/.local/state/rev/` makes delivery at-most-once across sessions.
-Non-Claude agents can use the same API directly (`shared/types.ts`).
+User comments start **pending** — invisible to agents. The UI submits the
+batch on explicit "Send now", after an idle window with no new comments, or
+shortly after the page is hidden, so a review pass lands as one batch without
+delivery lag on single comments. Delivery is `scripts/rev-watch.sh`, run by
+the agent as a background task: it long-polls `/api/comments?submitted=1`,
+prints the batch immediately, acks it (comments flip to "picked up" in the
+UI), and exits — which re-invokes the session. A shared per-dir cursor in
+`~/.local/state/rev/` makes delivery at-most-once across sessions. Non-Claude
+agents can use the same API directly (`shared/types.ts`).
 
 ## Caveats (spike)
 
