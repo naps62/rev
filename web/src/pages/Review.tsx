@@ -22,10 +22,6 @@ import { Composer } from "../components/Composer";
 import { DiffStat } from "../components/DiffStat";
 import { DiffFile, type DiffMode } from "../components/DiffFile";
 import { FileNav } from "../components/FileNav";
-import { HelpOverlay } from "../components/HelpOverlay";
-import { FeatureMenu } from "../components/FeatureMenu";
-import { LayoutToggle } from "../components/LayoutToggle";
-import { LiveDot } from "../components/LiveDot";
 import { ReviewProgress } from "../components/ReviewProgress";
 import { Checkbox } from "../components/Checkbox";
 import { EntityPanel } from "../components/EntityPanel";
@@ -481,7 +477,6 @@ export function Review() {
     return () => ro.disconnect();
   }, [currentPath, files]);
 
-  const [help, setHelp] = useState(false);
   const filesRef = useRef(files);
   filesRef.current = files;
   useEffect(() => {
@@ -552,10 +547,7 @@ export function Review() {
         }
       } else if (e.key === "x") {
         setFeatures((p) => ({ ...p, crosshair: !p.crosshair }));
-      } else if (e.key === "?") {
-        setHelp((h) => !h);
       } else if (e.key === "Escape") {
-        setHelp(false);
         setSymbol(null);
       }
     };
@@ -569,7 +561,15 @@ export function Review() {
 
   return (
     <div className="min-h-screen">
-      <AppHeader>
+      <AppHeader
+        settings={{
+          features,
+          onFeatures: setFeatures,
+          mode,
+          onMode: setMode,
+          status: wsStatus,
+        }}
+      >
         <div className="flex min-w-0 flex-1 basis-0 items-center gap-3 md:min-w-fit">
         <span className="text-faint max-sm:hidden">/</span>
           <span
@@ -658,21 +658,7 @@ export function Review() {
         {files.length > 0 && (
           <ReviewProgress files={files} currentPath={currentPath} onJump={jumpTo} />
         )}
-        <div className="flex min-w-0 flex-1 basis-0 items-center justify-end gap-3 self-stretch md:min-w-fit">
-          <div className="hidden items-stretch divide-x divide-edge self-stretch border-x border-edge sm:flex">
-            <FeatureMenu features={features} onChange={setFeatures} />
-            <LayoutToggle mode={mode} onChange={setMode} />
-          </div>
-          <LiveDot status={wsStatus} />
-          <button
-            type="button"
-            onClick={() => setHelp(true)}
-            aria-label="Keyboard shortcuts"
-            className="grid size-7 place-items-center rounded-sm font-mono text-[13px] text-mute transition-colors duration-150 hover:bg-raise hover:text-fg"
-          >
-            ?
-          </button>
-        </div>
+        <div className="min-w-0 flex-1 basis-0" aria-hidden />
       </AppHeader>
 
       {!dir || !base ? (
@@ -881,8 +867,6 @@ export function Review() {
           })()}
         </div>
       )}
-
-      {help && <HelpOverlay onClose={() => setHelp(false)} />}
     </div>
   );
 }

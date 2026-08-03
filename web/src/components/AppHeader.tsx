@@ -1,13 +1,20 @@
 import type { ReactNode } from "react";
 import { Link } from "wouter";
 import * as api from "../api";
-import { ThemeToggle } from "./ThemeToggle";
+import { type ReviewSettings, SettingsControl } from "./SettingsModal";
 
 /** Header height in px. Review's scroll-anchor math offsets against this. */
 export const HEADER_PX = 48;
 
-/** Sticky top bar shared by every page: wordmark, then page-specific children. */
-export function AppHeader({ children }: { children?: ReactNode }) {
+/** Sticky top bar shared by every page: wordmark, page-specific children,
+    and the settings cog. `settings` adds the review-page sections. */
+export function AppHeader({
+  children,
+  settings,
+}: {
+  children?: ReactNode;
+  settings?: ReviewSettings;
+}) {
   return (
     <header
       className="sticky top-0 z-20 flex items-center gap-3 border-b border-edge bg-panel px-3"
@@ -20,7 +27,7 @@ export function AppHeader({ children }: { children?: ReactNode }) {
         rev<span className="text-accent">_</span>
       </Link>
       {children}
-      <ThemeToggle />
+      <SettingsControl review={settings} />
     </header>
   );
 }
