@@ -161,7 +161,7 @@ export function DiffFile({
   // unmarking it.
   const toggleSeen = () => onToggleSeen(file, !file.seen || file.stale);
   /**
-   * Chevron click. Seen-collapsed and unseen-expanded keep main's
+   * Header/chevron click. Seen-collapsed and unseen-expanded keep main's
    * toggle-seen behavior; peek-collapsed (section collapse-all, generated
    * default) opens without unmarking, and peek-opened seen files close
    * without marking anything.
@@ -789,14 +789,19 @@ export function DiffFile({
       )}
     >
       <header
+        onClick={() => !editing && toggleOpen()}
         className={cx(
           "sticky top-12 z-10 flex min-w-0 items-center gap-2.5 rounded-t-[5px] bg-raise px-2 py-1.5 max-sm:rounded-none",
           showBody ? "border-b border-edge-soft" : "rounded-b-[5px] max-sm:rounded-none",
+          !editing && "cursor-pointer",
         )}
       >
         <button
           type="button"
-          onClick={() => !editing && toggleOpen()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!editing) toggleOpen();
+          }}
           disabled={!canExpand}
           aria-expanded={canExpand ? expanded : undefined}
           aria-label={expanded ? "Mark seen and collapse" : "Mark unseen and expand"}
@@ -851,7 +856,10 @@ export function DiffFile({
           {semantic && fileClass === "tests" && open && (
             <button
               type="button"
-              onClick={() => setShowBodies((b) => !b)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowBodies((b) => !b);
+              }}
               title={showBodies ? "Fold test bodies back to names" : "Show full test bodies"}
               className="rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-mute transition-colors duration-150 hover:bg-panel hover:text-fg"
             >
@@ -861,13 +869,19 @@ export function DiffFile({
           {canEdit && (
             <button
               type="button"
-              onClick={() => setEditing(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditing(true);
+              }}
               className="rounded-sm px-1.5 py-0.5 text-[12px] text-mute transition-colors duration-150 hover:bg-panel hover:text-fg"
             >
               edit
             </button>
           )}
-          <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-mute transition-colors duration-150 hover:text-fg">
+          <label
+            onClick={(e) => e.stopPropagation()}
+            className="flex cursor-pointer items-center gap-1.5 text-[12px] text-mute transition-colors duration-150 hover:text-fg"
+          >
             <Checkbox
               checked={file.seen}
               onChange={(checked) => onToggleSeen(file, checked)}
