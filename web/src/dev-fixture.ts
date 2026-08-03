@@ -20,6 +20,7 @@ import type {
   RepoInfo,
   SeenRequest,
   SeenSegmentsRequest,
+  SemanticDiffResponse,
 } from "#shared/types";
 
 const now = Date.now();
@@ -825,6 +826,40 @@ export function fxGetFileDiff(dir: string, base: string, path: string): FileDiff
     file,
     computedAt: Date.now(),
     seenSegments: [...(fxSeenSegments.get(path) ?? [])],
+  };
+}
+
+export function fxGetSemanticDiff(dir: string, base: string): SemanticDiffResponse {
+  const full = fxGetDiff(dir, base); // validates dir/base like the server would
+  return {
+    dir: full.dir,
+    base: full.base,
+    mergeBase: full.mergeBase,
+    available: true,
+    computedAt: Date.now(),
+    files: [
+      {
+        path: "server/routes.ts",
+        entities: [
+          { entityType: "function", name: "diffRoute", change: "modified", startLine: 12, endLine: 23, oldStartLine: 12, oldEndLine: 18, oldName: null },
+          { entityType: "function", name: "putFile", change: "modified", startLine: 46, endLine: 54, oldStartLine: 41, oldEndLine: 45, oldName: null },
+          { entityType: "function", name: "putSeen", change: "renamed", startLine: 97, endLine: 102, oldStartLine: 88, oldEndLine: 92, oldName: "markSeen" },
+        ],
+      },
+      {
+        path: "server/watcher.ts",
+        entities: [
+          { entityType: "function", name: "startWatcher", change: "added", startLine: 1, endLine: 18, oldStartLine: null, oldEndLine: null, oldName: null },
+          { entityType: "function", name: "stopWatcher", change: "added", startLine: 20, endLine: 24, oldStartLine: null, oldEndLine: null, oldName: null },
+        ],
+      },
+      {
+        path: "server/poller.ts",
+        entities: [
+          { entityType: "function", name: "poll", change: "deleted", startLine: null, endLine: null, oldStartLine: 3, oldEndLine: 31, oldName: null },
+        ],
+      },
+    ],
   };
 }
 

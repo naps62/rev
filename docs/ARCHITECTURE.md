@@ -46,6 +46,13 @@ Prod: `pnpm build && pnpm start` — server serves `web/dist` statically.
   streamed UI: `computeDiffSummary` (numstat only — file list + stats, no
   content generated, near-constant cost) and `computeFileDiff` (one file's
   hunks, pathspec-limited).
+- **semantic.ts** — entity-level diff ("function authenticate modified")
+  via the optional [sem](https://github.com/Ataraxy-Labs/sem) CLI:
+  `sem diff --format json <merge-base sha>` against the working tree,
+  untracked files excluded. Binary missing/failing → `available: false`
+  and the web UI falls back to its text heuristics. No rev-side cache —
+  sem keeps its own and runs in ~20ms. Override the binary with
+  `REV_SEM_BIN` (systemd PATH usually lacks `~/.local/bin`).
 - **discovery.ts** — scans configured roots (default `~/tea`, `REV_ROOTS`)
   for `.git` dirs, then `git worktree list` from each to catch worktrees
   living outside the roots. Cached, re-scanned on demand and on a slow timer.

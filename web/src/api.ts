@@ -19,6 +19,7 @@ import type {
   RepoInfo,
   SeenRequest,
   SeenSegmentsRequest,
+  SemanticDiffResponse,
 } from "#shared/types";
 
 export class ApiError extends Error {
@@ -97,6 +98,12 @@ export async function getFileDiff(
   const q = new URLSearchParams({ dir, base, path });
   if (oldPath) q.set("oldPath", oldPath);
   return request(`/api/diff/file?${q}`);
+}
+
+export async function getSemanticDiff(dir: string, base: string): Promise<SemanticDiffResponse> {
+  if (isFixture()) return tick((await fx()).fxGetSemanticDiff(dir, base));
+  const q = new URLSearchParams({ dir, base });
+  return request(`/api/semantic?${q}`);
 }
 
 export async function getRefs(dir: string): Promise<RefsResponse> {

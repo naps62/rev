@@ -11,6 +11,7 @@ import type {
   CommentListResponse,
   CommentPatchRequest,
   DiffSummaryResponse,
+  EntityChange,
   FileDiffResponse,
   FileSummary,
 } from "#shared/types";
@@ -30,6 +31,7 @@ import {
   type ClassSection,
   type FileClass,
 } from "../semantic/classify.ts";
+import { entityAnchor } from "../semantic/entities.ts";
 import { findOccurrences, type Occurrence } from "../semantic/symbols.ts";
 import { attachCrosshair } from "../crosshair";
 import { buildFileTree, flattenTree } from "../tree";
@@ -87,6 +89,7 @@ export function Review() {
   const wsStatus = useRevSocket(dir || undefined, (msg) => {
     if (msg.type === "diff-invalidated" && msg.dir === dir) {
       qc.invalidateQueries({ queryKey: ["diff-summary", dir] });
+      qc.invalidateQueries({ queryKey: ["semantic", dir] });
       if (msg.paths.length > 0) {
         for (const p of msg.paths) qc.invalidateQueries({ queryKey: ["diff-file", dir, base, p] });
       } else {
@@ -199,6 +202,21 @@ export function Review() {
     setViewState(v);
     localStorage.setItem(VIEW_KEY, v);
   };
+
+  // Entity-level diff from the optional sem CLI; available:false (binary
+  // missing, parse failure) simply leaves the heuristics in charge.
+  const semQ = useQuery({
+    queryKey: ["semantic", dir, base],
+    queryFn: () => api.getSemanticDiff(dir, base),
+    enabled: !!dir && !!base && view === "semantic",
+  });
+  const entitiesByPath = useMemo(() => {
+    const m = new Map<string, EntityChange[]>();
+    if (semQ.data?.available) {
+      for (const f of semQ.data.files) m.set(f.path, f.entities);
+    }
+    return m;
+  }, [semQ.data]);
 
   // Tree (visual) order drives everything: the rail, the diff pane, scroll-spy
   // and j/k all agree on it. In semantic view the order is class sections
@@ -647,11 +665,11 @@ export function Review() {
             ))}
           </select>
         )}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-3 self-stretch">
           <div
             role="radiogroup"
             aria-label="Review view"
-            className="hidden overflow-hidden rounded-sm border border-edge sm:flex"
+            className="hidden self-stretch divide-x divide-edge border-x border-edge sm:flex"
           >
             {(["classic", "semantic"] as const).map((v) => (
               <button
@@ -660,18 +678,31 @@ export function Review() {
                 onClick={() => setView(v)}
                 aria-pressed={view === v}
                 className={cx(
-                  "px-2 py-0.5 font-mono text-[11px] transition-colors duration-150",
-                  view === v ? "bg-raise text-fg" : "text-faint hover:bg-raise/40 hover:text-mute",
+                  "relative flex items-center px-3 font-mono text-[12px] transition-colors duration-150",
+                  view === v
+                    ? "bg-accent-soft text-accent"
+                    : "text-mute hover:bg-raise/60 hover:text-fg",
                 )}
               >
                 {v}
+                {view === v && (
+                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" />
+                )}
               </button>
             ))}
           </div>
+          {view === "semantic" && semQ.data?.available && (
+            <span
+              className="hidden rounded-sm border border-accent/40 px-1 font-mono text-[10px] text-accent sm:inline"
+              title="entity-level data from the sem CLI is active"
+            >
+              sem
+            </span>
+          )}
           <div
             role="radiogroup"
             aria-label="Diff layout"
-            className="hidden overflow-hidden rounded-sm border border-edge sm:flex"
+            className="hidden self-stretch divide-x divide-edge border-x border-edge sm:flex"
           >
             {(["unified", "split"] as const).map((m) => (
               <button
@@ -680,11 +711,16 @@ export function Review() {
                 onClick={() => setMode(m)}
                 aria-pressed={mode === m}
                 className={cx(
-                  "px-2 py-0.5 font-mono text-[11px] transition-colors duration-150",
-                  mode === m ? "bg-raise text-fg" : "text-faint hover:bg-raise/40 hover:text-mute",
+                  "relative flex items-center px-3 font-mono text-[12px] transition-colors duration-150",
+                  mode === m
+                    ? "bg-accent-soft text-accent"
+                    : "text-mute hover:bg-raise/60 hover:text-fg",
                 )}
               >
                 {m}
+                {mode === m && (
+                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" />
+                )}
               </button>
             ))}
           </div>
@@ -708,7 +744,7 @@ export function Review() {
             type="button"
             onClick={() => setHelp(true)}
             aria-label="Keyboard shortcuts"
-            className="grid size-5 place-items-center rounded-sm font-mono text-[12px] text-faint transition-colors duration-150 hover:bg-raise hover:text-fg"
+            className="grid size-7 place-items-center rounded-sm font-mono text-[13px] text-mute transition-colors duration-150 hover:bg-raise hover:text-fg"
           >
             ?
           </button>
@@ -812,6 +848,13 @@ export function Review() {
                 threads={threadsByFile.get(f.path) ?? []}
                 isCurrent={currentPath === f.path}
                 semantic={!!sections}
+                entities={entitiesByPath.get(f.path)}
+                onJumpToEntity={(e) => {
+                  const a = entityAnchor(e);
+                  if (a) {
+                    jumpToOccurrence({ path: f.path, side: a.side, line: a.line, kind: "context", text: "" });
+                  }
+                }}
                 fileClass={s?.cls}
                 defaultCollapsed={s?.cls === "generated"}
                 collapseCmd={(() => {
