@@ -16,7 +16,7 @@ Needs Node >= 26, pnpm, git and python3.
 curl -fsSL https://raw.githubusercontent.com/naps62/rev/main/scripts/bootstrap.sh | bash
 ```
 
-Clones to `~/rev`, builds the UI, installs an always-on user service (systemd
+Clones to `~/.rev`, builds the UI, installs an always-on user service (systemd
 on Linux, launchd on macOS), and wires the Claude Code hooks into
 `~/.claude/settings.json`. Idempotent — re-run the same line to update.
 
@@ -29,7 +29,7 @@ less rev-install.sh && bash rev-install.sh --no-hooks
 
 | Env | Default | |
 |---|---|---|
-| `REV_DIR` | `~/rev` | Where to clone |
+| `REV_DIR` | `~/.rev` | Where to clone |
 | `REV_REPO` | `https://github.com/naps62/rev.git` | Clone URL (public mirror of the Gitea repo); use the SSH form if you authenticate that way |
 | `REV_REF` | `main` | Branch |
 

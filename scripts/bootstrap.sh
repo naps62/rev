@@ -7,7 +7,7 @@
 # Args are forwarded to install-service.sh, e.g. ... | bash -s -- --no-hooks
 set -euo pipefail
 
-REV_DIR="${REV_DIR:-$HOME/rev}"
+REV_DIR="${REV_DIR:-$HOME/.rev}"
 REV_REPO="${REV_REPO:-https://github.com/naps62/rev.git}"
 REV_REF="${REV_REF:-main}"
 
