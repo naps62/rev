@@ -454,6 +454,30 @@ export function Review() {
     return attachCrosshair(el);
   }, [features.crosshair, diffQ.data]);
 
+  // The panel's resting position tracks the current file's section top;
+  // sticky top still caps it once the file scrolls past. Re-measured on
+  // main resizes so collapse/expand slides keep it aligned.
+  const panelRef = useRef<HTMLElement | null>(null);
+  const [panelTop, setPanelTop] = useState(0);
+  useEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const measure = () => {
+      const el = currentPath ? sectionEls.current.get(currentPath) : undefined;
+      if (!el || !el.isConnected) {
+        setPanelTop(0);
+        return;
+      }
+      const aside = panelRef.current;
+      const max = aside ? Math.max(0, main.offsetHeight - aside.offsetHeight) : 0;
+      setPanelTop(Math.max(0, Math.min(el.offsetTop, max)));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(main);
+    return () => ro.disconnect();
+  }, [currentPath, files]);
+
   const [help, setHelp] = useState(false);
   const filesRef = useRef(files);
   filesRef.current = files;
@@ -853,10 +877,12 @@ export function Review() {
             if (live) heldPanel.current = live;
             return (
               <aside
+                ref={panelRef}
                 data-open={live ? "" : undefined}
                 className="side-panel sticky hidden shrink-0 justify-end overflow-hidden lg:flex"
                 style={{
                   top: HEADER_PX + 8,
+                  marginTop: panelTop,
                   maxHeight: `calc(100vh - ${HEADER_PX + 16}px)`,
                 }}
               >

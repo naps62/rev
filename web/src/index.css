@@ -145,7 +145,8 @@ summary {
 
 /* Symbol panel open/close: 0↔18rem width slide with the .file-body glide.
    Negative margin swallows the parent flex gap when closed; visibility flips
-   after the slide so the closed panel is untabbable. */
+   after the slide so the closed panel is untabbable. margin-top glides the
+   resting position to the current file's section top. */
 .side-panel {
   width: 0;
   margin-left: -0.5rem;
@@ -153,6 +154,7 @@ summary {
   transition:
     width 250ms cubic-bezier(0.16, 1, 0.3, 1),
     margin-left 250ms cubic-bezier(0.16, 1, 0.3, 1),
+    margin-top 250ms cubic-bezier(0.16, 1, 0.3, 1),
     visibility 0s 250ms;
 }
 
