@@ -19,19 +19,11 @@ die() { printf 'install: %s\n' "$1" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 not found. $2"; }
 
 need git "Install Xcode Command Line Tools (xcode-select --install) or your distro's git."
-need node "Install Node (https://nodejs.org, 'brew install node', or nvm)."
 need python3 "Install Python 3 (Xcode Command Line Tools provide it on macOS)."
 
-# package.json declares node >=26; the server runs .ts directly and uses
-# node:sqlite, neither of which works on older majors.
-NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
-(( NODE_MAJOR >= 26 )) || die "node $NODE_MAJOR found, need >= 26. Try 'brew upgrade node' or 'nvm install 26'."
-
-if ! command -v pnpm >/dev/null 2>&1; then
-  corepack enable >/dev/null 2>&1 ||
-    die "pnpm not found and 'corepack enable' failed. Install pnpm: npm i -g pnpm"
-  command -v pnpm >/dev/null 2>&1 || die "pnpm still not on PATH after 'corepack enable'."
-fi
+. "$CHECKOUT/scripts/service-lib.sh"
+rev_resolve_node
+rev_ensure_pnpm
 
 # A foreign process on the port would make the service flap on restart.
 if curl -sf --max-time 2 "http://localhost:$PORT/api/repos" >/dev/null 2>&1; then
@@ -63,30 +55,7 @@ install_launchd() {
   local uid; uid=$(id -u)
 
   mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
-
-  NODE=$(command -v node) CHECKOUT="$CHECKOUT" HOME="$HOME" \
-  TEMPLATE="$CHECKOUT/launchd/$LABEL.plist.template" OUT="$plist" \
-  python3 <<'PY'
-import os
-from xml.sax.saxutils import escape
-
-env = os.environ
-node = env["NODE"]
-# Homebrew and nvm live outside launchd's default PATH.
-dirs = [os.path.dirname(node), "/opt/homebrew/bin", "/usr/local/bin",
-        "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
-path = ":".join(dict.fromkeys(dirs))
-subs = {"@NODE@": node, "@CHECKOUT@": env["CHECKOUT"],
-        "@HOME@": env["HOME"], "@PATH@": path}
-
-with open(env["TEMPLATE"]) as f:
-    text = f.read()
-for k, v in subs.items():
-    text = text.replace(k, escape(v))
-with open(env["OUT"], "w") as f:
-    f.write(text)
-print(f"wrote {env['OUT']}")
-PY
+  rev_render "$CHECKOUT/launchd/$LABEL.plist.template" "$plist" 1
 
   # bootout first so a re-run picks up a changed plist; ignore "not loaded".
   launchctl bootout "gui/$uid/$LABEL" 2>/dev/null || true
@@ -99,7 +68,7 @@ PY
 
 install_systemd() {
   mkdir -p ~/.config/systemd/user
-  cp systemd/rev.service ~/.config/systemd/user/rev.service
+  rev_render "$CHECKOUT/systemd/rev.service.template" ~/.config/systemd/user/rev.service 0
   systemctl --user daemon-reload
   systemctl --user enable --now rev.service
   systemctl --user restart rev.service

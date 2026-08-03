@@ -4,7 +4,7 @@
 # Idempotent. Override the checkout with REV_CHECKOUT.
 set -euo pipefail
 
-CHECKOUT="${REV_CHECKOUT:-$HOME/tea/yolo/rev}"
+CHECKOUT="${REV_CHECKOUT:-$(cd "$(dirname "$0")/.." && pwd)}"
 SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
 
 for s in rev-hook-session-start.sh rev-hook-stop.sh rev-watch.sh rev-lib.sh; do

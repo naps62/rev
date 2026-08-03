@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- macOS counterpart of systemd/rev.service. Placeholders are substituted
+<!-- macOS counterpart of systemd/rev.service.template. Placeholders are substituted
      by scripts/install-service.sh; launchd needs absolute paths, so it
      cannot be loaded as-is. -->
 <plist version="1.0">

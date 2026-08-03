@@ -4,12 +4,17 @@
 # also usable by hand for a first install.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+CHECKOUT=$PWD
+
+. "$CHECKOUT/scripts/service-lib.sh"
+rev_resolve_node
 
 pnpm install --frozen-lockfile
 pnpm build
 
 mkdir -p ~/.config/systemd/user
-cp systemd/rev.service systemd/rev-deploy.service ~/.config/systemd/user/
+rev_render "$CHECKOUT/systemd/rev.service.template" ~/.config/systemd/user/rev.service 0
+cp systemd/rev-deploy.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 
 systemctl --user enable rev.service rev-deploy.service >/dev/null

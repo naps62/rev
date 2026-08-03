@@ -10,7 +10,11 @@ Design: `docs/ARCHITECTURE.md`.
 
 ## Install
 
-Needs Node >= 26, pnpm, git and python3.
+Needs Node >= 26, git and python3. The installer finds a qualifying node on
+PATH, in Homebrew (including keg-only `node@NN`), nvm, fnm, volta, mise or
+asdf, and pins that exact binary in the service file — so a `brew install
+node@26` is enough even when another toolchain owns `node` on your PATH. pnpm
+is installed if missing.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/naps62/rev/main/scripts/bootstrap.sh | bash
@@ -36,9 +40,11 @@ less rev-install.sh && bash rev-install.sh --no-hooks
 Already cloned? `./scripts/install-service.sh` is the same thing without the
 clone step. `--no-hooks` skips the hook wiring.
 
-On macOS the first start triggers the firewall's "accept incoming
-connections?" prompt; allow it, or the server works locally but not from
-other machines on the LAN.
+The server listens on `0.0.0.0` with no auth: anyone who can reach the port
+can read diffs of every repo on the machine and write files through it. Only
+run it on a network you trust. On macOS the first start triggers the
+firewall's "accept incoming connections?" prompt — allowing it exposes the
+port to the LAN, denying it keeps rev to localhost.
 
 To remove: `launchctl bootout gui/$(id -u)/com.naps62.rev` (macOS) or
 `systemctl --user disable --now rev.service` (Linux), then drop the hook
@@ -87,10 +93,10 @@ are detached transient units — `journalctl --user -u run-*` has their logs,
 
 ## Agents
 
-`./scripts/install-hooks.sh` wires rev into Claude Code globally (run it once,
-after the scripts exist in the prod checkout). Two hooks in
-`~/.claude/settings.json`, referencing `~/tea/yolo/rev/scripts/` so deploys
-update behavior machine-wide:
+`./scripts/install-hooks.sh` wires rev into Claude Code globally (the
+installer runs it unless you pass `--no-hooks`). Two hooks in
+`~/.claude/settings.json`, referencing the checkout's `scripts/` (`~/.rev` by
+default) so updates change behavior machine-wide:
 
 - **SessionStart** — if the session's cwd is a repo rev knows
   (`/api/diff/summary` answers), injects `agent/CLAUDE-rev.md` with the review

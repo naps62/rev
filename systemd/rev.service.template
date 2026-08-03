@@ -1,11 +1,14 @@
+# Linux counterpart of launchd/com.naps62.rev.plist.template. Placeholders are
+# substituted by scripts/install-service.sh, so this cannot be enabled as-is.
 [Unit]
 Description=rev — always-on local code review server
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/tea/yolo/rev
-ExecStart=/usr/bin/node server/index.ts
+WorkingDirectory=@CHECKOUT@
+ExecStart=@NODE@ server/index.ts
+Environment=PATH=@PATH@
 Environment=NODE_ENV=production
 Environment=REV_ROOTS=%h
 Environment=REV_DEPTH=3
