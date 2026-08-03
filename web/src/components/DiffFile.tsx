@@ -38,7 +38,7 @@ const STATUS_GLYPH: Record<FileSummary["status"], { glyph: string; cls: string; 
   untracked: { glyph: "U", cls: "text-add", label: "untracked" },
 };
 
-export type DiffMode = "unified" | "split";
+export type DiffMode = "unified" | "split" | "mixed";
 
 interface DiffFileProps {
   dir: string;
@@ -411,7 +411,13 @@ export function DiffFile({
 
   // Rows are built imperatively so comment threads and the composer can be
   // spliced in directly under their anchored line (in the right pane when split).
-  const split = mode === "split";
+  // "mixed" is split, except fully one-sided files (new/deleted: every line
+  // an add, or every line a del) drop to unified — split wastes half the width.
+  const oneSided =
+    hunks.length > 0 &&
+    (hunks.every((h) => h.lines.every((l) => l.kind === "add")) ||
+      hunks.every((h) => h.lines.every((l) => l.kind === "del")));
+  const split = mode === "split" || (mode === "mixed" && !oneSided);
   const rows: ReactNode[] = [];
   if ((expanded || lingering) && !editing) {
     let flatIdx = 0;

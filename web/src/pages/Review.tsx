@@ -50,8 +50,9 @@ const MODE_KEY = "rev.diffMode";
 
 function initialMode(params: URLSearchParams): DiffMode {
   const p = params.get("mode");
-  if (p === "split" || p === "unified") return p;
-  return localStorage.getItem(MODE_KEY) === "split" ? "split" : "unified";
+  if (p === "split" || p === "unified" || p === "mixed") return p;
+  const stored = localStorage.getItem(MODE_KEY);
+  return stored === "split" || stored === "mixed" ? stored : "unified";
 }
 
 export function Review() {
