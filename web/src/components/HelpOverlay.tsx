@@ -2,7 +2,7 @@ const KEYS: Array<[string, string]> = [
   ["j / k", "next / previous file"],
   ["J / K", "next / previous unseen or stale file"],
   ["n / p", "next / previous hunk"],
-  ["v or .", "toggle seen on current file"],
+  ["s, v or .", "toggle seen on current file"],
   ["x", "toggle pointer crosshair (line/column/word/char)"],
   ["click id", "semantic view: open symbol panel"],
   ["?", "toggle this help"],

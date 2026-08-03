@@ -496,7 +496,7 @@ export function Review() {
         void el.offsetWidth; // restart the animation when re-landing
         el.classList.add("hunk-flash");
         setTimeout(() => el.classList.remove("hunk-flash"), 1300);
-      } else if (e.key === "v" || e.key === ".") {
+      } else if (e.key === "v" || e.key === "." || e.key === "s") {
         const f = fs.find((x) => x.path === currentRef.current);
         if (f) {
           seenMut.mutate({
