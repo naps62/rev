@@ -24,12 +24,6 @@ import type { FileClass } from "../semantic/classify.ts";
 import { CHANGE_GLYPH, entityLabel } from "../semantic/entities.ts";
 import { importFolds, langOf, testFolds, type FoldRun } from "../semantic/fold.ts";
 import { loadFoldState, saveFoldState } from "../semantic/foldStore.ts";
-import {
-  buildSegments,
-  innermostAt,
-  seenRuns,
-  type Segment,
-} from "../semantic/segments.ts";
 import { isSymbol, tokenAt } from "../semantic/symbols.ts";
 import { cx, lineKey, type Thread } from "../util";
 import { AuthorChip, CommentThread, threadShell } from "./CommentThread";
@@ -71,12 +65,6 @@ interface DiffFileProps {
   /** Mouse moved over this file — claim focus (rail + yellow indicator). */
   onHover?: () => void;
   onToggleSeen: (file: FileSummary, seen: boolean) => void;
-  /** Mark/unmark sub-file segments (s/S over a line, click on a seen strip). */
-  onToggleSegments?: (
-    file: FileSummary,
-    segments: Array<{ hash: string; addDelLines: number }>,
-    seen: boolean,
-  ) => void;
   /** Click on an identifier — open/retarget the symbol panel. */
   onSymbolClick?: (symbol: string) => void;
   onCreateComment: (anchor: CommentAnchor, body: string) => void;
@@ -102,7 +90,6 @@ export function DiffFile({
   collapseCmd,
   onHover,
   onToggleSeen,
-  onToggleSegments,
   onSymbolClick,
   onCreateComment,
   onReply,
@@ -300,99 +287,6 @@ export function DiffFile({
     return m.size > 0 ? m : null;
   }, [semantic, file.path, hunks, foldBodies]);
 
-  // Sub-file seen segments: detected client-side per hunk, keyed by content
-  // hash (segments.ts). Unified full-diff only — delta hunks are different
-  // rows, so their hashes would never match.
-  const segActive = mode === "unified" && !deltaActive && !file.binary;
-  const segsByHunk = useMemo(() => {
-    if (!segActive || onToggleSegments === undefined) return null;
-    const lang = langOf(file.path);
-    const m = new Map<number, Segment[]>();
-    hunks.forEach((h, hi) => {
-      const segs = buildSegments(h.lines, lang);
-      if (segs.length > 0) m.set(hi, segs);
-    });
-    return m.size > 0 ? m : null;
-  }, [segActive, onToggleSegments, file.path, hunks]);
-  const seenSegs = useMemo(
-    () => new Set(hunksQ.data?.seenSegments ?? []),
-    [hunksQ.data],
-  );
-  const seenRunsByHunk = useMemo(() => {
-    if (!segsByHunk) return null;
-    const m = new Map<number, Segment[]>();
-    for (const [hi, segs] of segsByHunk) {
-      const runs = seenRuns(segs, (h) => seenSegs.has(h));
-      if (runs.length > 0) m.set(hi, runs);
-    }
-    return m.size > 0 ? m : null;
-  }, [segsByHunk, seenSegs]);
-
-  // s/S act on the row under the pointer: the section's mousemove keeps the
-  // last position, elementFromPoint resolves it back to a data-hi/data-li row.
-  const mousePos = useRef<{ x: number; y: number } | null>(null);
-  useEffect(() => {
-    if (!segsByHunk || !onToggleSegments) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "s" && e.key !== "S") return;
-      const t = e.target as HTMLElement | null;
-      const tag = t?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable) return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const pos = mousePos.current;
-      if (!pos) return;
-      const el = document.elementFromPoint(pos.x, pos.y);
-      if (!el || !ownRef.current?.contains(el)) return;
-      const row = (el as HTMLElement).closest<HTMLElement>("[data-hi]");
-      if (!row?.dataset.hi) return;
-      const segs = segsByHunk.get(Number(row.dataset.hi));
-      if (!segs) return;
-      // nearest unseen ancestor starting at idx (marking a seen one is a no-op)
-      const unseenFrom = (idx: number | null): number | null => {
-        let i = idx;
-        while (i != null && seenSegs.has(segs[i]!.hash)) i = segs[i]!.parent;
-        return i;
-      };
-      let target: Segment | null = null;
-      let mark = true;
-      if (row.dataset.stripStart !== undefined) {
-        const g = segs.find((s) => s.start === Number(row.dataset.stripStart));
-        if (!g) return;
-        if (e.key === "s") {
-          target = g; // toggle the strip off
-          mark = false;
-        } else {
-          const p = unseenFrom(g.parent);
-          target = p != null ? segs[p]! : null; // widen past the strip
-        }
-      } else if (row.dataset.li !== undefined) {
-        const i0 = innermostAt(segs, Number(row.dataset.li));
-        if (i0 == null) return;
-        const i = unseenFrom(i0);
-        if (i == null) {
-          // every enclosing segment already seen (widget-suppressed strip):
-          // toggle the innermost back off
-          target = segs[i0]!;
-          mark = false;
-        } else if (e.key === "s") {
-          target = segs[i]!;
-        } else {
-          const p = unseenFrom(segs[i]!.parent);
-          target = p != null ? segs[p]! : null;
-        }
-      }
-      if (!target) return;
-      e.preventDefault();
-      onToggleSegments(
-        file,
-        [{ hash: target.hash, addDelLines: target.adds + target.dels }],
-        mark,
-      );
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [segsByHunk, seenSegs, file, onToggleSegments]);
-
   // Symbol panel wiring: resolve the identifier under the pointer and filter
   // through the language's stopwords before bubbling up.
   const symbolHandlers = useMemo<SymbolHandlers | undefined>(() => {
@@ -559,11 +453,7 @@ export function DiffFile({
         }
         return false;
       };
-      // Seen-segment strips win over folds: drop fold runs they intersect.
-      const sruns = (seenRunsByHunk?.get(hi) ?? []).filter((g) => !hasWidget(g));
-      const runs = (foldsByHunk?.get(hi) ?? []).filter(
-        (r) => !sruns.some((g) => r.start < g.end && g.start < r.end),
-      );
+      const runs = foldsByHunk?.get(hi) ?? [];
       // hasWidget scans the run's lines; runAt is now called per line, so
       // cache the verdict per run.
       const widgetCache = new Map<FoldRun, boolean>();
@@ -684,26 +574,6 @@ export function DiffFile({
         }
       } else {
         for (let li = 0; li < hunk.lines.length; li++) {
-          const sg = sruns.find((g) => g.start === li);
-          if (sg) {
-            rows.push(
-              <SeenStrip
-                key={`sg${hi}.${sg.start}`}
-                seg={sg}
-                hi={hi}
-                onUnsee={() =>
-                  onToggleSegments?.(
-                    file,
-                    [{ hash: sg.hash, addDelLines: sg.adds + sg.dels }],
-                    false,
-                  )
-                }
-              />,
-            );
-            flatIdx += sg.end - sg.start;
-            li = sg.end - 1;
-            continue;
-          }
           const run = runs.find((r) => r.start === li);
           if (run && !runHasWidget(run) && !expandedFolds.has(foldKey(hi, run))) {
             const fk = foldKey(hi, run);
@@ -738,8 +608,6 @@ export function DiffFile({
             <LineRow
               key={`l${hi}.${li}`}
               line={line}
-              hi={hi}
-              li={li}
               tokens={tokens?.[idx] ?? null}
               span={spans.get(idx)}
               fold={fold}
@@ -776,10 +644,7 @@ export function DiffFile({
         sectionRef(el);
       }}
       data-path={file.path}
-      onMouseMove={(e) => {
-        mousePos.current = { x: e.clientX, y: e.clientY };
-        onHover?.();
-      }}
+      onMouseMove={() => onHover?.()}
       className={cx(
         // No overflow-hidden here: it would turn the section into the sticky
         // header's scrollport and pin it 48px into the card.
@@ -1136,47 +1001,6 @@ function FoldRailSeg({ fold }: { fold: FoldRail }) {
 }
 
 /**
- * Collapsed seen segment (unified mode only). Click — or s while hovering —
- * unmarks and restores the rows; S widens to the parent segment.
- */
-function SeenStrip({
-  seg,
-  hi,
-  onUnsee,
-}: {
-  seg: Segment;
-  hi: number;
-  onUnsee: () => void;
-}) {
-  return (
-    <tr data-hi={hi} data-strip-start={seg.start}>
-      <td colSpan={2} className="select-none border-r border-edge-soft bg-raise/30" />
-      <td className="p-0">
-        <button
-          type="button"
-          onClick={onUnsee}
-          title="Mark unseen and expand"
-          className="flex w-full items-center gap-1.5 py-1 pl-7 pr-4 text-left font-mono text-[11px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute"
-        >
-          <svg width="9" height="9" viewBox="0 0 16 16" fill="none" aria-hidden>
-            <path
-              d="m2.5 8.5 4 4 7-8"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          {seg.end - seg.start} lines seen
-          <span className="text-add">+{seg.adds}</span>
-          <span className="text-del">−{seg.dels}</span>
-        </button>
-      </td>
-    </tr>
-  );
-}
-
-/**
  * Diff-line-shaped placeholder shown while a file's hunks load. Row count
  * approximates the incoming diff so the page doesn't jump when it lands.
  */
@@ -1286,8 +1110,6 @@ function lkAttr(line: DiffLine): string | undefined {
 
 function LineRow({
   line,
-  hi,
-  li,
   tokens,
   span,
   fold,
@@ -1295,9 +1117,6 @@ function LineRow({
   onSym,
 }: {
   line: DiffLine;
-  /** Hunk/line indices for segment targeting (s/S keys); unified mode only. */
-  hi?: number;
-  li?: number;
   tokens: TokenLine | null;
   span: Span | undefined;
   fold?: FoldRail;
@@ -1307,8 +1126,6 @@ function LineRow({
   return (
     <tr
       data-lk={lkAttr(line)}
-      data-hi={hi}
-      data-li={li}
       className={cx(
         "group",
         line.kind === "add" && "bg-add-soft",

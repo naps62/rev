@@ -3,8 +3,6 @@ const KEYS: Array<[string, string]> = [
   ["J / K", "next / previous unseen or stale file"],
   ["n / p", "next / previous hunk"],
   ["v or .", "toggle seen on current file"],
-  ["s", "mark block/comment under pointer seen (on a strip: unmark)"],
-  ["S", "same, but widened to the parent block"],
   ["x", "toggle pointer crosshair (line/column/word/char)"],
   ["click id", "semantic view: open symbol panel"],
   ["?", "toggle this help"],

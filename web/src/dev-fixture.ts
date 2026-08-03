@@ -19,7 +19,6 @@ import type {
   FileWriteRequest,
   RepoInfo,
   SeenRequest,
-  SeenSegmentsRequest,
   SemanticDiffResponse,
 } from "#shared/types";
 
@@ -825,7 +824,6 @@ export function fxGetFileDiff(dir: string, base: string, path: string): FileDiff
     base,
     file,
     computedAt: Date.now(),
-    seenSegments: [...(fxSeenSegments.get(path) ?? [])],
   };
 }
 
@@ -942,18 +940,6 @@ export function fxPatchComment(id: string, patch: CommentPatchRequest): Comment 
   if (patch.resolved !== undefined) c.resolvedAt = patch.resolved ? Date.now() : null;
   state.seq++;
   return clone(c);
-}
-
-const fxSeenSegments = new Map<string, Set<string>>();
-
-export function fxPutSeenSegments(req: SeenSegmentsRequest): { ok: true } {
-  const set = fxSeenSegments.get(req.path) ?? new Set<string>();
-  for (const s of req.segments) {
-    if (req.seen) set.add(s.hash);
-    else set.delete(s.hash);
-  }
-  fxSeenSegments.set(req.path, set);
-  return { ok: true };
 }
 
 export function fxPutSeen(req: SeenRequest): { ok: true } {

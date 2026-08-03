@@ -11,10 +11,7 @@ import {
   openDb,
   patchComment,
   seenHashes,
-  seenSegmentHashes,
-  seenSegmentLineTotals,
   setSeen,
-  setSeenSegments,
 } from "./db.ts";
 import { tmpdir } from "./testutil.ts";
 
@@ -116,31 +113,6 @@ describe("seen state", () => {
     setSeen("/r/a", "main", "y.ts", "", false);
     expect(seenHashes("/r/a", "main").has("y.ts")).toBe(false);
     expect(seenHashes("/r/a", "dev")).toEqual(new Map([["x.ts", "hash3"]]));
-  });
-});
-
-describe("seen segments", () => {
-  test("mark, re-mark, unmark per (dir, base, path, hash)", () => {
-    setSeenSegments("/r/a", "main", "x.ts", [{ hash: "h1", addDelLines: 4 }, { hash: "h2", addDelLines: 2 }], true);
-    setSeenSegments("/r/a", "dev", "x.ts", [{ hash: "h3", addDelLines: 1 }], true);
-    expect(seenSegmentHashes("/r/a", "main", "x.ts").sort()).toEqual(["h1", "h2"]);
-    expect(seenSegmentHashes("/r/a", "dev", "x.ts")).toEqual(["h3"]);
-    setSeenSegments("/r/a", "main", "x.ts", [{ hash: "h1", addDelLines: 6 }], true); // re-mark updates lines
-    expect(seenSegmentLineTotals("/r/a", "main").get("x.ts")).toBe(8);
-    setSeenSegments("/r/a", "main", "x.ts", [{ hash: "h2", addDelLines: 0 }], false);
-    expect(seenSegmentHashes("/r/a", "main", "x.ts")).toEqual(["h1"]);
-  });
-
-  test("line totals group by path", () => {
-    setSeenSegments("/r/b", "main", "x.ts", [{ hash: "a", addDelLines: 3 }], true);
-    setSeenSegments("/r/b", "main", "y.ts", [{ hash: "b", addDelLines: 5 }, { hash: "c", addDelLines: 1 }], true);
-    expect(seenSegmentLineTotals("/r/b", "main")).toEqual(
-      new Map([
-        ["x.ts", 3],
-        ["y.ts", 6],
-      ]),
-    );
-    expect(seenSegmentLineTotals("/r/none", "main").size).toBe(0);
   });
 });
 
