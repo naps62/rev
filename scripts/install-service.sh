@@ -39,17 +39,6 @@ pnpm run build
 
 # ------------------------------------------------------------------ service
 
-lan_ip() {
-  local ip
-  if command -v ipconfig >/dev/null 2>&1; then   # macOS
-    for i in en0 en1 en2; do
-      ip=$(ipconfig getifaddr "$i" 2>/dev/null) && [[ -n "$ip" ]] && { printf '%s' "$ip"; return; }
-    done
-  fi
-  ip=$(hostname -I 2>/dev/null | awk '{print $1}') || true
-  printf '%s' "${ip:-localhost}"
-}
-
 install_launchd() {
   local plist="$HOME/Library/LaunchAgents/$LABEL.plist"
   local uid; uid=$(id -u)
@@ -98,7 +87,9 @@ done
 
 echo
 if curl -sf --max-time 2 "http://localhost:$PORT/api/repos" >/dev/null 2>&1; then
-  echo "rev is up: http://$(lan_ip):$PORT"
+  echo "rev is up: http://localhost:$PORT"
+  echo "Loopback only. To reach it from other machines (no auth — trusted networks only):"
+  echo "  mkdir -p ~/.config/rev && echo REV_HOST=0.0.0.0 >> ~/.config/rev/env   # then restart the service"
 else
   die "service installed but nothing answers on :$PORT yet — check the logs above."
 fi

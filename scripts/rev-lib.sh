@@ -2,7 +2,7 @@
 # Shared helpers for rev-watch.sh and the Claude Code hooks.
 # Sourced, not executed.
 
-REV_HOST="${REV_HOST:-http://localhost:7373}"
+REV_URL="${REV_URL:-http://localhost:7373}"
 REV_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/rev"
 
 # macOS ships neither sha256sum nor flock, and BSD stat takes different
@@ -60,7 +60,7 @@ rev_known() {
   local dir="$1" marker="$REV_STATE/$(rev_key "$1").known"
   [[ -f "$marker" ]] && return 0
   mkdir -p "$REV_STATE"
-  curl -sfG --max-time 2 "$REV_HOST/api/diff/summary" \
+  curl -sfG --max-time 2 "$REV_URL/api/diff/summary" \
     --data-urlencode "dir=$dir" --data-urlencode "base=$(rev_base "$dir")" \
     >"$marker.tmp" 2>/dev/null || { rm -f "$marker.tmp"; return 1; }
   mv "$marker.tmp" "$marker"

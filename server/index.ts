@@ -42,7 +42,7 @@ function main(): void {
     app.get("*", serveStatic({ root, path: "index.html" })); // SPA fallback
   }
 
-  const server = serve({ fetch: app.fetch, hostname: "0.0.0.0", port: config.port });
+  const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port });
 
   const wss = new WebSocketServer({ noServer: true });
   server.on("upgrade", (req, socket, head) => {
@@ -80,7 +80,7 @@ function main(): void {
     });
   });
 
-  console.log(`rev listening on http://0.0.0.0:${config.port}`);
+  console.log(`rev listening on http://${config.host}:${config.port}`);
 }
 
 main();

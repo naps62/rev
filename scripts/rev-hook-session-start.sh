@@ -14,17 +14,17 @@ cwd=$(printf '%s' "$input" | python3 -c 'import json,sys; print(json.load(sys.st
 root=$(rev_root "$cwd") || exit 0
 base=$(rev_base "$root")
 
-summary=$(curl -sfG --max-time 2 "$REV_HOST/api/diff/summary" \
+summary=$(curl -sfG --max-time 2 "$REV_URL/api/diff/summary" \
   --data-urlencode "dir=$root" --data-urlencode "base=$base" 2>/dev/null) || exit 0
 mkdir -p "$REV_STATE"
 printf '%s' "$summary" >"$REV_STATE/$(rev_key "$root").known"
 
 # submitted=1: pending comments are unsent drafts — not the agent's business
-comments=$(curl -sfG --max-time 2 "$REV_HOST/api/comments" \
+comments=$(curl -sfG --max-time 2 "$REV_URL/api/comments" \
   --data-urlencode "dir=$root" --data-urlencode "submitted=1" 2>/dev/null) || comments='{"comments":[]}'
 
 SUMMARY="$summary" COMMENTS="$comments" ROOT="$root" BASE="$base" \
-HOST="$REV_HOST" WATCH="$SCRIPT_DIR/rev-watch.sh" \
+HOST="$REV_URL" WATCH="$SCRIPT_DIR/rev-watch.sh" \
 TEMPLATE="$SCRIPT_DIR/../agent/CLAUDE-rev.md" \
 python3 <<'PY'
 import json, os, urllib.parse

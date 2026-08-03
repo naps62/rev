@@ -30,6 +30,8 @@
         <string>3</string>
         <key>REV_SEM_BIN</key>
         <string>@HOME@/.local/bin/sem</string>
+        <!-- Per-machine overrides (REV_PORT, REV_HOST, ...) go in
+             ~/.config/rev/env; this file is regenerated on every install. -->
     </dict>
 
     <key>RunAtLoad</key>

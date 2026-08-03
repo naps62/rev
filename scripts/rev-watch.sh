@@ -38,7 +38,7 @@ fetch() { # fetch <since> <wait|""> <max-time-secs>
   local args=(-sfG --max-time "$3" --data-urlencode "dir=$DIR" --data-urlencode "since=$1")
   args+=(--data-urlencode "submitted=1")
   [[ -n "$2" ]] && args+=(--data-urlencode "wait=1")
-  curl "${args[@]}" "$REV_HOST/api/comments"
+  curl "${args[@]}" "$REV_URL/api/comments"
 }
 
 # count excludes author=agent (this session's own replies land after the
@@ -106,9 +106,9 @@ release_lock
 
 # Best-effort delivery ack: flips the batch to "picked up" in the UI.
 ack=$(python3 -c 'import json,sys; print(json.dumps({"dir": sys.argv[1], "upTo": int(sys.argv[2])}))' "$DIR" "$NEW_CURSOR") &&
-  curl -sf --max-time 5 -X POST "$REV_HOST/api/comments/ack" \
+  curl -sf --max-time 5 -X POST "$REV_URL/api/comments/ack" \
     -H 'content-type: application/json' -d "$ack" >/dev/null || true
 
 printf '%s\n' "$final"
 printf 'rev: %s new review comment(s) on %s. Address each one, reply in-thread (POST %s/api/comments with author "agent" and parentId = the root comment id), then re-arm this watcher as a background task.\n' \
-  "$prev" "$DIR" "$REV_HOST"
+  "$prev" "$DIR" "$REV_URL"

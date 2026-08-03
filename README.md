@@ -40,11 +40,11 @@ less rev-install.sh && bash rev-install.sh --no-hooks
 Already cloned? `./scripts/install-service.sh` is the same thing without the
 clone step. `--no-hooks` skips the hook wiring.
 
-The server listens on `0.0.0.0` with no auth: anyone who can reach the port
-can read diffs of every repo on the machine and write files through it. Only
-run it on a network you trust. On macOS the first start triggers the
-firewall's "accept incoming connections?" prompt — allowing it exposes the
-port to the LAN, denying it keeps rev to localhost.
+The server listens on `127.0.0.1` and has no auth. To reach it from another
+machine, put `REV_HOST=0.0.0.0` in `~/.config/rev/env` and restart the service —
+anyone who can then reach the port can read diffs of every repo on the machine
+and write files through it, so only do that on a network you trust. On macOS
+that first start triggers the firewall's "accept incoming connections?" prompt.
 
 To remove: `launchctl bootout gui/$(id -u)/com.naps62.rev` (macOS) or
 `systemctl --user disable --now rev.service` (Linux), then drop the hook
@@ -62,17 +62,24 @@ pnpm dev
 pnpm build && pnpm start
 ```
 
-Open `http://<machine-ip>:7373`. A review is just a URL:
+Open `http://localhost:7373`. A review is just a URL:
 
 ```
-http://<machine-ip>:7373/review?dir=/abs/path/to/worktree&base=main
+http://localhost:7373/review?dir=/abs/path/to/worktree&base=main
 ```
 
 ## Config
 
+Set these in the environment, or — for the installed service — in
+`~/.config/rev/env` as `KEY=value` lines. The service files are regenerated on
+every install and deploy, so that file is the only place a per-machine setting
+survives. A real environment variable still wins over it.
+
 | Env | Default | |
 |---|---|---|
 | `REV_PORT` | `7373` | HTTP + WS port |
+| `REV_HOST` | `127.0.0.1` | Bind address (server and vite dev server). `0.0.0.0` to reach it from other machines — see the warning above |
+| `REV_URL` | `http://localhost:7373` | Base URL the hooks and `rev-watch.sh` talk to |
 | `REV_ROOTS` | `~/tea` | Colon-separated roots scanned for repos; worktrees outside roots are found via `git worktree list`. The installed service sets `%h` (all of home). |
 | `REV_DEPTH` | `4` | Max directory depth under each root when scanning (service sets 3) |
 | `REV_DB` | `~/.local/share/rev/rev.db` | SQLite (comments, seen-state) |

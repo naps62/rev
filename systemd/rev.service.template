@@ -14,8 +14,8 @@ Environment=REV_ROOTS=%h
 Environment=REV_DEPTH=3
 # Entity-level diffs (optional); user-unit PATH doesn't include ~/.local/bin
 Environment=REV_SEM_BIN=%h/.local/bin/sem
-# Uncomment to override defaults:
-# Environment=REV_PORT=7373
+# Per-machine overrides (REV_PORT, REV_HOST, ...) go in ~/.config/rev/env,
+# which the server reads itself — this file is regenerated on every deploy.
 Restart=always
 RestartSec=2
 

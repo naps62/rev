@@ -4,6 +4,9 @@ export const TUNING = {
   /** Default HTTP port. 7373 is unregistered and easy to remember; override with REV_PORT. */
   PORT: 7373,
 
+  /** Bind address. Loopback by default — rev has no auth. Set REV_HOST=0.0.0.0 to expose it to your LAN. */
+  HOST: "127.0.0.1",
+
   /** Roots scanned for git repos. Override with REV_ROOTS (colon-separated). */
   DEFAULT_ROOTS: ["~/tea"],
 
@@ -70,4 +73,7 @@ export const TUNING = {
 
   /** SQLite location, under XDG data dir. */
   DB_PATH: "~/.local/share/rev/rev.db",
+
+  /** Optional KEY=value file read at startup for per-machine overrides. */
+  ENV_FILE: "~/.config/rev/env",
 } as const;
