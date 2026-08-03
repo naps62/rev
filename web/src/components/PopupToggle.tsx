@@ -31,9 +31,10 @@ export function PopupToggle<T extends string>({
         type="button"
         onClick={() => onChange(other.value)}
         aria-label={`${name}: ${value} — click to switch to ${other.value}`}
-        className="peer flex items-center border-x border-edge px-3 text-mute transition-colors duration-150 hover:bg-raise/60 hover:text-fg"
+        className="peer flex items-center gap-1.5 px-3 text-mute transition-colors duration-150 hover:bg-raise/60 hover:text-fg"
       >
         {current.glyph}
+        <span className="font-mono text-[11px]">{current.value}</span>
       </button>
       <div
         role="menu"

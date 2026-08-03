@@ -98,12 +98,17 @@ export function FeatureMenu({
         type="button"
         onClick={setPreset}
         aria-label={`Review features: ${onCount} of ${VIEW_FEATURES.length} on — click to turn all ${allOn ? "off" : "on"}`}
-        className="peer flex items-center gap-1.5 border-x border-edge px-3 text-mute transition-colors duration-150 hover:bg-raise/60 hover:text-fg"
+        className="peer flex items-center gap-1.5 px-3 text-mute transition-colors duration-150 hover:bg-raise/60 hover:text-fg"
       >
         <MenuGlyph semantic={onCount > 0} />
-        {onCount > 0 && !allOn && (
-          <span className="font-mono text-[10px] text-accent">{onCount}</span>
-        )}
+        <span
+          className={cx(
+            "font-mono text-[11px]",
+            onCount > 0 && "text-accent",
+          )}
+        >
+          {onCount}/{VIEW_FEATURES.length}
+        </span>
       </button>
       <div
         role="menu"

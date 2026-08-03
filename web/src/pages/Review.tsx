@@ -661,8 +661,10 @@ export function Review() {
           </select>
         )}
         <div className="ml-auto flex items-center gap-3 self-stretch">
-          <FeatureMenu features={features} onChange={setFeatures} />
-          <LayoutToggle mode={mode} onChange={setMode} />
+          <div className="hidden items-stretch divide-x divide-edge self-stretch border-x border-edge sm:flex">
+            <FeatureMenu features={features} onChange={setFeatures} />
+            <LayoutToggle mode={mode} onChange={setMode} />
+          </div>
           {files.length > 0 && (
             <>
               <span className="hidden font-mono text-[11.5px] tabular-nums text-mute sm:inline">
