@@ -3,7 +3,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import type {
   Comment,
@@ -276,6 +276,10 @@ export function Review() {
     // cacheTick invalidates on new hunks landing; qc itself is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, files, dir, base, cacheTick]);
+
+  // Last-shown panel content stays mounted so the close slide has something
+  // to show; the aside itself animates via .side-panel[data-open].
+  const heldPanel = useRef<ReactNode>(null);
 
   const loadAllHunks = () => {
     for (const f of files) {
@@ -827,7 +831,7 @@ export function Review() {
           {(() => {
             const currentEntities =
               currentPath != null ? entitiesByPath.get(currentPath) : undefined;
-            const panel =
+            const live =
               symbol != null && symbolData ? (
                 <SymbolPanel
                   symbol={symbol}
@@ -846,18 +850,22 @@ export function Review() {
                   onJump={jumpToEntityIn}
                 />
               ) : null;
+            if (live) heldPanel.current = live;
             return (
-              panel && (
-                <aside
-                  className="sticky hidden w-72 shrink-0 flex-col overflow-hidden rounded-md border border-edge bg-panel lg:flex"
-                  style={{
-                    top: HEADER_PX + 8,
-                    maxHeight: `calc(100vh - ${HEADER_PX + 16}px)`,
-                  }}
-                >
-                  {panel}
-                </aside>
-              )
+              <aside
+                data-open={live ? "" : undefined}
+                className="side-panel sticky hidden shrink-0 justify-end overflow-hidden lg:flex"
+                style={{
+                  top: HEADER_PX + 8,
+                  maxHeight: `calc(100vh - ${HEADER_PX + 16}px)`,
+                }}
+              >
+                {heldPanel.current && (
+                  <div className="flex w-72 shrink-0 flex-col overflow-hidden rounded-md border border-edge bg-panel">
+                    {heldPanel.current}
+                  </div>
+                )}
+              </aside>
             );
           })()}
         </div>
