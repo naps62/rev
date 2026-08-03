@@ -36,11 +36,16 @@ fetch() { # fetch <since> <wait|""> <max-time-secs>
   curl "${args[@]}" "$REV_HOST/api/comments"
 }
 
+# count = user comments only, so the watcher never wakes on the agent's own
+# replies landing after the shared cursor.
 jfield() { # jfield <count|cursor>  (JSON on stdin)
   python3 -c '
 import json, sys
 d = json.load(sys.stdin)
-print(len(d["comments"]) if sys.argv[1] == "count" else d["cursor"])' "$1"
+if sys.argv[1] == "count":
+    print(sum(1 for c in d["comments"] if c["author"] == "user"))
+else:
+    print(d["cursor"])' "$1"
 }
 
 backoff=2
