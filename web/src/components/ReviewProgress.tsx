@@ -73,7 +73,7 @@ export function ReviewProgress({
 
   return (
     <div
-      className="flex min-w-0 max-w-2xl flex-1 items-center justify-center gap-2.5"
+      className="flex min-w-0 shrink items-center justify-center gap-2.5"
       aria-label="Review progress"
     >
       <span
@@ -105,7 +105,7 @@ export function ReviewProgress({
 
       {files.length <= SEGMENT_LIMIT ? (
         <div
-          className={`hidden h-[11px] max-w-96 flex-1 items-center gap-px md:flex ${
+          className={`hidden h-[11px] w-96 min-w-0 shrink items-center gap-px md:flex ${
             pulse ? "progress-pulse" : ""
           }`}
         >
@@ -126,7 +126,7 @@ export function ReviewProgress({
         </div>
       ) : (
         <div
-          className={`hidden h-[7px] max-w-96 flex-1 overflow-hidden rounded-sm bg-edge md:block ${
+          className={`hidden h-[7px] w-96 min-w-0 shrink overflow-hidden rounded-sm bg-edge md:block ${
             pulse ? "progress-pulse" : ""
           }`}
           title={`${done} of ${files.length} files reviewed · ${pct}%`}
