@@ -29,6 +29,7 @@ import { cx, lineKey, type Thread } from "../util";
 import { AuthorChip, CommentThread, threadShell } from "./CommentThread";
 import { Checkbox } from "./Checkbox";
 import { Composer } from "./Composer";
+import { Reveal } from "./Reveal";
 
 // "M" stays neutral so amber only ever means attention (stale, open, current).
 const STATUS_GLYPH: Record<FileSummary["status"], { glyph: string; cls: string; label: string }> = {
@@ -95,6 +96,8 @@ export function DiffFile({
   const [flash, setFlash] = useState(false);
   const [editing, setEditing] = useState(false);
   const [composerAt, setComposerAt] = useState<{ key: string; anchor: CommentAnchor } | null>(null);
+  // True while the composer slides shut; it unmounts when Reveal exits.
+  const [composerClosing, setComposerClosing] = useState(false);
   const prevStale = useRef(file.stale);
 
   useEffect(() => {
@@ -357,44 +360,57 @@ export function DiffFile({
         ? "seen"
         : "collapsed";
 
+  const closeComposer = () => setComposerClosing(true);
+
   const toggleComposer = (side: "old" | "new", line: DiffLine, hunk: DiffHunk) => {
     const num = (side === "old" ? line.oldLine : line.newLine) ?? 0;
     const key = lineKey(side, num);
-    setComposerAt((cur) =>
-      cur?.key === key
-        ? null
-        : {
-            key,
-            anchor: {
-              file: file.path,
-              side,
-              line: num,
-              snippet: line.text.trim(),
-              context: anchorContext(hunk, line, side),
-            },
-          },
-    );
+    if (composerAt?.key === key) {
+      // Already closing (the click's own mousedown blur-dismissed the empty
+      // composer): swallow the toggle so it doesn't reopen.
+      if (!composerClosing) closeComposer();
+      return;
+    }
+    setComposerClosing(false);
+    setComposerAt({
+      key,
+      anchor: {
+        file: file.path,
+        side,
+        line: num,
+        snippet: line.text.trim(),
+        context: anchorContext(hunk, line, side),
+      },
+    });
   };
 
   const composerNode = (key: string) =>
     composerAt?.key === key ? (
-      <div className={threadShell}>
-        <div className="flex items-baseline gap-2 border-b border-edge-soft bg-panel px-3 py-1">
-          <AuthorChip author="user" />
-          <span className="min-w-0 truncate font-mono text-[11px] text-faint">
-            {file.path}:{composerAt.anchor.line}
-          </span>
+      <Reveal
+        open={!composerClosing}
+        onExited={() => {
+          setComposerAt(null);
+          setComposerClosing(false);
+        }}
+      >
+        <div className={threadShell}>
+          <div className="flex items-baseline gap-2 border-b border-edge-soft bg-panel px-3 py-1">
+            <AuthorChip author="user" />
+            <span className="min-w-0 truncate font-mono text-[11px] text-faint">
+              {file.path}:{composerAt.anchor.line}
+            </span>
+          </div>
+          <Composer
+            placeholder="Write a comment…"
+            autoFocus
+            onSubmit={(body) => {
+              onCreateComment(composerAt.anchor, body);
+              setComposerAt(null);
+            }}
+            onCancel={closeComposer}
+          />
         </div>
-        <Composer
-          placeholder="Write a comment…"
-          autoFocus
-          onSubmit={(body) => {
-            onCreateComment(composerAt.anchor, body);
-            setComposerAt(null);
-          }}
-          onCancel={() => setComposerAt(null)}
-        />
-      </div>
+      </Reveal>
     ) : null;
 
   const threadNodes = (key: string | null): ReactNode[] =>
