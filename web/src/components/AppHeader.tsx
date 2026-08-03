@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "wouter";
 import * as api from "../api";
+import { ThemeToggle } from "./ThemeToggle";
 
 /** Header height in px. Review's scroll-anchor math offsets against this. */
 export const HEADER_PX = 48;
@@ -19,6 +20,7 @@ export function AppHeader({ children }: { children?: ReactNode }) {
         rev<span className="text-accent">_</span>
       </Link>
       {children}
+      <ThemeToggle />
     </header>
   );
 }

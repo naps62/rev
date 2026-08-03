@@ -23,6 +23,7 @@ import type { FileClass } from "../semantic/classify.ts";
 import { importFolds, langOf, testFolds, type FoldRun } from "../semantic/fold.ts";
 import { loadFoldState, saveFoldState } from "../semantic/foldStore.ts";
 import { isSymbol, tokenAt } from "../semantic/symbols.ts";
+import { useScheme } from "../theme";
 import { cx, lineKey, type Thread } from "../util";
 import { AuthorChip, CommentThread, threadShell } from "./CommentThread";
 import { Checkbox } from "./Checkbox";
@@ -295,6 +296,7 @@ export function DiffFile({
       },
     };
   }, [onSymbolClick, file.path]);
+  const scheme = useScheme();
   const [tokens, setTokens] = useState<TokenLine[] | null>(null);
   // Tokens align to `flat` by index — drop them the moment the diff changes,
   // but NOT on collapse, so colors survive the close animation.
@@ -302,13 +304,16 @@ export function DiffFile({
   useEffect(() => {
     if (!expanded || file.binary || flat.length === 0) return;
     let live = true;
-    highlightLines(file.path, file.contentHash, flat.map((l) => l.text)).then(
-      (t) => live && setTokens(t),
-    );
+    highlightLines(
+      file.path,
+      file.contentHash,
+      flat.map((l) => l.text),
+      scheme,
+    ).then((t) => live && setTokens(t));
     return () => {
       live = false;
     };
-  }, [expanded, file.binary, file.path, file.contentHash, flat]);
+  }, [expanded, file.binary, file.path, file.contentHash, flat, scheme]);
 
   // Place threads on their lines (server-re-anchored resolvedLine first,
   // original anchor as fallback); the rest are detached. Placement needs

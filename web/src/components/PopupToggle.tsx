@@ -9,8 +9,9 @@ export interface ToggleOption<T extends string> {
 }
 
 /**
- * Header icon button cycling between two options. Click toggles; hover or
- * keyboard focus opens a popup describing both options, each row clickable.
+ * Header icon button cycling through its options. Click advances to the next
+ * option; hover or keyboard focus opens a popup describing all of them, each
+ * row clickable.
  */
 export function PopupToggle<T extends string>({
   name,
@@ -19,18 +20,22 @@ export function PopupToggle<T extends string>({
   onChange,
 }: {
   name: string;
-  options: readonly [ToggleOption<T>, ToggleOption<T>];
+  options: readonly ToggleOption<T>[];
   value: T;
   onChange: (v: T) => void;
 }) {
-  const current = options.find((o) => o.value === value) ?? options[0];
-  const other = options.find((o) => o.value !== value) ?? options[1];
+  const idx = Math.max(
+    0,
+    options.findIndex((o) => o.value === value),
+  );
+  const current = options[idx]!;
+  const next = options[(idx + 1) % options.length]!;
   return (
     <div className="group relative hidden self-stretch sm:flex">
       <button
         type="button"
-        onClick={() => onChange(other.value)}
-        aria-label={`${name}: ${value} — click to switch to ${other.value}`}
+        onClick={() => onChange(next.value)}
+        aria-label={`${name}: ${value} — click to switch to ${next.value}`}
         className="peer flex items-center gap-1.5 px-3 text-mute transition-colors duration-150 hover:bg-raise/60 hover:text-fg"
       >
         {current.glyph}

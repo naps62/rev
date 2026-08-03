@@ -18,7 +18,7 @@ export function HelpOverlay({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="overlay-in w-72 rounded-md border border-edge bg-panel p-4 shadow-[0_8px_28px_rgb(0_0_0/0.5)]"
+        className="overlay-in w-72 rounded-md border border-edge bg-panel p-4 shadow-pop"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-[13px] font-semibold text-fg">Keyboard</h2>
