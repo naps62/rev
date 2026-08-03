@@ -48,11 +48,11 @@ interface DiffFileProps {
   /** All threads anchored to this file; placed on lines once hunks load. */
   threads: Thread[];
   isCurrent: boolean;
-  /** Semantic view on: enables import/test-body folding (unified only). */
-  semantic?: boolean;
-  /** This file's class in semantic view; "tests" switches to body folding. */
+  /** Fold import blocks (unified only). */
+  foldImports?: boolean;
+  /** This file's class; "tests" switches to body folding. */
   fileClass?: FileClass;
-  /** Start collapsed regardless of size/seen (semantic "generated" class). */
+  /** Start collapsed regardless of size/seen (the "generated" class). */
   defaultCollapsed?: boolean;
   /** Section-level collapse/expand-all: acts once per seq bump. */
   collapseCmd?: { seq: number; expand: boolean };
@@ -76,7 +76,7 @@ export function DiffFile({
   mode,
   threads,
   isCurrent,
-  semantic,
+  foldImports,
   fileClass,
   defaultCollapsed,
   collapseCmd,
@@ -263,26 +263,26 @@ export function DiffFile({
       return next;
     });
   }, []);
-  const foldBodies = semantic && fileClass === "tests" && !showBodies;
+  const foldBodies = fileClass === "tests" && !showBodies;
   // Import and test-body folds share hunk offsets; the prefix keeps a key
   // expanded in one mode from leaking into the other.
   const foldKey = (hi: number, run: FoldRun) =>
     `${foldBodies ? "t" : "i"}:${hi}:${run.start}`;
   const foldsByHunk = useMemo(() => {
     const lang = langOf(file.path);
-    if (!semantic || !lang) return null;
+    if (!lang || (!foldBodies && !foldImports)) return null;
     const m = new Map<number, FoldRun[]>();
     hunks.forEach((h, hi) => {
       const runs = foldBodies ? testFolds(h.lines, lang) : importFolds(h.lines, lang);
       if (runs.length > 0) m.set(hi, runs);
     });
     return m.size > 0 ? m : null;
-  }, [semantic, file.path, hunks, foldBodies]);
+  }, [foldImports, file.path, hunks, foldBodies]);
 
   // Symbol panel wiring: resolve the identifier under the pointer and filter
   // through the language's stopwords before bubbling up.
   const symbolHandlers = useMemo<SymbolHandlers | undefined>(() => {
-    if (!semantic || !onSymbolClick) return undefined;
+    if (!onSymbolClick) return undefined;
     const lang = langOf(file.path);
     const extract = (e: MouseEvent<HTMLElement>, text: string) => {
       const t = tokenFromPoint(e, text);
@@ -294,7 +294,7 @@ export function DiffFile({
         if (t) onSymbolClick(t);
       },
     };
-  }, [semantic, onSymbolClick, file.path]);
+  }, [onSymbolClick, file.path]);
   const [tokens, setTokens] = useState<TokenLine[] | null>(null);
   // Tokens align to `flat` by index — drop them the moment the diff changes,
   // but NOT on collapse, so colors survive the close animation.
@@ -710,7 +710,7 @@ export function DiffFile({
           </span>
         )}
         <div className="flex shrink-0 items-center gap-2.5">
-          {semantic && fileClass === "tests" && open && (
+          {fileClass === "tests" && open && (
             <button
               type="button"
               onClick={(e) => {
