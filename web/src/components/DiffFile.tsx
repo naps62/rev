@@ -79,10 +79,6 @@ interface DiffFileProps {
   ) => void;
   /** Click on an identifier — open/retarget the symbol panel. */
   onSymbolClick?: (symbol: string) => void;
-  /** Hover over an identifier; only fired while the panel is open. */
-  onSymbolHover?: (symbol: string) => void;
-  /** Symbol panel is open: enables hover retargeting. */
-  symbolActive?: boolean;
   onCreateComment: (anchor: CommentAnchor, body: string) => void;
   onReply: (root: Comment, body: string) => void;
   onResolve: (root: Comment, resolved: boolean) => void;
@@ -108,8 +104,6 @@ export function DiffFile({
   onToggleSeen,
   onToggleSegments,
   onSymbolClick,
-  onSymbolHover,
-  symbolActive,
   onCreateComment,
   onReply,
   onResolve,
@@ -413,13 +407,8 @@ export function DiffFile({
         const t = extract(e, text);
         if (t) onSymbolClick(t);
       },
-      hover: (e, text) => {
-        if (!symbolActive || !onSymbolHover) return;
-        const t = extract(e, text);
-        if (t) onSymbolHover(t);
-      },
     };
-  }, [semantic, onSymbolClick, onSymbolHover, symbolActive, file.path]);
+  }, [semantic, onSymbolClick, file.path]);
   const [tokens, setTokens] = useState<TokenLine[] | null>(null);
   // Tokens align to `flat` by index — drop them the moment the diff changes,
   // but NOT on collapse, so colors survive the close animation.
@@ -1284,7 +1273,6 @@ function renderContent(
 /** Pointer → symbol handlers, built once per file by DiffFile. */
 interface SymbolHandlers {
   click: (e: MouseEvent<HTMLElement>, text: string) => void;
-  hover: (e: MouseEvent<HTMLElement>, text: string) => void;
 }
 
 /** `data-lk` value: every line key this row answers to (`old:N new:M`). */
@@ -1339,7 +1327,6 @@ function LineRow({
         data-code
         data-side={line.kind === "del" ? "old" : "new"}
         onClick={onSym ? (e) => onSym.click(e, line.text) : undefined}
-        onMouseMove={onSym ? (e) => onSym.hover(e, line.text) : undefined}
         className="relative whitespace-pre-wrap break-all py-0 pl-5 pr-4 align-top font-mono text-[12.5px] leading-[1.7] text-fg max-sm:pl-2 max-sm:pr-2"
       >
         <button
@@ -1424,7 +1411,6 @@ function SplitCell({
       data-code
       data-side={isLeft ? "old" : "new"}
       onClick={onSym ? (e) => onSym.click(e, line.text) : undefined}
-      onMouseMove={onSym ? (e) => onSym.hover(e, line.text) : undefined}
       className={cx(
         "group/cell relative whitespace-pre-wrap break-all py-0 pl-5 pr-3 align-top font-mono text-[12.5px] leading-[1.7] text-fg max-sm:pl-2 max-sm:pr-1",
         line.kind === "add" && "bg-add-soft",
