@@ -6,7 +6,7 @@ const KEYS: Array<[string, string]> = [
   ["s", "mark block/comment under pointer seen (on a strip: unmark)"],
   ["S", "same, but widened to the parent block"],
   ["x", "toggle pointer crosshair (line/column/word/char)"],
-  ["click id", "semantic view: open symbol panel (hover retargets)"],
+  ["click id", "semantic view: open symbol panel"],
   ["?", "toggle this help"],
   ["Esc", "close help / symbol panel"],
 ];

@@ -234,26 +234,10 @@ export function Review() {
     setFileCmds((prev) => ({ ...prev, [path]: { seq: cmdSeq.current, expand } }));
   };
 
-  // Symbol panel: click opens/retargets, hover retargets only while open
-  // (debounced), Esc closes. Occurrence search runs over whatever per-file
-  // hunks are already in the query cache — coverage grows as files stream in.
+  // Symbol panel: click opens/retargets, Esc closes. Occurrence search runs
+  // over whatever per-file hunks are already in the query cache — coverage
+  // grows as files stream in.
   const [symbol, setSymbol] = useState<string | null>(null);
-  const hoverTimer = useRef<number>(0);
-  // Kill any pending hover retarget when the symbol is set directly, or a
-  // stale hover fires 350ms after a click/Esc and overrides it.
-  const symbolSet = (sym: string | null) => {
-    clearTimeout(hoverTimer.current);
-    setSymbol(sym);
-  };
-  const symbolClick = (sym: string) => symbolSet(sym);
-  const symbolHover = (sym: string) => {
-    clearTimeout(hoverTimer.current);
-    hoverTimer.current = window.setTimeout(
-      () => setSymbol((cur) => (cur != null ? sym : cur)),
-      350,
-    );
-  };
-  useEffect(() => () => clearTimeout(hoverTimer.current), []);
   useEffect(() => {
     if (view !== "semantic") setSymbol(null);
   }, [view]);
@@ -540,7 +524,7 @@ export function Review() {
         setHelp((h) => !h);
       } else if (e.key === "Escape") {
         setHelp(false);
-        symbolSet(null);
+        setSymbol(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -819,9 +803,7 @@ export function Review() {
                   const b = s ? sectionCmds[s.cls] : undefined;
                   return a && b ? (a.seq > b.seq ? a : b) : a ?? b;
                 })()}
-                onSymbolClick={sections ? symbolClick : undefined}
-                onSymbolHover={sections ? symbolHover : undefined}
-                symbolActive={symbol != null}
+                onSymbolClick={sections ? setSymbol : undefined}
                 onHover={() => hoverFocus(f.path)}
                 onToggleSeen={toggleSeen}
                 onToggleSegments={toggleSegments}
@@ -890,7 +872,7 @@ export function Review() {
                 notLoaded={symbolData.notLoaded}
                 onLoadAll={loadAllHunks}
                 onJump={jumpToOccurrence}
-                onClose={() => symbolSet(null)}
+                onClose={() => setSymbol(null)}
               />
             </aside>
           )}
