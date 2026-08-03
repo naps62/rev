@@ -122,6 +122,7 @@ export function Composer({
   // Preview keeps the editor's height so tab toggling doesn't shift layout.
   const [previewMinH, setPreviewMinH] = useState<number>();
   const selRef = useRef<[number, number]>([0, 0]);
+  const pointerIn = useRef(false);
   const canSubmit = body.trim().length > 0 && !busy;
 
   const minH = compact ? "min-h-[50px]" : "min-h-[68px]";
@@ -184,11 +185,24 @@ export function Composer({
         if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
           e.preventDefault();
           submit();
-        } else if (e.key === "Escape" && onCancel) {
+        } else if (e.key === "Escape") {
           e.preventDefault();
-          onCancel();
+          (e.target as HTMLElement).blur?.();
         }
         e.stopPropagation();
+      }}
+      onMouseDownCapture={() => {
+        // Clicking a non-focusable spot inside blurs with relatedTarget
+        // null; this flag distinguishes that from focus truly leaving.
+        pointerIn.current = true;
+        setTimeout(() => {
+          pointerIn.current = false;
+        });
+      }}
+      onBlur={(e) => {
+        if (!onCancel || busy || body.trim() || pointerIn.current) return;
+        if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget)) return;
+        onCancel();
       }}
     >
       <div className="flex h-6 items-center gap-1">
@@ -264,9 +278,9 @@ export function Composer({
           if (mod && e.key === "Enter") {
             e.preventDefault();
             submit();
-          } else if (e.key === "Escape" && onCancel) {
+          } else if (e.key === "Escape") {
             e.preventDefault();
-            onCancel();
+            e.currentTarget.blur();
           } else if (mod && !e.altKey && !e.shiftKey) {
             const fmt = SHORTCUT_FORMAT[e.key.toLowerCase()];
             if (fmt) {
