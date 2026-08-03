@@ -1277,6 +1277,8 @@ function LineRow({
         {line.newLine ?? ""}
       </td>
       <td
+        data-code
+        data-side={line.kind === "del" ? "old" : "new"}
         onClick={onSym ? (e) => onSym.click(e, line.text) : undefined}
         onMouseMove={onSym ? (e) => onSym.hover(e, line.text) : undefined}
         className="relative whitespace-pre-wrap break-all py-0 pl-5 pr-4 align-top font-mono text-[12.5px] leading-[1.7] text-fg"
@@ -1360,6 +1362,8 @@ function SplitCell({
   const toks = tokens?.[idx] ?? null;
   return (
     <td
+      data-code
+      data-side={isLeft ? "old" : "new"}
       onClick={onSym ? (e) => onSym.click(e, line.text) : undefined}
       onMouseMove={onSym ? (e) => onSym.hover(e, line.text) : undefined}
       className={cx(

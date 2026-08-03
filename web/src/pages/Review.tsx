@@ -31,12 +31,14 @@ import {
   type FileClass,
 } from "../semantic/classify.ts";
 import { findOccurrences, type Occurrence } from "../semantic/symbols.ts";
+import { attachCrosshair } from "../crosshair";
 import { buildFileTree, flattenTree } from "../tree";
 import { basename, buildThreads, cx, shortSha, type Thread } from "../util";
 import { useRevSocket } from "../ws";
 
 const MODE_KEY = "rev.diffMode";
 const VIEW_KEY = "rev.viewMode";
+const XHAIR_KEY = "rev.crosshair";
 
 export type ViewMode = "classic" | "semantic";
 
@@ -451,6 +453,15 @@ export function Review() {
     setCurrentPath(path);
   };
 
+  // Pointer crosshair over the diff tables (x toggles, persisted).
+  const [xhair, setXhair] = useState(() => localStorage.getItem(XHAIR_KEY) !== "off");
+  const mainRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!xhair || !el) return;
+    return attachCrosshair(el);
+  }, [xhair, diffQ.data]);
+
   const [help, setHelp] = useState(false);
   const filesRef = useRef(files);
   filesRef.current = files;
@@ -520,6 +531,11 @@ export function Review() {
             seen: !f.seen || f.stale,
           });
         }
+      } else if (e.key === "x") {
+        setXhair((v) => {
+          localStorage.setItem(XHAIR_KEY, v ? "off" : "on");
+          return !v;
+        });
       } else if (e.key === "?") {
         setHelp((h) => !h);
       } else if (e.key === "Escape") {
@@ -774,7 +790,7 @@ export function Review() {
             />
           </aside>
 
-          <main className="flex min-w-0 flex-1 flex-col gap-3">
+          <main ref={mainRef} className="relative flex min-w-0 flex-1 flex-col gap-3">
             {(sections ?? [null]).map((s) => (
               <Fragment key={s?.cls ?? "all"}>
                 {s && (
@@ -854,7 +870,7 @@ export function Review() {
             </section>
 
             <p className="pb-4 text-center font-mono text-[11px] text-faint">
-              j/k files · J/K unseen · n/p hunks · . seen · s block seen · ? shortcuts
+              j/k files · J/K unseen · n/p hunks · . seen · s block seen · x crosshair · ? shortcuts
             </p>
           </main>
 
