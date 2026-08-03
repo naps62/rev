@@ -39,7 +39,8 @@ const STATUS_GLYPH: Record<FileSummary["status"], { glyph: string; cls: string; 
   untracked: { glyph: "U", cls: "text-add", label: "untracked" },
 };
 
-export type DiffMode = "unified" | "split" | "mixed";
+import type { DiffMode } from "../features";
+export type { DiffMode };
 
 interface DiffFileProps {
   dir: string;

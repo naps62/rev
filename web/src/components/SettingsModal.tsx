@@ -1,8 +1,15 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { type FeatureFlags, VIEW_FEATURES } from "../features";
+import {
+  type DiffMode,
+  type FeatureFlags,
+  loadDiffMode,
+  loadFeatures,
+  saveDiffMode,
+  saveFeatures,
+  VIEW_FEATURES,
+} from "../features";
 import { setThemePref, useThemePref, type ThemePref } from "../theme";
 import type { WsStatus } from "../ws";
-import type { DiffMode } from "./DiffFile";
 import { Checkbox } from "./Checkbox";
 import { LiveDot } from "./LiveDot";
 import { cx } from "../util";
@@ -241,8 +248,13 @@ function FeatureRow({
   );
 }
 
-function FeaturesSection({ review }: { review: ReviewSettings }) {
-  const { features, onFeatures } = review;
+function FeaturesSection({
+  features,
+  onFeatures,
+}: {
+  features: FeatureFlags;
+  onFeatures: (f: FeatureFlags) => void;
+}) {
   const onCount = VIEW_FEATURES.filter((k) => features[k]).length;
   const allOn = onCount === VIEW_FEATURES.length;
   const setAll = (v: boolean) => {
@@ -360,27 +372,31 @@ const THEME_OPTIONS: { value: ThemePref; blurb: string }[] = [
   { value: "auto", blurb: "Follows the OS scheme, live." },
 ];
 
-function AppearanceSection({ review }: { review?: ReviewSettings }) {
+function AppearanceSection({
+  mode,
+  onMode,
+}: {
+  mode: DiffMode;
+  onMode: (m: DiffMode) => void;
+}) {
   const themePref = useThemePref();
   return (
     <div className="space-y-6">
-      {review && (
-        <section>
-          <GroupHeading>diff layout</GroupHeading>
-          <div role="radiogroup" aria-label="Diff layout" className="grid gap-2 sm:grid-cols-3">
-            {MODE_OPTIONS.map((o) => (
-              <OptionCard
-                key={o.value}
-                active={review.mode === o.value}
-                name={o.value}
-                blurb={o.blurb}
-                art={<ModeArt mode={o.value} />}
-                onSelect={() => review.onMode(o.value)}
-              />
-            ))}
-          </div>
-        </section>
-      )}
+      <section>
+        <GroupHeading>diff layout</GroupHeading>
+        <div role="radiogroup" aria-label="Diff layout" className="grid gap-2 sm:grid-cols-3">
+          {MODE_OPTIONS.map((o) => (
+            <OptionCard
+              key={o.value}
+              active={mode === o.value}
+              name={o.value}
+              blurb={o.blurb}
+              art={<ModeArt mode={o.value} />}
+              onSelect={() => onMode(o.value)}
+            />
+          ))}
+        </div>
+      </section>
       <section>
         <GroupHeading>theme</GroupHeading>
         <div role="radiogroup" aria-label="Theme" className="grid gap-2 sm:grid-cols-3">
@@ -467,11 +483,30 @@ const STATUS_NOTE: Record<WsStatus, string> = {
  * (symbol panel) don't also fire while the modal is up.
  */
 export function SettingsControl({ review }: { review?: ReviewSettings }) {
-  const sections: SectionId[] = review
-    ? ["features", "appearance", "keyboard"]
-    : ["appearance", "keyboard"];
+  const sections: SectionId[] = ["features", "appearance", "keyboard"];
   const [open, setOpen] = useState(false);
-  const [section, setSection] = useState<SectionId>(sections[0]!);
+  const [section, setSection] = useState<SectionId>("features");
+
+  // Off the review page there is no live state to bind to, so the modal
+  // edits the same localStorage store the next review will load from.
+  const [stored, setStored] = useState(() => ({
+    features: loadFeatures(new URLSearchParams()),
+    mode: loadDiffMode(),
+  }));
+  const features = review?.features ?? stored.features;
+  const onFeatures =
+    review?.onFeatures ??
+    ((f: FeatureFlags) => {
+      saveFeatures(f);
+      setStored((s) => ({ ...s, features: f }));
+    });
+  const mode = review?.mode ?? stored.mode;
+  const onMode =
+    review?.onMode ??
+    ((m: DiffMode) => {
+      saveDiffMode(m);
+      setStored((s) => ({ ...s, mode: m }));
+    });
   const openRef = useRef(open);
   openRef.current = open;
   const sectionRef = useRef(section);
@@ -626,8 +661,10 @@ export function SettingsControl({ review }: { review?: ReviewSettings }) {
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                {section === "features" && review && <FeaturesSection review={review} />}
-                {section === "appearance" && <AppearanceSection review={review} />}
+                {section === "features" && (
+                  <FeaturesSection features={features} onFeatures={onFeatures} />
+                )}
+                {section === "appearance" && <AppearanceSection mode={mode} onMode={onMode} />}
                 {section === "keyboard" && <KeyboardSection onReviewPage={review != null} />}
               </div>
 

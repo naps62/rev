@@ -68,3 +68,18 @@ export function loadFeatures(params: URLSearchParams): FeatureFlags {
 export function saveFeatures(f: FeatureFlags) {
   localStorage.setItem(KEY, JSON.stringify(f));
 }
+
+/** Diff layout rides in the same store so the settings modal can edit it
+    from any page, not just an open review. */
+export type DiffMode = "unified" | "split" | "mixed";
+
+const MODE_KEY = "rev.diffMode";
+
+export function loadDiffMode(): DiffMode {
+  const s = localStorage.getItem(MODE_KEY);
+  return s === "split" || s === "mixed" ? s : "unified";
+}
+
+export function saveDiffMode(m: DiffMode) {
+  localStorage.setItem(MODE_KEY, m);
+}
