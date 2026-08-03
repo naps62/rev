@@ -4,7 +4,7 @@ const KEYS: Array<[string, string]> = [
   ["n / p", "next / previous hunk"],
   ["s, v or .", "toggle seen on current file"],
   ["x", "toggle pointer crosshair (line/column/word/char)"],
-  ["click id", "semantic view: open symbol panel"],
+  ["click id", "symbol panel on: list occurrences of an identifier"],
   ["?", "toggle this help"],
   ["Esc", "close help / symbol panel"],
 ];

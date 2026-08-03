@@ -22,40 +22,32 @@ import { Composer } from "../components/Composer";
 import { DiffFile, type DiffMode } from "../components/DiffFile";
 import { FileNav } from "../components/FileNav";
 import { HelpOverlay } from "../components/HelpOverlay";
+import { FeatureMenu } from "../components/FeatureMenu";
 import { LayoutToggle } from "../components/LayoutToggle";
-import { ViewToggle } from "../components/ViewToggle";
 import { LiveDot } from "../components/LiveDot";
 import { Checkbox } from "../components/Checkbox";
 import { SymbolPanel } from "../components/SymbolPanel";
 import {
   buildClassSections,
   CLASS_LABEL,
+  classifyFile,
   type ClassSection,
   type FileClass,
 } from "../semantic/classify.ts";
 import { entityAnchor } from "../semantic/entities.ts";
 import { findOccurrences, type Occurrence } from "../semantic/symbols.ts";
 import { attachCrosshair } from "../crosshair";
+import { type FeatureFlags, loadFeatures, saveFeatures } from "../features";
 import { buildFileTree, flattenTree } from "../tree";
 import { basename, buildThreads, cx, shortSha, type Thread } from "../util";
 import { useRevSocket } from "../ws";
 
 const MODE_KEY = "rev.diffMode";
-const VIEW_KEY = "rev.viewMode";
-const XHAIR_KEY = "rev.crosshair";
-
-export type ViewMode = "classic" | "semantic";
 
 function initialMode(params: URLSearchParams): DiffMode {
   const p = params.get("mode");
   if (p === "split" || p === "unified") return p;
   return localStorage.getItem(MODE_KEY) === "split" ? "split" : "unified";
-}
-
-function initialView(params: URLSearchParams): ViewMode {
-  const p = params.get("view");
-  if (p === "semantic" || p === "classic") return p;
-  return localStorage.getItem(VIEW_KEY) === "semantic" ? "semantic" : "classic";
 }
 
 export function Review() {
@@ -174,10 +166,15 @@ export function Review() {
     setModeState(m);
     localStorage.setItem(MODE_KEY, m);
   };
-  const [view, setViewState] = useState<ViewMode>(() => initialView(params));
-  const setView = (v: ViewMode) => {
-    setViewState(v);
-    localStorage.setItem(VIEW_KEY, v);
+  const [features, setFeaturesState] = useState<FeatureFlags>(() => loadFeatures(params));
+  const setFeatures = (
+    f: FeatureFlags | ((prev: FeatureFlags) => FeatureFlags),
+  ) => {
+    setFeaturesState((prev) => {
+      const next = typeof f === "function" ? f(prev) : f;
+      saveFeatures(next);
+      return next;
+    });
   };
 
   // Entity-level diff from the optional sem CLI; available:false (binary
@@ -185,22 +182,22 @@ export function Review() {
   const semQ = useQuery({
     queryKey: ["semantic", dir, base],
     queryFn: () => api.getSemanticDiff(dir, base),
-    enabled: !!dir && !!base && view === "semantic",
+    enabled: !!dir && !!base && features.entities,
   });
   const entitiesByPath = useMemo(() => {
     const m = new Map<string, EntityChange[]>();
-    if (semQ.data?.available) {
+    if (features.entities && semQ.data?.available) {
       for (const f of semQ.data.files) m.set(f.path, f.entities);
     }
     return m;
-  }, [semQ.data]);
+  }, [features.entities, semQ.data]);
 
   // Tree (visual) order drives everything: the rail, the diff pane, scroll-spy
-  // and j/k all agree on it. In semantic view the order is class sections
+  // and j/k all agree on it. With grouping on the order is class sections
   // first, tree order within each.
   const sections = useMemo(
-    () => (view === "semantic" ? buildClassSections(diffQ.data?.files ?? []) : null),
-    [view, diffQ.data],
+    () => (features.grouping ? buildClassSections(diffQ.data?.files ?? []) : null),
+    [features.grouping, diffQ.data],
   );
   const tree = useMemo(
     () => (sections ? [] : buildFileTree(diffQ.data?.files ?? [])),
@@ -234,8 +231,8 @@ export function Review() {
   // grows as files stream in.
   const [symbol, setSymbol] = useState<string | null>(null);
   useEffect(() => {
-    if (view !== "semantic") setSymbol(null);
-  }, [view]);
+    if (!features.symbols) setSymbol(null);
+  }, [features.symbols]);
 
   // Re-run the occurrence search when new file hunks land in the cache.
   const [cacheTick, setCacheTick] = useState(0);
@@ -433,13 +430,12 @@ export function Review() {
   };
 
   // Pointer crosshair over the diff tables (x toggles, persisted).
-  const [xhair, setXhair] = useState(() => localStorage.getItem(XHAIR_KEY) !== "off");
   const mainRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const el = mainRef.current;
-    if (!xhair || !el) return;
+    if (!features.crosshair || !el) return;
     return attachCrosshair(el);
-  }, [xhair, diffQ.data]);
+  }, [features.crosshair, diffQ.data]);
 
   const [help, setHelp] = useState(false);
   const filesRef = useRef(files);
@@ -511,10 +507,7 @@ export function Review() {
           });
         }
       } else if (e.key === "x") {
-        setXhair((v) => {
-          localStorage.setItem(XHAIR_KEY, v ? "off" : "on");
-          return !v;
-        });
+        setFeatures((p) => ({ ...p, crosshair: !p.crosshair }));
       } else if (e.key === "?") {
         setHelp((h) => !h);
       } else if (e.key === "Escape") {
@@ -627,8 +620,8 @@ export function Review() {
           </select>
         )}
         <div className="ml-auto flex items-center gap-3 self-stretch">
-          <ViewToggle view={view} onChange={setView} />
-          {view === "semantic" && semQ.data?.available && (
+          <FeatureMenu features={features} onChange={setFeatures} />
+          {features.entities && semQ.data?.available && (
             <span
               className="hidden rounded-sm border border-accent/40 px-1 font-mono text-[10px] text-accent sm:inline"
               title="entity-level data from the sem CLI is active"
@@ -751,7 +744,11 @@ export function Review() {
                     }}
                   />
                 )}
-                {(s?.files ?? files).map((f) => (
+                {(s?.files ?? files).map((f) => {
+                  const cls = features.classDefaults
+                    ? s?.cls ?? classifyFile(f.path)
+                    : undefined;
+                  return (
               <DiffFile
                 key={f.path}
                 dir={dir}
@@ -760,7 +757,7 @@ export function Review() {
                 mode={mode}
                 threads={threadsByFile.get(f.path) ?? []}
                 isCurrent={currentPath === f.path}
-                semantic={!!sections}
+                foldImports={features.importFolds}
                 entities={entitiesByPath.get(f.path)}
                 onJumpToEntity={(e) => {
                   const a = entityAnchor(e);
@@ -768,14 +765,14 @@ export function Review() {
                     jumpToOccurrence({ path: f.path, side: a.side, line: a.line, kind: "context", text: "" });
                   }
                 }}
-                fileClass={s?.cls}
-                defaultCollapsed={s?.cls === "generated"}
+                fileClass={cls}
+                defaultCollapsed={cls === "generated"}
                 collapseCmd={(() => {
                   const a = fileCmds[f.path];
                   const b = s ? sectionCmds[s.cls] : undefined;
                   return a && b ? (a.seq > b.seq ? a : b) : a ?? b;
                 })()}
-                onSymbolClick={sections ? setSymbol : undefined}
+                onSymbolClick={features.symbols ? setSymbol : undefined}
                 onHover={() => hoverFocus(f.path)}
                 onToggleSeen={toggleSeen}
                 onCreateComment={(anchor, body) => createComment(anchor, body)}
@@ -791,7 +788,8 @@ export function Review() {
                   else hunkEls.current.delete(k);
                 }}
               />
-                ))}
+                  );
+                })}
               </Fragment>
             ))}
 
