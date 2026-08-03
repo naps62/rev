@@ -54,9 +54,23 @@ are detached transient units — `journalctl --user -u run-*` has their logs,
 
 ## Agents
 
-Append `agent/CLAUDE-rev.md` to a project's `CLAUDE.md` (or `~/.claude/CLAUDE.md`).
-It tells the agent to hand you a review URL instead of starting a server, and
-how to long-poll `/api/comments` and reply in-thread.
+`./scripts/install-hooks.sh` wires rev into Claude Code globally (run it once,
+after the scripts exist in the prod checkout). Two hooks in
+`~/.claude/settings.json`, referencing `~/tea/yolo/rev/scripts/` so deploys
+update behavior machine-wide:
+
+- **SessionStart** — if the session's cwd is a repo rev knows
+  (`/api/diff/summary` answers), injects `agent/CLAUDE-rev.md` with the review
+  URL, current diff/comment counts, and the watcher arm command.
+- **Stop** — at every turn boundary, if no live watcher holds the dir, blocks
+  once with the arm command. Self-heals first-arm, re-arm after delivery, and
+  watcher crashes.
+
+Delivery is `scripts/rev-watch.sh`, run by the agent as a background task: it
+long-polls `/api/comments`, debounces a comment burst (10s quiet / 60s cap),
+prints the batch, and exits — which re-invokes the session. A shared per-dir
+cursor in `~/.local/state/rev/` makes delivery at-most-once across sessions.
+Non-Claude agents can use the same API directly (`shared/types.ts`).
 
 ## Caveats (spike)
 
