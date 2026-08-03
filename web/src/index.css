@@ -220,6 +220,27 @@ summary {
   border-radius: 3px;
 }
 
+/* One-shot green radiate when the last file is marked seen. */
+@keyframes progress-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(78 190 104 / 0.5);
+  }
+  100% {
+    box-shadow: 0 0 10px 7px rgb(78 190 104 / 0);
+  }
+}
+
+.progress-pulse {
+  border-radius: 4px;
+  animation: progress-pulse 0.9s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-pulse {
+    animation: none;
+  }
+}
+
 @keyframes overlay-in {
   from {
     opacity: 0;
