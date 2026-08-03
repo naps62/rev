@@ -13,10 +13,14 @@ export function AuthorChip({ author }: { author: Comment["author"] }) {
         aria-hidden
         className={cx(
           "inline-block size-[7px]",
-          user ? "rounded-[1px] bg-accent" : "rounded-full bg-agent",
+          user
+            ? "rounded-[1px] bg-accent"
+            : author === "reviewer"
+              ? "rounded-full bg-reviewer"
+              : "rounded-full bg-agent",
         )}
       />
-      {user ? "you" : "agent"}
+      {user ? "you" : author}
     </span>
   );
 }
