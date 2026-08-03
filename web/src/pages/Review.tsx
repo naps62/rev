@@ -360,9 +360,26 @@ export function Review() {
   }, [diffQ.data]);
 
   const targetTop = (el: HTMLElement) => {
-    const top = el.getBoundingClientRect().top + window.scrollY - HEADER_PX - 8;
+    const rect = el.getBoundingClientRect();
+    // Files shorter than the viewport rest at eye-line (a third of the
+    // leftover space above); the pad shrinks smoothly to the usual 8px as
+    // the file approaches viewport height.
+    const avail = window.innerHeight - HEADER_PX;
+    const pad = Math.max(8, (avail - rect.height) / 3);
+    const top = rect.top + window.scrollY - HEADER_PX - pad;
     const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
     return Math.min(Math.max(top, 0), max);
+  };
+
+  // Instant jump that keeps the spy paused through the resulting scroll
+  // event: an eye-line-placed file sits below the spy's top-anchor line, so
+  // an unswallowed tick would hand focus back to the previous file.
+  const teleport = (top: number, path: string) => {
+    cancelGlide();
+    glidingRef.current = true;
+    window.scrollTo({ top });
+    setCurrentPath(path);
+    animRef.current = requestAnimationFrame(cancelGlide);
   };
 
   /**
@@ -373,12 +390,12 @@ export function Review() {
   const jumpTo = (path: string) => {
     const el = sectionEls.current.get(path);
     if (!el) return;
-    setCurrentPath(path);
-    cancelGlide();
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      window.scrollTo({ top: targetTop(el) });
+      teleport(targetTop(el), path);
       return;
     }
+    setCurrentPath(path);
+    cancelGlide();
     glidingRef.current = true;
     window.addEventListener("wheel", cancelGlide, { once: true, passive: true });
     window.addEventListener("touchstart", cancelGlide, { once: true, passive: true });
@@ -390,7 +407,8 @@ export function Review() {
       const delta = goal - window.scrollY;
       if (Math.abs(delta) < 1) {
         window.scrollTo({ top: goal });
-        cancelGlide();
+        // next frame, after the final scroll event dispatches (swallowed)
+        animRef.current = requestAnimationFrame(cancelGlide);
         return;
       }
       const k = 1 - Math.exp(-(now - last) / TAU_MS);
@@ -415,15 +433,22 @@ export function Review() {
     const attempt = () => {
       const el = document.querySelector<HTMLElement>(sel);
       if (el) {
-        cancelGlide();
-        window.scrollTo({
-          top: el.getBoundingClientRect().top + window.scrollY - HEADER_PX - 80,
-        });
+        // If the whole file fits on screen, place the file at eye-line (the
+        // row is visible either way); otherwise pin the row near the top.
+        const section = sectionEls.current.get(o.path);
+        const fits =
+          section != null &&
+          section.getBoundingClientRect().height < window.innerHeight - HEADER_PX;
+        teleport(
+          fits && section
+            ? targetTop(section)
+            : el.getBoundingClientRect().top + window.scrollY - HEADER_PX - 80,
+          o.path,
+        );
         el.classList.remove("hunk-flash");
         void el.offsetWidth;
         el.classList.add("hunk-flash");
         setTimeout(() => el.classList.remove("hunk-flash"), 1300);
-        setCurrentPath(o.path);
         return;
       }
       if (performance.now() - t0 < 3000) requestAnimationFrame(attempt);
@@ -497,12 +522,7 @@ export function Review() {
         const next =
           fs[e.key === "j" ? Math.min(idx + 1, fs.length - 1) : Math.max(idx - 1, 0)];
         const el = next && sectionEls.current.get(next.path);
-        if (next && el) {
-          window.scrollTo({
-            top: el.getBoundingClientRect().top + window.scrollY - HEADER_PX - 8,
-          });
-          setCurrentPath(next.path);
-        }
+        if (next && el) teleport(targetTop(el), next.path);
       } else if (e.key === "J" || e.key === "K") {
         if (fs.length === 0) return;
         e.preventDefault();
