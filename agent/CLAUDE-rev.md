@@ -1,60 +1,39 @@
 # Code review via rev
 
-An always-on review server runs on this machine at `http://localhost:7373`
-(LAN: same port on the machine's IP). Use it whenever you want the user to
-review changes. Do NOT start a per-review server.
+An always-on review server runs on this machine. Reviews are just URLs —
+never start a per-review server.
 
-## Requesting a review
+This worktree: `{{DIR}}`
+Review URL (hand it to the user whenever you want changes reviewed;
+uncommitted and untracked changes appear live, no commit needed):
 
-No registration step. Build the URL and send it to the user:
+    {{URL}}
 
-```
-http://<host>:7373/review?dir=<url-encoded absolute path of your checkout/worktree>&base=<base ref, e.g. main>
-```
+{{STATUS}}
 
-Uncommitted and untracked changes are included automatically — you don't need
-to commit first, and new commits show up live.
+## Comment watcher
 
-## Waiting for and answering comments
+Arm it now if it isn't already armed this session — via the Bash tool with
+`run_in_background: true`:
 
-Preferred (Claude Code): don't hold a polling loop in your turn. Run the
-watcher in the background — it blocks until a comment arrives, so its
-completion re-invokes you with the new comments in the tool result:
+    {{WATCH}} {{DIR}}
 
-```bash
-# via the Bash tool with run_in_background: true
-~/tea/yolo/rev/scripts/rev-watch.sh "$DIR"
-```
+It blocks until the user leaves review comments, waits for the burst to
+settle, then exits printing the batch as JSON — which re-invokes you. When
+that happens:
 
-Address the comments, reply in-thread (below), then re-arm the watcher.
-Repeat until the user says the review is done.
+1. Address each comment (make the change it asks for).
+2. Reply in-thread, briefly, after the change lands:
 
-Manual alternative (any agent):
+       curl -s -X POST {{HOST}}/api/comments -H 'content-type: application/json' \
+         -d '{"dir":"{{DIR}}","base":"{{BASE}}","parentId":"<root comment id>","author":"agent","body":"..."}'
 
-Comments are stored server-side. Poll with a cursor (`seq`), long-polling so
-you don't spin:
-
-```bash
-curl -s "http://localhost:7373/api/comments?dir=$DIR&since=$CURSOR&wait=1"
-# → { "comments": [...], "cursor": <new seq> }
-```
-
-Start with `since=0` (or the cursor from before you asked for the review),
-then repeat with the returned cursor. New comments from the user have
-`"author": "user"`; each has an `anchor` (file/side/line/snippet) or is a
-review-level note.
-
-Reply in-thread (`parentId` = the root comment's id):
-
-```bash
-curl -s -X POST http://localhost:7373/api/comments \
-  -H 'content-type: application/json' \
-  -d '{"dir":"'$DIR'","base":"main","parentId":"<id>","author":"agent","body":"Fixed in the working tree — the check now happens before the write."}'
-```
+3. Re-arm the watcher (same command as above).
 
 Rules:
-- Reply to every comment you act on, briefly, after making the change. The
-  user sees replies and file changes in realtime — no need to announce edits.
-- Never mark threads resolved; resolving is the user's call
-  (you may PATCH only your own comment bodies).
-- Keep polling until the user says the review is done.
+- Reply to every comment you act on. The user sees replies and file changes
+  in realtime — no need to announce edits in chat.
+- Never mark threads resolved; resolving is the user's call (you may PATCH
+  only your own comment bodies).
+- Keep the watcher armed until the user says the review is done. If it dies,
+  a Stop hook will remind you to re-arm.

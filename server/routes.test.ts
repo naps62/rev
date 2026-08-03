@@ -178,6 +178,12 @@ describe("routes", () => {
 
   // Cold-scans every fixture repo accumulated in the scratchpad, so it needs
   // far more than the 5s default under a loaded machine.
+  test("comments: reviewer author accepted", async () => {
+    const dir = makeRepo("routes-reviewer");
+    const res = await json("POST", "/comments", { dir, base: "main", author: "reviewer", body: "nit" });
+    expect(res.status).toBe(201);
+  });
+
   test("rescan broadcasts repos-changed", { timeout: 30_000 }, async () => {
     sent.length = 0;
     const res = await app.request("/repos/rescan", { method: "POST" });
