@@ -22,9 +22,12 @@ LOCK_FILE="$REV_STATE/$KEY.lock"
 PID_FILE="$REV_STATE/$KEY.pid"
 
 printf '%s %s\n' "$$" "$DIR" >"$PID_FILE"
+HELD_LOCK=""
 cleanup() {
+  [[ -n "$HELD_LOCK" ]] && rev_unlock "$HELD_LOCK" || true
   [[ "$(cut -d' ' -f1 "$PID_FILE" 2>/dev/null)" == "$$" ]] && rm -f "$PID_FILE" || true
 }
+release_lock() { [[ -n "$HELD_LOCK" ]] && { rev_unlock "$HELD_LOCK"; HELD_LOCK=""; } || true; }
 trap cleanup EXIT
 
 # Reparented to init = the arming session is gone; exiting would re-invoke
@@ -54,8 +57,7 @@ backoff=2
 bump_backoff() { sleep "$backoff"; backoff=$(( backoff >= 60 ? 60 : backoff * 2 )); }
 
 if [[ -z "$CURSOR" ]]; then
-  exec 9>"$LOCK_FILE"
-  flock 9
+  rev_lock "$LOCK_FILE" && HELD_LOCK="$LOCK_FILE" || true
   if [[ -s "$CURSOR_FILE" ]]; then
     CURSOR=$(<"$CURSOR_FILE")
   else
@@ -67,7 +69,7 @@ if [[ -z "$CURSOR" ]]; then
     CURSOR=$(printf '%s' "$resp" | jfield cursor)
     printf '%s\n' "$CURSOR" >"$CURSOR_FILE"
   fi
-  flock -u 9
+  release_lock
 fi
 
 backoff=2
@@ -98,10 +100,9 @@ done
 
 orphaned && exit 0
 NEW_CURSOR=$(printf '%s' "$final" | jfield cursor)
-exec 9>"$LOCK_FILE"
-flock 9
+rev_lock "$LOCK_FILE" && HELD_LOCK="$LOCK_FILE" || true
 printf '%s\n' "$NEW_CURSOR" >"$CURSOR_FILE"
-flock -u 9
+release_lock
 
 # Best-effort delivery ack: flips the batch to "picked up" in the UI.
 ack=$(python3 -c 'import json,sys; print(json.dumps({"dir": sys.argv[1], "upTo": int(sys.argv[2])}))' "$DIR" "$NEW_CURSOR") &&

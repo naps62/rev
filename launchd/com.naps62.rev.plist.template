@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- macOS counterpart of systemd/rev.service. Placeholders are substituted
+     by scripts/install-service.sh; launchd needs absolute paths, so it
+     cannot be loaded as-is. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.naps62.rev</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>@NODE@</string>
+        <string>server/index.ts</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>@CHECKOUT@</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- launchd agents inherit a bare PATH; the server shells out to git. -->
+        <key>PATH</key>
+        <string>@PATH@</string>
+        <key>NODE_ENV</key>
+        <string>production</string>
+        <key>REV_ROOTS</key>
+        <string>@HOME@</string>
+        <key>REV_DEPTH</key>
+        <string>3</string>
+        <key>REV_SEM_BIN</key>
+        <string>@HOME@/.local/bin/sem</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>2</integer>
+
+    <key>StandardOutPath</key>
+    <string>@HOME@/Library/Logs/rev.log</string>
+    <key>StandardErrorPath</key>
+    <string>@HOME@/Library/Logs/rev.log</string>
+</dict>
+</plist>

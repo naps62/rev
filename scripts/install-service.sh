@@ -1,19 +1,135 @@
 #!/usr/bin/env bash
-# Build the web UI and install rev as a systemd user service.
+# Build the web UI and install rev as an always-on user service:
+# systemd on Linux, launchd on macOS. Idempotent — safe to re-run after a
+# git pull to pick up changes. Pass --no-hooks to skip the Claude Code hooks.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+CHECKOUT=$PWD
+
+WITH_HOOKS=1
+[[ "${1:-}" == "--no-hooks" ]] && WITH_HOOKS=0
+
+PORT="${REV_PORT:-7373}"
+LABEL=com.naps62.rev
+
+die() { printf 'install: %s\n' "$1" >&2; exit 1; }
+
+# ---------------------------------------------------------------- preflight
+
+need() { command -v "$1" >/dev/null 2>&1 || die "$1 not found. $2"; }
+
+need git "Install Xcode Command Line Tools (xcode-select --install) or your distro's git."
+need node "Install Node (https://nodejs.org, 'brew install node', or nvm)."
+need python3 "Install Python 3 (Xcode Command Line Tools provide it on macOS)."
+
+# package.json declares node >=26; the server runs .ts directly and uses
+# node:sqlite, neither of which works on older majors.
+NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
+(( NODE_MAJOR >= 26 )) || die "node $NODE_MAJOR found, need >= 26. Try 'brew upgrade node' or 'nvm install 26'."
+
+if ! command -v pnpm >/dev/null 2>&1; then
+  corepack enable >/dev/null 2>&1 ||
+    die "pnpm not found and 'corepack enable' failed. Install pnpm: npm i -g pnpm"
+  command -v pnpm >/dev/null 2>&1 || die "pnpm still not on PATH after 'corepack enable'."
+fi
+
+# A foreign process on the port would make the service flap on restart.
+if curl -sf --max-time 2 "http://localhost:$PORT/api/repos" >/dev/null 2>&1; then
+  echo "install: something already answers on :$PORT (an older rev? it will be replaced)"
+elif command -v lsof >/dev/null 2>&1 && lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  die "port $PORT is taken by another process. Free it, or set REV_PORT."
+fi
+
+# -------------------------------------------------------------------- build
 
 pnpm install
 pnpm run build
 
-mkdir -p ~/.config/systemd/user
-cp systemd/rev.service ~/.config/systemd/user/rev.service
-systemctl --user daemon-reload
-systemctl --user enable --now rev.service
-# survive logout
-loginctl enable-linger "$USER" >/dev/null 2>&1 || true
+# ------------------------------------------------------------------ service
 
-sleep 1
-systemctl --user --no-pager status rev.service || true
+lan_ip() {
+  local ip
+  if command -v ipconfig >/dev/null 2>&1; then   # macOS
+    for i in en0 en1 en2; do
+      ip=$(ipconfig getifaddr "$i" 2>/dev/null) && [[ -n "$ip" ]] && { printf '%s' "$ip"; return; }
+    done
+  fi
+  ip=$(hostname -I 2>/dev/null | awk '{print $1}') || true
+  printf '%s' "${ip:-localhost}"
+}
+
+install_launchd() {
+  local plist="$HOME/Library/LaunchAgents/$LABEL.plist"
+  local uid; uid=$(id -u)
+
+  mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+
+  NODE=$(command -v node) CHECKOUT="$CHECKOUT" HOME="$HOME" \
+  TEMPLATE="$CHECKOUT/launchd/$LABEL.plist.template" OUT="$plist" \
+  python3 <<'PY'
+import os
+from xml.sax.saxutils import escape
+
+env = os.environ
+node = env["NODE"]
+# Homebrew and nvm live outside launchd's default PATH.
+dirs = [os.path.dirname(node), "/opt/homebrew/bin", "/usr/local/bin",
+        "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+path = ":".join(dict.fromkeys(dirs))
+subs = {"@NODE@": node, "@CHECKOUT@": env["CHECKOUT"],
+        "@HOME@": env["HOME"], "@PATH@": path}
+
+with open(env["TEMPLATE"]) as f:
+    text = f.read()
+for k, v in subs.items():
+    text = text.replace(k, escape(v))
+with open(env["OUT"], "w") as f:
+    f.write(text)
+print(f"wrote {env['OUT']}")
+PY
+
+  # bootout first so a re-run picks up a changed plist; ignore "not loaded".
+  launchctl bootout "gui/$uid/$LABEL" 2>/dev/null || true
+  launchctl bootstrap "gui/$uid" "$plist" ||
+    launchctl load -w "$plist"   # older macOS
+  launchctl kickstart -k "gui/$uid/$LABEL" 2>/dev/null || true
+
+  echo "logs: $HOME/Library/Logs/rev.log  (launchctl print gui/$uid/$LABEL for status)"
+}
+
+install_systemd() {
+  mkdir -p ~/.config/systemd/user
+  cp systemd/rev.service ~/.config/systemd/user/rev.service
+  systemctl --user daemon-reload
+  systemctl --user enable --now rev.service
+  systemctl --user restart rev.service
+  # survive logout
+  loginctl enable-linger "$USER" >/dev/null 2>&1 || true
+  systemctl --user --no-pager status rev.service || true
+}
+
+case "$(uname -s)" in
+  Darwin) install_launchd ;;
+  Linux)  install_systemd ;;
+  *)      die "unsupported OS $(uname -s); run 'pnpm start' yourself." ;;
+esac
+
+# -------------------------------------------------------------------- hooks
+
+if (( WITH_HOOKS )); then
+  REV_CHECKOUT="$CHECKOUT" ./scripts/install-hooks.sh
+fi
+
+# ------------------------------------------------------------------- verify
+
+for _ in $(seq 1 20); do
+  curl -sf --max-time 2 "http://localhost:$PORT/api/repos" >/dev/null 2>&1 && break
+  sleep 1
+done
+
 echo
-echo "rev is up: http://$(hostname -I | awk '{print $1}'):${REV_PORT:-7373}"
+if curl -sf --max-time 2 "http://localhost:$PORT/api/repos" >/dev/null 2>&1; then
+  echo "rev is up: http://$(lan_ip):$PORT"
+else
+  die "service installed but nothing answers on :$PORT yet — check the logs above."
+fi

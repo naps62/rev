@@ -5,8 +5,43 @@
 REV_HOST="${REV_HOST:-http://localhost:7373}"
 REV_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/rev"
 
+# macOS ships neither sha256sum nor flock, and BSD stat takes different
+# flags; everything below keeps the hooks working on both platforms.
+
+if command -v sha256sum >/dev/null 2>&1; then
+  rev_sha256() { sha256sum; }
+else
+  rev_sha256() { shasum -a 256; }
+fi
+
+# mtime as a unix timestamp. GNU stat vs BSD stat.
+if stat -c %Y . >/dev/null 2>&1; then
+  rev_mtime() { stat -c %Y "$1"; }
+else
+  rev_mtime() { stat -f %m "$1"; }
+fi
+
 # Stable short key for a worktree path; names all per-dir state files.
-rev_key() { printf '%s' "$1" | sha256sum | cut -c1-16; }
+rev_key() { printf '%s' "$1" | rev_sha256 | cut -c1-16; }
+
+# Advisory lock around $1, blocking up to $2 seconds (default 30); nonzero
+# on timeout. A dead holder's lock is stolen via mv, not rm: two racing
+# stealers would otherwise both win and delete each other's fresh lock.
+rev_lock() {
+  local d="$1.d" max="${2:-30}" waited=0 holder
+  while ! mkdir "$d" 2>/dev/null; do
+    holder=$(cat "$d/pid" 2>/dev/null || true)
+    if [[ -n "$holder" ]] && ! kill -0 "$holder" 2>/dev/null; then
+      mv "$d" "$d.stale.$$" 2>/dev/null && rm -rf "$d.stale.$$"
+      continue
+    fi
+    (( waited++ >= max )) && return 1
+    sleep 1
+  done
+  printf '%s' "$$" >"$d/pid"
+}
+
+rev_unlock() { rm -rf "$1.d"; }
 
 # Worktree root for a cwd, empty + nonzero if not a git repo.
 rev_root() { git -C "$1" rev-parse --show-toplevel 2>/dev/null; }
@@ -37,5 +72,5 @@ rev_watcher_alive() {
   [[ -f "$pf" ]] || return 1
   pid=$(cut -d' ' -f1 "$pf")
   [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null &&
-    grep -q rev-watch "/proc/$pid/cmdline" 2>/dev/null
+    ps -o command= -p "$pid" 2>/dev/null | grep -q rev-watch
 }

@@ -25,7 +25,7 @@ if rev_watcher_alive "$root"; then
 fi
 
 # Don't nag every turn if arming keeps failing; retry after 10 minutes.
-if [[ -f "$flag" ]] && (( $(date +%s) - $(stat -c %Y "$flag") < 600 )); then
+if [[ -f "$flag" ]] && (( $(date +%s) - $(rev_mtime "$flag") < 600 )); then
   exit 0
 fi
 touch "$flag"

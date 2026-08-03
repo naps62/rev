@@ -8,6 +8,42 @@ in-place edits.
 
 Design: `docs/ARCHITECTURE.md`.
 
+## Install
+
+Needs Node >= 26, pnpm, git and python3.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/naps62/rev/main/scripts/bootstrap.sh | bash
+```
+
+Clones to `~/rev`, builds the UI, installs an always-on user service (systemd
+on Linux, launchd on macOS), and wires the Claude Code hooks into
+`~/.claude/settings.json`. Idempotent — re-run the same line to update.
+
+To read it before running it, or to pass options:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/naps62/rev/main/scripts/bootstrap.sh -o rev-install.sh
+less rev-install.sh && bash rev-install.sh --no-hooks
+```
+
+| Env | Default | |
+|---|---|---|
+| `REV_DIR` | `~/rev` | Where to clone |
+| `REV_REPO` | `https://github.com/naps62/rev.git` | Clone URL (public mirror of the Gitea repo); use the SSH form if you authenticate that way |
+| `REV_REF` | `main` | Branch |
+
+Already cloned? `./scripts/install-service.sh` is the same thing without the
+clone step. `--no-hooks` skips the hook wiring.
+
+On macOS the first start triggers the firewall's "accept incoming
+connections?" prompt; allow it, or the server works locally but not from
+other machines on the LAN.
+
+To remove: `launchctl bootout gui/$(id -u)/com.naps62.rev` (macOS) or
+`systemctl --user disable --now rev.service` (Linux), then drop the hook
+entries from `~/.claude/settings.json`.
+
 ## Run
 
 ```bash
@@ -16,11 +52,8 @@ pnpm install
 # dev (vite on :5173 proxying to the server on :7373)
 pnpm dev
 
-# production
+# production, no service
 pnpm build && pnpm start
-
-# always-on (systemd user service + linger)
-./scripts/install-service.sh
 ```
 
 Open `http://<machine-ip>:7373`. A review is just a URL:
