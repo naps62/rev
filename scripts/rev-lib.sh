@@ -46,11 +46,26 @@ rev_unlock() { rm -rf "$1.d"; }
 # Worktree root for a cwd, empty + nonzero if not a git repo.
 rev_root() { git -C "$1" rev-parse --show-toplevel 2>/dev/null; }
 
-# Default-branch guess: origin/HEAD, falling back to main.
+# Base-ref candidates for a worktree, best first, one per line. Empty and
+# nonzero when the server is unreachable or the repo is unknown to it.
+rev_refs() {
+  curl -sfG --max-time 2 "$REV_URL/api/refs" --data-urlencode "dir=$1" 2>/dev/null |
+    python3 -c 'import json,sys; print("\n".join(json.load(sys.stdin)["refs"]))' 2>/dev/null
+}
+
+# Ref reviews should default to. The server picks among main/master/origin/*
+# by newest merge-base with HEAD, so a stale local main can't drag its whole
+# history into the review; guessing from origin/HEAD is the offline fallback.
 rev_base() {
-  local ref
-  ref=$(git -C "$1" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) &&
-    { printf '%s' "${ref#origin/}"; return; }
+  local refs ref
+  if refs=$(rev_refs "$1"); then
+    ref=${refs%%$'\n'*}
+    if [[ -n "$ref" ]]; then printf '%s' "$ref"; return; fi
+  fi
+  if ref=$(git -C "$1" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null); then
+    printf '%s' "$ref"
+    return
+  fi
   printf 'main'
 }
 
@@ -60,9 +75,7 @@ rev_known() {
   local dir="$1" marker="$REV_STATE/$(rev_key "$1").known"
   [[ -f "$marker" ]] && return 0
   mkdir -p "$REV_STATE"
-  curl -sfG --max-time 2 "$REV_URL/api/diff/summary" \
-    --data-urlencode "dir=$dir" --data-urlencode "base=$(rev_base "$dir")" \
-    >"$marker.tmp" 2>/dev/null || { rm -f "$marker.tmp"; return 1; }
+  rev_refs "$dir" >"$marker.tmp" 2>/dev/null || { rm -f "$marker.tmp"; return 1; }
   mv "$marker.tmp" "$marker"
 }
 

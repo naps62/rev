@@ -49,7 +49,8 @@ if nfiles or nthreads:
 else:
     status = f"No diff against {base} yet."
 
-url = f"{host}/review?dir={urllib.parse.quote(root, safe='')}&base={base}"
+url = (f"{host}/review?dir={urllib.parse.quote(root, safe='')}"
+       f"&base={urllib.parse.quote(base, safe='')}")
 text = open(env["TEMPLATE"]).read()
 for k, v in {"DIR": root, "URL": url, "HOST": host, "BASE": base,
              "WATCH": env["WATCH"], "STATUS": status}.items():
