@@ -352,7 +352,7 @@ export function Repos() {
         </div>
       </AppHeader>
 
-      <div className="w-full px-4 pb-8 pt-4 max-sm:px-2">
+      <div className="w-full px-2 pb-8 pt-2">
         {scopes.length > 1 && (
           <nav aria-label="Project scope" className="mb-3 flex items-end gap-1 border-b border-edge">
             {scopes.map((s) => (
