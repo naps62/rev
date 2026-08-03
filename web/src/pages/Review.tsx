@@ -756,7 +756,7 @@ export function Review() {
           </div>
         </CenterPanel>
       ) : diffQ.isPending ? (
-        <div className="w-full px-4 py-4">
+        <div className="w-full px-4 py-4 max-sm:px-0 max-sm:py-2">
           <div className="animate-pulse space-y-3">
             {[0, 1, 2].map((i) => (
               <div key={i} className="rounded-md border border-edge bg-panel">
@@ -774,7 +774,7 @@ export function Review() {
           </p>
         </CenterPanel>
       ) : (
-        <div className="flex w-full items-start gap-4 px-4 py-4">
+        <div className="flex w-full items-start gap-4 px-4 py-4 max-sm:px-0 max-sm:py-2">
           <aside
             className="sticky hidden w-72 shrink-0 overflow-y-auto rounded-md border border-edge bg-panel md:block"
             style={{ top: HEADER_PX + 12, maxHeight: `calc(100vh - ${HEADER_PX + 24}px)` }}
@@ -842,7 +842,7 @@ export function Review() {
               </Fragment>
             ))}
 
-            <section className="rounded-md border border-edge bg-panel">
+            <section className="rounded-md border border-edge bg-panel max-sm:rounded-none max-sm:border-x-0">
               <h2 className="border-b border-edge-soft px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-mute">
                 Review notes
               </h2>
@@ -919,7 +919,7 @@ function ClassSectionHeader({
   const allSeen = files.length > 0 && files.every((f) => f.seen);
   const someSeen = files.some((f) => f.seen);
   return (
-    <div className="mt-2 flex items-center gap-2.5 px-1 first:mt-0">
+    <div className="mt-2 flex items-center gap-2.5 px-1 first:mt-0 max-sm:px-2">
       <Checkbox
         checked={allSeen}
         indeterminate={someSeen && !allSeen}
@@ -956,7 +956,7 @@ function ClassSectionHeader({
 
 function CenterPanel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto mt-24 w-full max-w-md rounded-md border border-edge bg-panel px-6 py-6 text-center">
+    <div className="mx-auto mt-24 w-full max-w-md rounded-md border border-edge bg-panel px-6 py-6 text-center max-sm:mx-4 max-sm:w-auto">
       {children}
     </div>
   );

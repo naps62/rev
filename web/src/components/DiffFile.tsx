@@ -531,7 +531,7 @@ export function DiffFile({
       rows.push(
         split ? (
           <tr key={`h${hi}`} ref={(el) => hunkRef?.(hi, el)}>
-            <td colSpan={4} className="bg-raise/50 py-1 pl-7 font-mono text-[11px] text-faint">
+            <td colSpan={4} className="bg-raise/50 py-1 pl-7 font-mono text-[11px] text-faint max-sm:pl-2">
               @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
               {hunk.header ? <span className="text-mute"> {hunk.header}</span> : null}
             </td>
@@ -539,7 +539,7 @@ export function DiffFile({
         ) : (
           <tr key={`h${hi}`} ref={(el) => hunkRef?.(hi, el)}>
             <td colSpan={2} className="select-none border-r border-edge-soft bg-raise/50" />
-            <td className="bg-raise/50 py-1 pl-7 font-mono text-[11px] text-faint">
+            <td className="bg-raise/50 py-1 pl-7 font-mono text-[11px] text-faint max-sm:pl-2">
               @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
               {hunk.header ? <span className="text-mute"> {hunk.header}</span> : null}
             </td>
@@ -786,7 +786,7 @@ export function DiffFile({
       className={cx(
         // No overflow-hidden here: it would turn the section into the sticky
         // header's scrollport and pin it 48px into the card.
-        "rounded-md border bg-panel",
+        "rounded-md border bg-panel max-sm:rounded-none max-sm:border-x-0",
         isCurrent ? "border-accent/50" : "border-edge",
         flash && "stale-flash",
       )}
@@ -794,8 +794,8 @@ export function DiffFile({
       <header
         onClick={() => !editing && toggleOpen()}
         className={cx(
-          "sticky top-12 z-10 flex min-w-0 items-center gap-2.5 rounded-t-[5px] bg-raise px-2 py-1.5",
-          showBody ? "border-b border-edge-soft" : "rounded-b-[5px]",
+          "sticky top-12 z-10 flex min-w-0 items-center gap-2.5 rounded-t-[5px] bg-raise px-2 py-1.5 max-sm:rounded-none",
+          showBody ? "border-b border-edge-soft" : "rounded-b-[5px] max-sm:rounded-none",
           !editing && "cursor-pointer",
         )}
       >
@@ -895,7 +895,7 @@ export function DiffFile({
       </header>
 
       <div className="file-body" data-open={open || undefined}>
-      <div className="min-h-0 overflow-hidden rounded-b-[5px]">
+      <div className="min-h-0 overflow-hidden rounded-b-[5px] max-sm:rounded-none">
       {showBody && !editing && file.stale && interQ.data != null && (
         <div className="flex items-baseline gap-2 border-b border-edge-soft bg-accent-soft/60 px-3 py-1 font-mono text-[11px] text-mute">
           {deltaActive ? (
@@ -1269,11 +1269,11 @@ function LineRow({
         fold?.hot && "fold-hot",
       )}
     >
-      <td className="relative select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+      <td className="relative select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums max-sm:px-1">
         {fold && <FoldRailSeg fold={fold} />}
         {line.oldLine ?? ""}
       </td>
-      <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+      <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums max-sm:px-1">
         {line.newLine ?? ""}
       </td>
       <td
@@ -1281,7 +1281,7 @@ function LineRow({
         data-side={line.kind === "del" ? "old" : "new"}
         onClick={onSym ? (e) => onSym.click(e, line.text) : undefined}
         onMouseMove={onSym ? (e) => onSym.hover(e, line.text) : undefined}
-        className="relative whitespace-pre-wrap break-all py-0 pl-5 pr-4 align-top font-mono text-[12.5px] leading-[1.7] text-fg"
+        className="relative whitespace-pre-wrap break-all py-0 pl-5 pr-4 align-top font-mono text-[12.5px] leading-[1.7] text-fg max-sm:pl-2 max-sm:pr-2"
       >
         <button
           type="button"
@@ -1326,12 +1326,12 @@ function SplitRow({
       .join(" ") || undefined;
   return (
     <tr data-lk={lk} className={cx(fold?.hot && "fold-hot")}>
-      <td className="relative select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+      <td className="relative select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums max-sm:px-1">
         {fold && <FoldRailSeg fold={fold} />}
         {left?.line.oldLine ?? ""}
       </td>
       <SplitCell slot={left} isLeft tokens={tokens} spans={spans} onComment={onCommentLeft} onSym={onSym} />
-      <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums">
+      <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums max-sm:px-1">
         {right?.line.newLine ?? ""}
       </td>
       <SplitCell slot={right} isLeft={false} tokens={tokens} spans={spans} onComment={onCommentRight} onSym={onSym} />
@@ -1367,7 +1367,7 @@ function SplitCell({
       onClick={onSym ? (e) => onSym.click(e, line.text) : undefined}
       onMouseMove={onSym ? (e) => onSym.hover(e, line.text) : undefined}
       className={cx(
-        "group/cell relative whitespace-pre-wrap break-all py-0 pl-5 pr-3 align-top font-mono text-[12.5px] leading-[1.7] text-fg",
+        "group/cell relative whitespace-pre-wrap break-all py-0 pl-5 pr-3 align-top font-mono text-[12.5px] leading-[1.7] text-fg max-sm:pl-2 max-sm:pr-1",
         line.kind === "add" && "bg-add-soft",
         line.kind === "del" && "bg-del-soft",
         isLeft && "border-r border-edge-soft",
