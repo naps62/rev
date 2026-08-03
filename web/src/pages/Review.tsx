@@ -22,6 +22,7 @@ import { Composer } from "../components/Composer";
 import { DiffFile, type DiffMode } from "../components/DiffFile";
 import { FileNav } from "../components/FileNav";
 import { HelpOverlay } from "../components/HelpOverlay";
+import { LayoutToggle } from "../components/LayoutToggle";
 import { LiveDot } from "../components/LiveDot";
 import { Checkbox } from "../components/Checkbox";
 import { SymbolPanel } from "../components/SymbolPanel";
@@ -658,31 +659,7 @@ export function Review() {
               sem
             </span>
           )}
-          <div
-            role="radiogroup"
-            aria-label="Diff layout"
-            className="hidden self-stretch divide-x divide-edge border-x border-edge sm:flex"
-          >
-            {(["unified", "split"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                aria-pressed={mode === m}
-                className={cx(
-                  "relative flex items-center px-3 font-mono text-[12px] transition-colors duration-150",
-                  mode === m
-                    ? "bg-accent-soft text-accent"
-                    : "text-mute hover:bg-raise/60 hover:text-fg",
-                )}
-              >
-                {m}
-                {mode === m && (
-                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" />
-                )}
-              </button>
-            ))}
-          </div>
+          <LayoutToggle mode={mode} onChange={setMode} />
           {files.length > 0 && (
             <>
               <span className="hidden font-mono text-[11.5px] tabular-nums text-mute sm:inline">
