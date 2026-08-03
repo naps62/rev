@@ -540,93 +540,95 @@ export function Review() {
   return (
     <div className="min-h-screen">
       <AppHeader>
+        <div className="flex min-w-0 flex-1 basis-0 items-center gap-3 md:min-w-fit">
         <span className="text-faint max-sm:hidden">/</span>
-        <span
-          className="max-w-56 shrink-0 truncate text-[13px] font-medium text-fg max-sm:max-w-24"
-          title={dir}
-        >
-          {diffQ.data
-            ? diffQ.data.branch ?? `detached @ ${shortSha(diffQ.data.head)}`
-            : dir
-              ? basename(dir)
-              : "review"}
-        </span>
-        <span className="text-faint max-sm:hidden">→</span>
-        <form
-          className="shrink-0"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const v = baseInput.trim();
-            if (v && v !== base) navigate(api.href("/review", { dir, base: v }));
-          }}
-        >
-          <input
-            value={baseInput}
-            onChange={(e) => setBaseInput(e.target.value)}
-            spellCheck={false}
-            aria-label="Base ref"
-            title="Base ref — press Enter to re-diff"
-            list="base-refs"
-            className="w-24 rounded-sm border border-edge bg-bg px-1.5 py-0.5 font-mono text-[12px] text-fg focus:border-accent/60 focus:outline-none max-sm:w-16"
-          />
-          <datalist id="base-refs">
-            {(refsQ.data?.refs ?? []).map((r) => (
-              <option key={r} value={r} />
-            ))}
-          </datalist>
-        </form>
-        {diffQ.data && (
           <span
-            className="hidden text-[11px] text-faint md:inline"
-            title={diffQ.data.mergeBase}
+            className="max-w-56 shrink-0 truncate text-[13px] font-medium text-fg max-sm:max-w-24"
+            title={dir}
           >
-            merge-base {shortSha(diffQ.data.mergeBase)}
+            {diffQ.data
+              ? diffQ.data.branch ?? `detached @ ${shortSha(diffQ.data.head)}`
+              : dir
+                ? basename(dir)
+                : "review"}
           </span>
-        )}
-        {diffQ.data != null &&
-          diffQ.data.baseBehind != null &&
-          diffQ.data.baseBehind > 0 && (
-            <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
-              <span className="font-mono text-[11px] text-accent">
-                base {diffQ.data.baseBehind} behind origin
-              </span>
-              <button
-                type="button"
-                onClick={() => fetchMut.mutate()}
-                disabled={fetchMut.isPending}
-                title={`git fetch ${base}'s upstream, then re-diff`}
-                className="rounded-sm border border-accent/40 px-1.5 py-px font-mono text-[11px] text-accent transition-colors duration-150 hover:bg-accent hover:text-bg disabled:cursor-default disabled:border-edge disabled:bg-transparent disabled:text-faint"
-              >
-                {fetchMut.isPending ? "fetching…" : "fetch"}
-              </button>
-              {fetchMut.error != null && (
-                <span
-                  className="max-w-44 truncate text-[11px] text-del"
-                  title={(fetchMut.error as Error).message}
-                >
-                  {(fetchMut.error as Error).message}
-                </span>
-              )}
+          <span className="text-faint max-sm:hidden">→</span>
+          <form
+            className="shrink-0"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const v = baseInput.trim();
+              if (v && v !== base) navigate(api.href("/review", { dir, base: v }));
+            }}
+          >
+            <input
+              value={baseInput}
+              onChange={(e) => setBaseInput(e.target.value)}
+              spellCheck={false}
+              aria-label="Base ref"
+              title="Base ref — press Enter to re-diff"
+              list="base-refs"
+              className="w-24 rounded-sm border border-edge bg-bg px-1.5 py-0.5 font-mono text-[12px] text-fg focus:border-accent/60 focus:outline-none max-sm:w-16"
+            />
+            <datalist id="base-refs">
+              {(refsQ.data?.refs ?? []).map((r) => (
+                <option key={r} value={r} />
+              ))}
+            </datalist>
+          </form>
+          {diffQ.data && (
+            <span
+              className="hidden whitespace-nowrap text-[11px] text-faint md:inline"
+              title={diffQ.data.mergeBase}
+            >
+              merge-base {shortSha(diffQ.data.mergeBase)}
             </span>
           )}
-        {files.length > 0 && (
-          <select
-            value={currentPath ?? ""}
-            onChange={(e) => jumpTo(e.target.value)}
-            aria-label="Jump to file"
-            className="min-w-0 flex-1 rounded-sm border border-edge bg-bg px-1 py-0.5 font-mono text-[11px] text-fg md:hidden"
-          >
-            {files.map((f) => (
-              <option key={f.path} value={f.path}>
-                {f.path}
-              </option>
-            ))}
-          </select>
-        )}
+          {diffQ.data != null &&
+            diffQ.data.baseBehind != null &&
+            diffQ.data.baseBehind > 0 && (
+              <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
+                <span className="font-mono text-[11px] text-accent">
+                  base {diffQ.data.baseBehind} behind origin
+                </span>
+                <button
+                  type="button"
+                  onClick={() => fetchMut.mutate()}
+                  disabled={fetchMut.isPending}
+                  title={`git fetch ${base}'s upstream, then re-diff`}
+                  className="rounded-sm border border-accent/40 px-1.5 py-px font-mono text-[11px] text-accent transition-colors duration-150 hover:bg-accent hover:text-bg disabled:cursor-default disabled:border-edge disabled:bg-transparent disabled:text-faint"
+                >
+                  {fetchMut.isPending ? "fetching…" : "fetch"}
+                </button>
+                {fetchMut.error != null && (
+                  <span
+                    className="max-w-44 truncate text-[11px] text-del"
+                    title={(fetchMut.error as Error).message}
+                  >
+                    {(fetchMut.error as Error).message}
+                  </span>
+                )}
+              </span>
+            )}
+          {files.length > 0 && (
+            <select
+              value={currentPath ?? ""}
+              onChange={(e) => jumpTo(e.target.value)}
+              aria-label="Jump to file"
+              className="min-w-0 flex-1 rounded-sm border border-edge bg-bg px-1 py-0.5 font-mono text-[11px] text-fg md:hidden"
+            >
+              {files.map((f) => (
+                <option key={f.path} value={f.path}>
+                  {f.path}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
         {files.length > 0 && (
           <ReviewProgress files={files} currentPath={currentPath} onJump={jumpTo} />
         )}
-        <div className="ml-auto flex items-center gap-3 self-stretch">
+        <div className="flex min-w-0 flex-1 basis-0 items-center justify-end gap-3 self-stretch md:min-w-fit">
           <FeatureMenu features={features} onChange={setFeatures} />
           <LayoutToggle mode={mode} onChange={setMode} />
           <LiveDot status={wsStatus} />
