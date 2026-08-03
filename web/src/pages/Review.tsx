@@ -23,6 +23,7 @@ import { DiffFile, type DiffMode } from "../components/DiffFile";
 import { FileNav } from "../components/FileNav";
 import { HelpOverlay } from "../components/HelpOverlay";
 import { LayoutToggle } from "../components/LayoutToggle";
+import { ViewToggle } from "../components/ViewToggle";
 import { LiveDot } from "../components/LiveDot";
 import { Checkbox } from "../components/Checkbox";
 import { SymbolPanel } from "../components/SymbolPanel";
@@ -626,31 +627,7 @@ export function Review() {
           </select>
         )}
         <div className="ml-auto flex items-center gap-3 self-stretch">
-          <div
-            role="radiogroup"
-            aria-label="Review view"
-            className="hidden self-stretch divide-x divide-edge border-x border-edge sm:flex"
-          >
-            {(["classic", "semantic"] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setView(v)}
-                aria-pressed={view === v}
-                className={cx(
-                  "relative flex items-center px-3 font-mono text-[12px] transition-colors duration-150",
-                  view === v
-                    ? "bg-accent-soft text-accent"
-                    : "text-mute hover:bg-raise/60 hover:text-fg",
-                )}
-              >
-                {v}
-                {view === v && (
-                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" />
-                )}
-              </button>
-            ))}
-          </div>
+          <ViewToggle view={view} onChange={setView} />
           {view === "semantic" && semQ.data?.available && (
             <span
               className="hidden rounded-sm border border-accent/40 px-1 font-mono text-[10px] text-accent sm:inline"
