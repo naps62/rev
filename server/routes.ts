@@ -296,9 +296,9 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       typeof b.base !== "string" ||
       typeof b.body !== "string" ||
       b.body.trim() === "" ||
-      (b.author !== "user" && b.author !== "agent")
+      (b.author !== "user" && b.author !== "agent" && b.author !== "reviewer")
     ) {
-      return c.json({ error: "dir, base, author (user|agent), non-empty body are required" }, 400);
+      return c.json({ error: "dir, base, author (user|agent|reviewer), non-empty body are required" }, 400);
     }
     if (b.parentId !== undefined && typeof b.parentId !== "string") {
       return c.json({ error: "parentId must be a string" }, 400);

@@ -252,7 +252,7 @@ export interface FileWriteRequest {
 // Comments
 // ---------------------------------------------------------------------------
 
-export type Author = "user" | "agent";
+export type Author = "user" | "agent" | "reviewer";
 
 export interface CommentAnchor {
   /** Repo-relative path the comment is attached to. */
