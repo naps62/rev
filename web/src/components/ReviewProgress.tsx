@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FileSummary } from "#shared/types";
+import { DiffStat } from "./DiffStat";
 
 /** Above this many files per-file segments get too thin to read or click. */
 const SEGMENT_LIMIT = 48;
@@ -148,10 +149,11 @@ export function ReviewProgress({
         </span>
       )}
 
-      <span className="shrink-0 whitespace-nowrap font-mono text-[11.5px] tabular-nums max-sm:hidden">
-        <span className="text-add">+{totals.add}</span>{" "}
-        <span className="text-del">−{totals.del}</span>
-      </span>
+      {totals.add + totals.del > 0 && (
+        <span className="shrink-0 whitespace-nowrap font-mono text-[11.5px] tabular-nums max-sm:hidden">
+          <DiffStat add={totals.add} del={totals.del} />
+        </span>
+      )}
     </div>
   );
 }

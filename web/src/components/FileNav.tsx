@@ -5,6 +5,7 @@ import type { DirNode, TreeNode } from "../tree";
 import { flattenTree } from "../tree";
 import { cx } from "../util";
 import { Checkbox } from "./Checkbox";
+import { DiffStat } from "./DiffStat";
 
 const GLYPH: Record<FileSummary["status"], { g: string; cls: string }> = {
   modified: { g: "M", cls: "text-mute" },
@@ -307,10 +308,11 @@ function FileRow(props: LevelProps & { file: FileSummary }) {
       {f.binary ? (
         <span className="shrink-0 font-mono text-[10.5px] text-faint">bin</span>
       ) : (
-        <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-faint">
-          <span className="text-add/80">+{f.additions}</span>
-          <span className="text-del/80"> −{f.deletions}</span>
-        </span>
+        f.additions + f.deletions > 0 && (
+          <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-faint">
+            <DiffStat add={f.additions} del={f.deletions} dim />
+          </span>
+        )
       )}
     </div>
   );

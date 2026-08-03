@@ -17,6 +17,7 @@ import type {
 } from "#shared/types";
 import { TUNING } from "#shared/tuning";
 import * as api from "../api";
+import { DiffStat } from "./DiffStat";
 import { highlightLines, type TokenLine } from "../highlight";
 import { intralineSpans, type Span } from "../intraline";
 import type { FileClass } from "../semantic/classify.ts";
@@ -704,10 +705,9 @@ export function DiffFile({
         {!open && (
           <span className="shrink-0 font-mono text-[11px] text-faint">{collapsedNote}</span>
         )}
-        {!file.binary && (
+        {!file.binary && file.additions + file.deletions > 0 && (
           <span className="shrink-0 font-mono text-[11.5px] tabular-nums">
-            <span className="text-add">+{file.additions}</span>{" "}
-            <span className="text-del">−{file.deletions}</span>
+            <DiffStat add={file.additions} del={file.deletions} />
           </span>
         )}
         {file.stale && (
@@ -767,8 +767,7 @@ export function DiffFile({
             <>
               <span>
                 changes since last seen{" "}
-                <span className="text-add">+{interQ.data.file.additions}</span>{" "}
-                <span className="text-del">−{interQ.data.file.deletions}</span>
+                <DiffStat add={interQ.data.file.additions} del={interQ.data.file.deletions} />
               </span>
               <button
                 type="button"

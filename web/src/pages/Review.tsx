@@ -19,6 +19,7 @@ import * as api from "../api";
 import { AppHeader, HEADER_PX } from "../components/AppHeader";
 import { CommentThread } from "../components/CommentThread";
 import { Composer } from "../components/Composer";
+import { DiffStat } from "../components/DiffStat";
 import { DiffFile, type DiffMode } from "../components/DiffFile";
 import { FileNav } from "../components/FileNav";
 import { HelpOverlay } from "../components/HelpOverlay";
@@ -913,8 +914,7 @@ function ClassSectionHeader({
       </h2>
       <span className="font-mono text-[11.5px] tabular-nums text-faint">
         {files.length} file{files.length === 1 ? "" : "s"}{" "}
-        <span className="text-add">+{totals.add}</span>{" "}
-        <span className="text-del">−{totals.del}</span>
+        <DiffStat add={totals.add} del={totals.del} />
       </span>
       <div className="ml-auto flex items-center gap-1.5">
         <button
