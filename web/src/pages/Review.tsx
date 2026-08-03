@@ -647,11 +647,11 @@ export function Review() {
             ))}
           </select>
         )}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-3 self-stretch">
           <div
             role="radiogroup"
             aria-label="Review view"
-            className="hidden overflow-hidden rounded-sm border border-edge sm:flex"
+            className="hidden self-stretch divide-x divide-edge border-x border-edge sm:flex"
           >
             {(["classic", "semantic"] as const).map((v) => (
               <button
@@ -660,18 +660,23 @@ export function Review() {
                 onClick={() => setView(v)}
                 aria-pressed={view === v}
                 className={cx(
-                  "px-2 py-0.5 font-mono text-[11px] transition-colors duration-150",
-                  view === v ? "bg-raise text-fg" : "text-faint hover:bg-raise/40 hover:text-mute",
+                  "relative flex items-center px-3 font-mono text-[12px] transition-colors duration-150",
+                  view === v
+                    ? "bg-accent-soft text-accent"
+                    : "text-mute hover:bg-raise/60 hover:text-fg",
                 )}
               >
                 {v}
+                {view === v && (
+                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" />
+                )}
               </button>
             ))}
           </div>
           <div
             role="radiogroup"
             aria-label="Diff layout"
-            className="hidden overflow-hidden rounded-sm border border-edge sm:flex"
+            className="hidden self-stretch divide-x divide-edge border-x border-edge sm:flex"
           >
             {(["unified", "split"] as const).map((m) => (
               <button
@@ -680,11 +685,16 @@ export function Review() {
                 onClick={() => setMode(m)}
                 aria-pressed={mode === m}
                 className={cx(
-                  "px-2 py-0.5 font-mono text-[11px] transition-colors duration-150",
-                  mode === m ? "bg-raise text-fg" : "text-faint hover:bg-raise/40 hover:text-mute",
+                  "relative flex items-center px-3 font-mono text-[12px] transition-colors duration-150",
+                  mode === m
+                    ? "bg-accent-soft text-accent"
+                    : "text-mute hover:bg-raise/60 hover:text-fg",
                 )}
               >
                 {m}
+                {mode === m && (
+                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" />
+                )}
               </button>
             ))}
           </div>
@@ -708,7 +718,7 @@ export function Review() {
             type="button"
             onClick={() => setHelp(true)}
             aria-label="Keyboard shortcuts"
-            className="grid size-5 place-items-center rounded-sm font-mono text-[12px] text-faint transition-colors duration-150 hover:bg-raise hover:text-fg"
+            className="grid size-7 place-items-center rounded-sm font-mono text-[13px] text-mute transition-colors duration-150 hover:bg-raise hover:text-fg"
           >
             ?
           </button>
