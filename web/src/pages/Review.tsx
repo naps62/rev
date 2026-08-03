@@ -634,14 +634,6 @@ export function Review() {
         )}
         <div className="ml-auto flex items-center gap-3 self-stretch">
           <FeatureMenu features={features} onChange={setFeatures} />
-          {features.entities && semQ.data?.available && (
-            <span
-              className="hidden rounded-sm border border-accent/40 px-1 font-mono text-[10px] text-accent sm:inline"
-              title="entity-level data from the sem CLI is active"
-            >
-              sem
-            </span>
-          )}
           <LayoutToggle mode={mode} onChange={setMode} />
           {files.length > 0 && (
             <>
