@@ -55,6 +55,9 @@ export const TUNING = {
   /** Untracked files above this size are listed but not inlined (probably artifacts, and hashing them is wasted work). */
   MAX_UNTRACKED_BYTES: 512 * 1024,
 
+  /** Kill a sem invocation after this long; the client falls back to text heuristics. Measured ~20ms on medium repos — this is a hang guard, not a budget. */
+  SEM_TIMEOUT_MS: 10_000,
+
   /** SQLite location, under XDG data dir. */
   DB_PATH: "~/.local/share/rev/rev.db",
 } as const;

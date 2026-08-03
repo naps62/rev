@@ -179,6 +179,58 @@ export interface InterdiffResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Semantic entities (sem CLI)
+// ---------------------------------------------------------------------------
+
+export type EntityChangeKind =
+  | "added"
+  | "modified"
+  | "deleted"
+  | "renamed"
+  | "moved"
+  | "reordered";
+
+/** One entity-level change from `sem diff`: a function/class/method, not a line range. */
+export interface EntityChange {
+  /** sem's entity kind: "function", "method", "class", "struct", "test", … */
+  entityType: string;
+  name: string;
+  change: EntityChangeKind;
+  /** New-side file range (1-based, inclusive); null when deleted. */
+  startLine: number | null;
+  endLine: number | null;
+  /** Old-side file range; null when added. */
+  oldStartLine: number | null;
+  oldEndLine: number | null;
+  /** Previous name when renamed. */
+  oldName: string | null;
+}
+
+export interface SemanticFileEntities {
+  /** Repo-relative path, new side (old path for deleted files). */
+  path: string;
+  entities: EntityChange[];
+}
+
+/**
+ * Entity-level view of the diff (merge-base → working tree), computed by the
+ * optional `sem` CLI. `available: false` — binary missing, parse failure,
+ * timeout — is a normal response, never an error: the client falls back to
+ * its text heuristics. Untracked files are never included (sem skips them).
+ */
+export interface SemanticDiffResponse {
+  dir: string;
+  base: string;
+  /** Resolved merge-base sha; "" when sem is unavailable. */
+  mergeBase: string;
+  available: boolean;
+  /** Set when available is false: "sem-missing" | "sem-failed". */
+  reason?: string;
+  files: SemanticFileEntities[];
+  computedAt: number;
+}
+
+// ---------------------------------------------------------------------------
 // File content & edits
 // ---------------------------------------------------------------------------
 
@@ -344,6 +396,8 @@ export type ServerMessage =
 // GET    /api/refs?dir                       → RefsResponse   (base-ref candidates)
 // GET    /api/diff/interdiff?dir&base&path   → InterdiffResponse (delta since the
 //        seen snapshot; 404 when the path has no snapshot)
+// GET    /api/semantic?dir&base              → SemanticDiffResponse (entity-level
+//        diff via the optional sem CLI; available:false when sem can't deliver)
 // GET    /api/file?dir&path[&rev]            → FileContentResponse
 // PUT    /api/file                           ← FileWriteRequest → FileContentResponse
 // GET    /api/comments?dir[&base][&since]    → CommentListResponse

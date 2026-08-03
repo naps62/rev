@@ -11,6 +11,7 @@ import type {
   CommentListResponse,
   CommentPatchRequest,
   DiffSummaryResponse,
+  EntityChange,
   FileDiffResponse,
   FileSummary,
 } from "#shared/types";
@@ -30,6 +31,7 @@ import {
   type ClassSection,
   type FileClass,
 } from "../semantic/classify.ts";
+import { entityAnchor } from "../semantic/entities.ts";
 import { findOccurrences, type Occurrence } from "../semantic/symbols.ts";
 import { attachCrosshair } from "../crosshair";
 import { buildFileTree, flattenTree } from "../tree";
@@ -87,6 +89,7 @@ export function Review() {
   const wsStatus = useRevSocket(dir || undefined, (msg) => {
     if (msg.type === "diff-invalidated" && msg.dir === dir) {
       qc.invalidateQueries({ queryKey: ["diff-summary", dir] });
+      qc.invalidateQueries({ queryKey: ["semantic", dir] });
       if (msg.paths.length > 0) {
         for (const p of msg.paths) qc.invalidateQueries({ queryKey: ["diff-file", dir, base, p] });
       } else {
@@ -199,6 +202,21 @@ export function Review() {
     setViewState(v);
     localStorage.setItem(VIEW_KEY, v);
   };
+
+  // Entity-level diff from the optional sem CLI; available:false (binary
+  // missing, parse failure) simply leaves the heuristics in charge.
+  const semQ = useQuery({
+    queryKey: ["semantic", dir, base],
+    queryFn: () => api.getSemanticDiff(dir, base),
+    enabled: !!dir && !!base && view === "semantic",
+  });
+  const entitiesByPath = useMemo(() => {
+    const m = new Map<string, EntityChange[]>();
+    if (semQ.data?.available) {
+      for (const f of semQ.data.files) m.set(f.path, f.entities);
+    }
+    return m;
+  }, [semQ.data]);
 
   // Tree (visual) order drives everything: the rail, the diff pane, scroll-spy
   // and j/k all agree on it. In semantic view the order is class sections
@@ -668,6 +686,14 @@ export function Review() {
               </button>
             ))}
           </div>
+          {view === "semantic" && semQ.data?.available && (
+            <span
+              className="hidden rounded-sm border border-accent/40 px-1 font-mono text-[10px] text-accent sm:inline"
+              title="entity-level data from the sem CLI is active"
+            >
+              sem
+            </span>
+          )}
           <div
             role="radiogroup"
             aria-label="Diff layout"
@@ -812,6 +838,13 @@ export function Review() {
                 threads={threadsByFile.get(f.path) ?? []}
                 isCurrent={currentPath === f.path}
                 semantic={!!sections}
+                entities={entitiesByPath.get(f.path)}
+                onJumpToEntity={(e) => {
+                  const a = entityAnchor(e);
+                  if (a) {
+                    jumpToOccurrence({ path: f.path, side: a.side, line: a.line, kind: "context", text: "" });
+                  }
+                }}
                 fileClass={s?.cls}
                 defaultCollapsed={s?.cls === "generated"}
                 collapseCmd={(() => {

@@ -37,6 +37,7 @@ import {
   setSeenSegments,
 } from "./db.ts";
 import { resolveComments } from "./anchor.ts";
+import { computeSemanticDiff } from "./semantic.ts";
 import { invalidateRepoList, isKnownRepo, listRepos, rescan } from "./discovery.ts";
 import {
   baseBehind,
@@ -220,6 +221,14 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       stale: true,
     };
     return c.json({ dir, base, path, sinceHash: snap.contentHash, file });
+  });
+
+  app.get("/semantic", async (c) => {
+    const dir = c.req.query("dir");
+    const base = c.req.query("base");
+    if (!dir || !base) return c.json({ error: "dir and base are required" }, 400);
+    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    return c.json(await computeSemanticDiff(dir, base));
   });
 
   app.get("/refs", async (c) => {
