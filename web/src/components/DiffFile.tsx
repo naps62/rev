@@ -682,7 +682,7 @@ export function DiffFile({
       <header
         onClick={() => !editing && toggleOpen()}
         className={cx(
-          "sticky top-12 z-10 flex min-w-0 items-center gap-2.5 rounded-t-[5px] bg-raise px-2 py-1.5 max-sm:rounded-none",
+          "file-header sticky top-12 z-10 flex min-w-0 items-center gap-2.5 rounded-t-[5px] bg-raise px-2 py-1.5 max-sm:rounded-none",
           showBody ? "border-b border-edge-soft" : "rounded-b-[5px] max-sm:rounded-none",
           !editing && "cursor-pointer",
         )}
