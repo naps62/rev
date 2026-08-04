@@ -80,6 +80,16 @@ body {
     transparent;
 }
 
+/* Strips that pan sideways under their own edge fades: a scrollbar would sit
+   on the tab baseline and eat the row's height. */
+.scroll-strip {
+  scrollbar-width: none;
+}
+
+.scroll-strip::-webkit-scrollbar {
+  display: none;
+}
+
 :focus-visible {
   outline: 1px solid var(--color-accent);
   outline-offset: 1px;

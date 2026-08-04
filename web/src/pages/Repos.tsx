@@ -112,14 +112,24 @@ function groupRepos(repos: RepoInfo[], now: number): Group[] {
     );
 }
 
-/** Scope names ordered by their most recent activity, so the busiest context leads. */
-function scopeOrder(repos: RepoInfo[]): string[] {
-  const latest = new Map<string, number>();
+/**
+ * Scope names with live work first, then by most recent git activity, so the
+ * context being worked in leads. Dirty checkouts and open comments carry no
+ * timestamp, so a scope holding them outranks one merely checked out later.
+ */
+function scopeOrder(repos: RepoInfo[], now: number): string[] {
+  const stats = new Map<string, { active: boolean; latest: number }>();
   for (const r of repos) {
-    const t = Math.max(latest.get(r.scope) ?? 0, r.lastActivity ?? 0);
-    latest.set(r.scope, t);
+    const s = stats.get(r.scope) ?? { active: false, latest: 0 };
+    s.active ||= isActive(r, now);
+    s.latest = Math.max(s.latest, r.lastActivity ?? 0);
+    stats.set(r.scope, s);
   }
-  return [...latest.entries()].sort((a, b) => b[1] - a[1]).map(([s]) => s);
+  return [...stats.entries()]
+    .sort(
+      ([, a], [, b]) => Number(b.active) - Number(a.active) || b.latest - a.latest,
+    )
+    .map(([s]) => s);
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +247,106 @@ function buildCards(
     .filter((g) => g.cards.length > 0);
 }
 
+// ---------------------------------------------------------------------------
+// Scope strip
+// ---------------------------------------------------------------------------
+
+/**
+ * The scope row is one tab per remote org, so its width is unbounded — it pans
+ * sideways instead of wrapping, keeping every tab on the one baseline. Fades
+ * mark what sits off either end; the scrollbar is hidden, so they are the only
+ * cue that more scopes exist.
+ */
+function ScopeTabs({
+  scopes,
+  current,
+  counts,
+  lit,
+  onSelect,
+}: {
+  scopes: string[];
+  current: string | null;
+  counts: Map<string, number>;
+  /** Scopes whose count should read as a live figure rather than a footnote. */
+  lit: (scope: string) => boolean;
+  onSelect: (scope: string) => void;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const sync = () => {
+      const max = el.scrollWidth - el.clientWidth;
+      setEdges({ left: el.scrollLeft > 1, right: el.scrollLeft < max - 1 });
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    el.addEventListener("scroll", sync, { passive: true });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("scroll", sync);
+    };
+  }, [scopes]);
+
+  // A selected tab parked off-screen reads as no selection at all.
+  useEffect(() => {
+    ref.current
+      ?.querySelector('[aria-current="page"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [current]);
+
+  return (
+    <div className="relative mb-3">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-edge" />
+      <nav
+        ref={ref}
+        aria-label="Project scope"
+        className="scroll-strip relative flex items-end gap-1 overflow-x-auto"
+      >
+        {scopes.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => onSelect(s)}
+            aria-current={s === current ? "page" : undefined}
+            className={cx(
+              "flex shrink-0 items-baseline gap-1.5 whitespace-nowrap border-b-2 px-2.5 pb-1.5 pt-1 font-mono text-[12px] transition-colors duration-150",
+              s === current
+                ? "border-accent text-fg"
+                : "border-transparent text-mute hover:text-fg",
+            )}
+          >
+            {s}
+            <span
+              className={cx(
+                "font-mono text-[10.5px] tabular-nums",
+                lit(s) ? "text-accent" : "text-faint",
+              )}
+            >
+              {counts.get(s) ?? 0}
+            </span>
+          </button>
+        ))}
+      </nav>
+      <div
+        className={cx(
+          "pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-bg to-bg/0 transition-opacity duration-150",
+          edges.left ? "opacity-100" : "opacity-0",
+        )}
+      />
+      <div
+        className={cx(
+          "pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-bg to-bg/0 transition-opacity duration-150",
+          edges.right ? "opacity-100" : "opacity-0",
+        )}
+      />
+    </div>
+  );
+}
+
 const SCOPE_KEY = "rev.scope";
 
 export function Repos() {
@@ -255,7 +365,7 @@ export function Repos() {
 
   const now = useMemo(() => Date.now(), [reposQ.data]);
   const repos = reposQ.data ?? [];
-  const scopes = useMemo(() => scopeOrder(repos), [repos]);
+  const scopes = useMemo(() => scopeOrder(repos, now), [repos, now]);
 
   const [scope, setScope] = useState<string | null>(() => localStorage.getItem(SCOPE_KEY));
   const [showInactive, setShowInactive] = useState(false);
@@ -355,36 +465,15 @@ export function Repos() {
 
       <div className="w-full px-2 pb-8 pt-2">
         {scopes.length > 1 && (
-          <nav aria-label="Project scope" className="mb-3 flex items-end gap-1 border-b border-edge">
-            {scopes.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => selectScope(s)}
-                aria-current={s === currentScope ? "page" : undefined}
-                className={cx(
-                  "-mb-px flex items-baseline gap-1.5 border-b-2 px-2.5 pb-1.5 pt-1 font-mono text-[12px] transition-colors duration-150",
-                  s === currentScope
-                    ? "border-accent text-fg"
-                    : "border-transparent text-mute hover:text-fg",
-                )}
-              >
-                {s}
-                <span
-                  className={cx(
-                    "font-mono text-[10.5px] tabular-nums",
-                    (matchCounts != null
-                      ? (matchCounts.get(s) ?? 0) > 0
-                      : s === currentScope)
-                      ? "text-accent"
-                      : "text-faint",
-                  )}
-                >
-                  {matchCounts != null ? matchCounts.get(s) ?? 0 : activeCounts.get(s) ?? 0}
-                </span>
-              </button>
-            ))}
-          </nav>
+          <ScopeTabs
+            scopes={scopes}
+            current={currentScope}
+            counts={matchCounts ?? activeCounts}
+            lit={(s) =>
+              matchCounts != null ? (matchCounts.get(s) ?? 0) > 0 : s === currentScope
+            }
+            onSelect={selectScope}
+          />
         )}
 
         <input
