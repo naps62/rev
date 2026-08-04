@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "wouter";
 import * as api from "../api";
+import { BrandMark } from "./BrandMark";
 import { type ReviewSettings, SettingsControl } from "./SettingsModal";
 
 /** Header height in px. Review's scroll-anchor math offsets against this. */
@@ -22,9 +23,12 @@ export function AppHeader({
     >
       <Link
         href={api.href("/")}
-        className="shrink-0 font-mono text-[13px] font-bold text-fg hover:text-accent"
+        className="group inline-flex shrink-0 items-center gap-1.5 rounded-sm font-mono text-[13px] font-bold text-fg transition-colors hover:text-accent"
       >
-        rev<span className="text-accent">_</span>
+        <BrandMark className="size-5 shrink-0 transition-colors" />
+        <span>
+          rev<span className="text-accent">_</span>
+        </span>
       </Link>
       {children}
       <SettingsControl review={settings} />
