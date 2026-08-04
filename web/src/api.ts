@@ -128,6 +128,23 @@ export async function getFile(dir: string, path: string, rev?: string): Promise<
   return request(`/api/file?${q}`);
 }
 
+export function rawFileUrl(
+  dir: string,
+  path: string,
+  rev: string | undefined,
+  version: string,
+): string {
+  if (isFixture()) {
+    const old = rev !== undefined;
+    const accent = old ? "%23ef6e58" : "%235cc576";
+    const offset = old ? 0 : 22;
+    return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='720' viewBox='0 0 1200 720'%3E%3Crect width='1200' height='720' fill='%231a2027'/%3E%3Ccircle cx='${390 + offset}' cy='330' r='210' fill='${accent}' fill-opacity='.72'/%3E%3Crect x='${580 + offset}' y='190' width='370' height='310' rx='48' fill='%2385bcd9' fill-opacity='.7'/%3E%3C/svg%3E`;
+  }
+  const q = new URLSearchParams({ dir, path, v: version });
+  if (rev) q.set("rev", rev);
+  return `/api/file/raw?${q}`;
+}
+
 export async function putFile(req: FileWriteRequest): Promise<FileContentResponse> {
   if (isFixture()) return tick((await fx()).fxPutFile(req));
   return request("/api/file", { method: "PUT", body: JSON.stringify(req) });

@@ -53,6 +53,25 @@ export function run(dir: string, args: string[]): Promise<string> {
   });
 }
 
+/** Run git and preserve stdout byte-for-byte for binary blobs. */
+function runBytes(dir: string, args: string[]): Promise<Uint8Array> {
+  return new Promise((res, rej) => {
+    const proc = spawn("git", args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+    const out: Buffer[] = [];
+    let err = "";
+    proc.stdout.on("data", (chunk: Buffer) => out.push(chunk));
+    proc.stderr.setEncoding("utf8").on("data", (chunk: string) => (err += chunk));
+    proc.on("error", rej);
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        rej(new GitError(err.trim() || `git ${args[0]} failed (exit ${code})`, `git ${args.join(" ")}`));
+      } else {
+        res(Buffer.concat(out));
+      }
+    });
+  });
+}
+
 /** sha256 (hex, first 16 chars) of content — the contentHash everywhere. */
 export function hashContent(content: string | Uint8Array): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 16);
@@ -367,6 +386,22 @@ export async function readFile(dir: string, path: string, rev: string | null): P
   }
   const content = await run(dir, ["show", `${rev}:${path}`]);
   return { dir, path, rev, content, contentHash: hashContent(content) };
+}
+
+/** Read raw file bytes from the working tree or a git revision. */
+export async function readRawFile(
+  dir: string,
+  path: string,
+  rev: string | null,
+): Promise<Uint8Array> {
+  if (rev === null) {
+    try {
+      return await readFileBytes(join(dir, path));
+    } catch {
+      throw new GitError(`no such file in working tree: ${path}`, "read");
+    }
+  }
+  return runBytes(dir, ["show", `${rev}:${path}`]);
 }
 
 /** Current branch (null when detached) and short HEAD sha ("" before first commit). */

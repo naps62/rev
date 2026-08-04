@@ -30,6 +30,7 @@ import { AuthorChip, CommentThread, threadShell } from "./CommentThread";
 import { Checkbox } from "./Checkbox";
 import { Composer } from "./Composer";
 import { Reveal } from "./Reveal";
+import { ImageDiff } from "./ImageDiff";
 import type { DiffMode } from "../features";
 export type { DiffMode };
 
@@ -46,6 +47,8 @@ interface DiffFileProps {
   dir: string;
   /** Base ref of the review; threads from other bases get a label. */
   currentBase: string;
+  /** Resolved merge-base SHA used for the old side of image comparisons. */
+  mergeBase: string;
   file: FileSummary;
   mode: DiffMode;
   /** All threads anchored to this file; placed on lines once hunks load. */
@@ -75,6 +78,7 @@ interface DiffFileProps {
 export function DiffFile({
   dir,
   currentBase,
+  mergeBase,
   file,
   mode,
   threads,
@@ -130,10 +134,10 @@ export function DiffFile({
   }, [file.seen]);
 
   const status = STATUS_GLYPH[file.status];
-  // Summary alone tells whether there is anything to show: binary and
-  // mode-only changes have no lines; oversized untracked files report 0.
-  const canExpand = !file.binary && changed > 0;
-  const canEdit = !file.binary && file.status !== "deleted";
+  const image = isPreviewableImage(file.path);
+  // Images have no line stats, but still expand into a visual comparison.
+  const canExpand = image || (!file.binary && changed > 0);
+  const canEdit = !image && !file.binary && file.status !== "deleted";
   // Collapsed IS seen — one state. Stale re-opens the file until re-marked.
   // peek (semantic view) overrides both; defaultCollapsed only the default.
   const expanded =
@@ -203,7 +207,7 @@ export function DiffFile({
     return () => io.disconnect();
   }, [near, open]);
 
-  const wantDelta = file.stale && view === "delta" && expanded && near && !editing;
+  const wantDelta = !image && file.stale && view === "delta" && expanded && near && !editing;
   const interQ = useQuery({
     queryKey: ["interdiff", dir, currentBase, file.path, file.contentHash],
     queryFn: () => api.getInterdiff(dir, currentBase, file.path),
@@ -218,7 +222,7 @@ export function DiffFile({
   const hunksQ = useQuery({
     queryKey: ["diff-file", dir, currentBase, file.path, file.contentHash],
     queryFn: () => api.getFileDiff(dir, currentBase, file.path, file.oldPath),
-    enabled: canExpand && expanded && near && !deltaActive,
+    enabled: !image && canExpand && expanded && near && !deltaActive,
     staleTime: Infinity,
   });
   const activeFile = deltaActive ? interQ.data?.file : hunksQ.data?.file;
@@ -352,8 +356,10 @@ export function DiffFile({
     [threads],
   );
 
-  const collapsedNote = file.binary
-    ? "binary"
+  const collapsedNote = image
+    ? "image"
+    : file.binary
+      ? "binary"
     : file.status === "deleted"
       ? `deleted · ${file.deletions} lines`
       : file.seen
@@ -777,7 +783,7 @@ export function DiffFile({
 
       <div className="file-body" data-open={open || undefined}>
       <div className="min-h-0 overflow-hidden rounded-b-[5px] max-sm:rounded-none">
-      {showBody && !editing && file.stale && interQ.data != null && (
+      {showBody && !editing && !image && file.stale && interQ.data != null && (
         <div className="flex items-baseline gap-2 border-b border-edge-soft bg-accent-soft/60 px-3 py-1 font-mono text-[11px] text-mute">
           {deltaActive ? (
             <>
@@ -809,6 +815,20 @@ export function DiffFile({
       )}
       {editing ? (
         <QuickEditPanel dir={dir} path={file.path} onClose={() => setEditing(false)} />
+      ) : showBody && image ? (
+        <ImageDiff
+          status={file.status}
+          oldSrc={
+            file.status === "added" || file.status === "untracked"
+              ? undefined
+              : api.rawFileUrl(dir, file.oldPath ?? file.path, mergeBase, mergeBase)
+          }
+          newSrc={
+            file.status === "deleted"
+              ? undefined
+              : api.rawFileUrl(dir, file.path, undefined, file.contentHash)
+          }
+        />
       ) : !showBody ? null : activeFile == null ? (
         activeError && !noSnapshot ? (
           <div className="flex items-center gap-3 px-4 py-3">
@@ -882,6 +902,12 @@ export function DiffFile({
       </div>
     </section>
   );
+}
+
+const IMAGE_EXTENSIONS = /\.(?:apng|avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i;
+
+function isPreviewableImage(path: string): boolean {
+  return IMAGE_EXTENSIONS.test(path);
 }
 
 /** Collapsed run of folded lines; click restores the real rows. */

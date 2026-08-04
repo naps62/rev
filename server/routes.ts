@@ -12,7 +12,7 @@
 import { Hono } from "hono";
 import { existsSync, realpathSync } from "node:fs";
 import { readFile as readFileBytes, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, resolve, sep } from "node:path";
+import { dirname, extname, isAbsolute, resolve, sep } from "node:path";
 import type {
   CommentCreateRequest,
   CommentListResponse,
@@ -52,7 +52,21 @@ import {
   isBinaryBytes,
   listRefs,
   readFile,
+  readRawFile,
 } from "./git.ts";
+
+const IMAGE_CONTENT_TYPES: Record<string, string> = {
+  ".apng": "image/apng",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
+  ".gif": "image/gif",
+  ".ico": "image/x-icon",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
+};
 
 /**
  * Resolve a repo-relative path inside `dir`, or null when it escapes
@@ -251,6 +265,23 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
     if (resolveInRepo(dir, path) === null) return c.json({ error: `path escapes repo: ${path}` }, 400);
     return c.json(await readFile(dir, path, rev));
+  });
+
+  app.get("/file/raw", async (c) => {
+    const dir = c.req.query("dir");
+    const path = c.req.query("path");
+    const rev = c.req.query("rev") ?? null;
+    if (!dir || !path) return c.json({ error: "dir and path are required" }, 400);
+    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (resolveInRepo(dir, path) === null) return c.json({ error: `path escapes repo: ${path}` }, 400);
+    const bytes = await readRawFile(dir, path, rev);
+    const contentType = IMAGE_CONTENT_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream";
+    return c.body(Uint8Array.from(bytes), 200, {
+      "Cache-Control": "no-store",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+      "Content-Type": contentType,
+      "X-Content-Type-Options": "nosniff",
+    });
   });
 
   app.put("/file", async (c) => {
