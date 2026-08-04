@@ -1115,8 +1115,9 @@ function LineRow({
       >
         <button
           type="button"
+          data-comment-btn
           onClick={onComment}
-          title="Comment on this line"
+          title="Comment on this line (c)"
           aria-label="Comment on this line"
           className="absolute left-0.5 top-[3px] grid size-4 place-items-center rounded-sm bg-accent font-sans text-[13px] font-bold leading-none text-bg opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
         >
@@ -1205,8 +1206,9 @@ function SplitCell({
       {onComment && (
         <button
           type="button"
+          data-comment-btn
           onClick={onComment}
-          title="Comment on this line"
+          title="Comment on this line (c)"
           aria-label="Comment on this line"
           className="absolute left-0.5 top-[3px] grid size-4 place-items-center rounded-sm bg-accent font-sans text-[13px] font-bold leading-none text-bg opacity-0 focus-visible:opacity-100 group-hover/cell:opacity-100"
         >

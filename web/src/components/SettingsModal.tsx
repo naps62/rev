@@ -429,6 +429,8 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
     title: "review",
     keys: [
       ["s, v or .", "toggle seen on the current file"],
+      ["c", "comment on the line under the pointer"],
+      ["a", "send pending comments to the agent now"],
       ["click id", "symbol panel on: list occurrences of an identifier"],
     ],
   },

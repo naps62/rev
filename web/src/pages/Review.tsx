@@ -479,6 +479,17 @@ export function Review() {
     return () => ro.disconnect();
   }, [currentPath, files]);
 
+  // Last pointer position, for the c shortcut (independent of the crosshair
+  // feature flag — c works whether or not the crosshair is drawn).
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      pointer.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener("mousemove", onMove, { passive: true });
+    return () => window.removeEventListener("mousemove", onMove);
+  }, []);
+
   const filesRef = useRef(files);
   filesRef.current = files;
   useEffect(() => {
@@ -547,6 +558,21 @@ export function Review() {
             seen: !f.seen || f.stale,
           });
         }
+      } else if (e.key === "c") {
+        // Comment on the line under the pointer. Clicking the row's own +
+        // button reuses every bit of the anchor wiring in DiffFile.
+        const p = pointer.current;
+        if (!p) return;
+        const hit = document.elementFromPoint(p.x, p.y) as HTMLElement | null;
+        const row = hit?.closest<HTMLElement>("tr[data-lk]");
+        if (!row) return;
+        // Off the code cells (gutter, row edge) the new side is the default.
+        const cells = row.querySelectorAll<HTMLElement>("td[data-code]");
+        const cell = hit?.closest<HTMLElement>("td[data-code]") ?? cells[cells.length - 1];
+        const btn = cell?.querySelector<HTMLButtonElement>("button[data-comment-btn]");
+        if (!btn) return;
+        e.preventDefault();
+        btn.click();
       } else if (e.key === "x") {
         setFeatures((p) => ({ ...p, crosshair: !p.crosshair }));
       } else if (e.key === "Escape") {
@@ -830,7 +856,8 @@ export function Review() {
             </section>
 
             <p className="pb-4 text-center font-mono text-[11px] text-faint">
-              j/k files · J/K unseen · n/p hunks · . seen · s block seen · x crosshair · ? shortcuts
+              j/k files · J/K unseen · n/p hunks · . seen · s block seen · c comment · a send · x
+              crosshair · ? shortcuts
             </p>
           </main>
 

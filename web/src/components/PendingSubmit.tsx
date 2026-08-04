@@ -73,6 +73,20 @@ export function PendingSubmit({ dir, comments }: { dir: string; comments: Commen
     return () => clearTimeout(t);
   }, [deadline]);
 
+  // `a` ships the batch immediately, same as the Send now button.
+  useEffect(() => {
+    if (!armed) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "a" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.tagName === "INPUT" || t?.tagName === "TEXTAREA" || t?.isContentEditable) return;
+      e.preventDefault();
+      fireRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [armed]);
+
   // 1s tick for the countdown text only; firing is the timeout above.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -98,6 +112,7 @@ export function PendingSubmit({ dir, comments }: { dir: string; comments: Commen
       <button
         type="button"
         disabled={submitMut.isPending}
+        title="Send the batch to the agent now (a)"
         onClick={() => fireRef.current()}
         className="rounded-sm border border-accent/40 px-2 py-0.5 text-[12px] text-accent transition-colors duration-150 hover:bg-accent hover:text-bg disabled:cursor-default disabled:border-edge disabled:text-faint"
       >
