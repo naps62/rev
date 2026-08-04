@@ -24,7 +24,7 @@ comments=$(curl -sfG --max-time 2 "$REV_URL/api/comments" \
   --data-urlencode "dir=$root" --data-urlencode "submitted=1" 2>/dev/null) || comments='{"comments":[]}'
 
 SUMMARY="$summary" COMMENTS="$comments" ROOT="$root" BASE="$base" \
-HOST="$REV_URL" WATCH="$SCRIPT_DIR/rev-watch.sh" \
+HOST="$REV_URL" PUBLIC="$REV_PUBLIC_URL" WATCH="$SCRIPT_DIR/rev-watch.sh" \
 TEMPLATE="$SCRIPT_DIR/../agent/CLAUDE-rev.md" \
 python3 <<'PY'
 import json, os, urllib.parse
@@ -33,6 +33,7 @@ env = os.environ
 summary = json.loads(env["SUMMARY"])
 comments = json.loads(env["COMMENTS"])
 root, base, host = env["ROOT"], env["BASE"], env["HOST"]
+public = env.get("PUBLIC") or host
 
 nfiles = len(summary.get("files", []))
 nthreads = sum(1 for c in comments.get("comments", [])
@@ -49,7 +50,7 @@ if nfiles or nthreads:
 else:
     status = f"No diff against {base} yet."
 
-url = (f"{host}/review?dir={urllib.parse.quote(root, safe='')}"
+url = (f"{public.rstrip('/')}/review?dir={urllib.parse.quote(root, safe='')}"
        f"&base={urllib.parse.quote(base, safe='')}")
 text = open(env["TEMPLATE"]).read()
 for k, v in {"DIR": root, "URL": url, "HOST": host, "BASE": base,

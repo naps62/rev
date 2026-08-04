@@ -2,7 +2,20 @@
 # Shared helpers for rev-watch.sh and the Claude Code hooks.
 # Sourced, not executed.
 
+# REV_URL is the API the hooks call; REV_PUBLIC_URL is the base the user opens.
+# Hooks don't inherit a login shell, so both fall back to the per-machine file
+# the service reads — EnvironmentFile format, not shell, hence parsed.
+_rev_env_file="${REV_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/rev/env}"
+_rev_env_get() {
+  [[ -f "$_rev_env_file" ]] || return 0
+  sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$_rev_env_file" |
+    tail -n1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
+}
+REV_URL="${REV_URL:-$(_rev_env_get REV_URL)}"
 REV_URL="${REV_URL:-http://localhost:7373}"
+REV_PUBLIC_URL="${REV_PUBLIC_URL:-$(_rev_env_get REV_PUBLIC_URL)}"
+REV_PUBLIC_URL="${REV_PUBLIC_URL:-$REV_URL}"
+
 REV_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/rev"
 
 # macOS ships neither sha256sum nor flock, and BSD stat takes different
