@@ -51,12 +51,21 @@ let availability: Promise<boolean> | null = null;
 /** Whether the sem binary runs; probed once per process, logged when absent. */
 export function semAvailable(): Promise<boolean> {
   availability ??= new Promise((res) => {
-    const proc = spawn(SEM_BIN, ["--version"], { stdio: ["ignore", "ignore", "ignore"] });
+    const proc = spawn(SEM_BIN, ["--version"], { stdio: ["ignore", "pipe", "ignore"] });
+    let out = "";
+    proc.stdout.setEncoding("utf8").on("data", (chunk: string) => (out += chunk));
     proc.on("error", () => {
       console.log(`semantic entity data disabled: ${SEM_BIN} not found`);
       res(false);
     });
-    proc.on("close", (code) => res(code === 0));
+    // GNU parallel ships an unrelated `sem` that also exits 0 on --version;
+    // exit status alone would let it through and fail every later diff.
+    proc.on("close", (code) => {
+      if (code !== 0) return res(false);
+      if (/^sem\s/.test(out)) return res(true);
+      console.log(`semantic entity data disabled: ${SEM_BIN} is not Ataraxy sem`);
+      res(false);
+    });
   });
   return availability;
 }

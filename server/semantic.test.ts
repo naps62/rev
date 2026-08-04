@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
-import { computeSemanticDiff, mapChanges } from "./semantic.ts";
+import { computeSemanticDiff, mapChanges, semAvailable } from "./semantic.ts";
 import { git, makeRepo, write } from "./testutil.ts";
 
 const change = (over: Record<string, unknown> = {}) => ({
@@ -82,7 +81,8 @@ describe("mapChanges", () => {
   });
 });
 
-const semHere = spawnSync("sem", ["--version"]).status === 0;
+// Reuses the server's own probe so REV_SEM_BIN and the identity check apply.
+const semHere = await semAvailable();
 
 describe("computeSemanticDiff", { skip: !semHere && "sem binary not installed" }, () => {
   it("sees committed and uncommitted entity changes vs merge-base", async () => {
