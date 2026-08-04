@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FileSummary } from "#shared/types";
-import { CLASS_LABEL, type ClassSection } from "../semantic/classify.ts";
+import { CLASS_LABEL, type ClassSection, type FileClass } from "../semantic/classify.ts";
 import type { DirNode, TreeNode } from "../tree";
 import { flattenTree } from "../tree";
 import { cx } from "../util";
@@ -27,6 +27,21 @@ interface FileNavProps {
   onToggleSeen: (file: FileSummary, seen: boolean) => void;
 }
 
+/**
+ * Collapse keys. A directory shows up once per class section in the semantic
+ * view, so the key carries the section: "\0<cls>/<path>" there, bare "<path>"
+ * in the flat tree. A bare "\0<cls>" is the section header itself.
+ */
+const sectionPrefix = (cls: FileClass) => `\0${cls}/`;
+
+/** Section + directory a collapse key refers to; `dir` is null for headers. */
+function parseKey(key: string): { cls: FileClass | null; dir: string | null } {
+  if (!key.startsWith("\0")) return { cls: null, dir: key };
+  const slash = key.indexOf("/");
+  if (slash === -1) return { cls: key.slice(1) as FileClass, dir: null };
+  return { cls: key.slice(1, slash) as FileClass, dir: key.slice(slash + 1) };
+}
+
 export function FileNav({
   tree,
   sections,
@@ -38,16 +53,21 @@ export function FileNav({
 }: FileNavProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  // Landing on a file (scroll, j/k, mobile select) expands the dirs hiding it.
+  // Landing on a file (scroll, j/k, mobile select) expands the dirs hiding it —
+  // only in the section that actually holds it.
   useEffect(() => {
     if (!currentPath) return;
+    const cls = sections?.find((s) => s.files.some((f) => f.path === currentPath))?.cls ?? null;
     setCollapsed((prev) => {
-      const next = [...prev].filter(
-        (d) => d.startsWith("\0") || !currentPath.startsWith(`${d}/`),
-      );
+      const next = [...prev].filter((key) => {
+        const k = parseKey(key);
+        if (k.dir === null) return true;
+        if (k.cls !== cls) return true;
+        return !currentPath.startsWith(`${k.dir}/`);
+      });
       return next.length === prev.size ? prev : new Set(next);
     });
-  }, [currentPath]);
+  }, [currentPath, sections]);
 
   const toggleDir = (path: string) =>
     setCollapsed((prev) => {
@@ -57,10 +77,11 @@ export function FileNav({
       return next;
     });
 
-  const level = (nodes: TreeNode[]) => (
+  const level = (nodes: TreeNode[], keyPrefix = "") => (
     <TreeLevel
       nodes={nodes}
       depth={0}
+      keyPrefix={keyPrefix}
       collapsed={collapsed}
       toggleDir={toggleDir}
       unresolvedByFile={unresolvedByFile}
@@ -134,7 +155,7 @@ export function FileNav({
                     {s.files.length}
                   </span>
                 </div>
-                {!isCollapsed && level(s.tree)}
+                {!isCollapsed && level(s.tree, sectionPrefix(s.cls))}
               </div>
             );
           })
@@ -146,6 +167,8 @@ export function FileNav({
 interface LevelProps {
   nodes: TreeNode[];
   depth: number;
+  /** Namespaces collapse keys per class section; "" in the flat tree. */
+  keyPrefix: string;
   collapsed: Set<string>;
   toggleDir: (path: string) => void;
   unresolvedByFile: Map<string, number>;
@@ -174,8 +197,9 @@ function DirRow(props: LevelProps & { node: DirNode }) {
   // MUST NOT spread `props` (it carries `node`) into children — a later
   // node= would be overwritten back to this dir, recursing forever.
   const { node, ...level } = props;
-  const { depth, collapsed, toggleDir, unresolvedByFile, onToggleSeen } = level;
-  const isCollapsed = collapsed.has(node.path);
+  const { depth, keyPrefix, collapsed, toggleDir, unresolvedByFile, onToggleSeen } = level;
+  const key = keyPrefix + node.path;
+  const isCollapsed = collapsed.has(key);
   const files = flattenTree(node.children);
   const open = files.reduce((n, f) => n + (unresolvedByFile.get(f.path) ?? 0), 0);
   const stale = files.some((f) => f.stale);
@@ -184,7 +208,7 @@ function DirRow(props: LevelProps & { node: DirNode }) {
   return (
     <>
       <div
-        onClick={() => toggleDir(node.path)}
+        onClick={() => toggleDir(key)}
         title={node.path}
         className="group flex w-full cursor-pointer items-center gap-1.5 border-l border-transparent py-1 pr-2 hover:bg-raise/50"
         style={{ paddingLeft: 8 + depth * 14 }}
