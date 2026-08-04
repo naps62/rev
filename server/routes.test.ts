@@ -1,6 +1,6 @@
 import { before as beforeAll, describe, test } from "node:test";
 import { expect } from "expect";
-import { rmSync, symlinkSync } from "node:fs";
+import { rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -123,6 +123,29 @@ describe("routes", () => {
     expect(esc.status).toBe(400);
     const escRead = await app.request(`/file?dir=${encodeURIComponent(dir)}&path=..%2Fesc.txt`);
     expect(escRead.status).toBe(400);
+  });
+
+  test("GET /file/raw preserves image bytes from revisions and working tree", async () => {
+    const dir = makeRepo("routes-raw");
+    const oldImage = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]);
+    const newImage = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff, 0xfe]);
+    writeFileSync(join(dir, "image.png"), oldImage);
+    git(dir, "add", "image.png");
+    git(dir, "commit", "-m", "add image");
+    writeFileSync(join(dir, "image.png"), newImage);
+    const q = `dir=${encodeURIComponent(dir)}&path=image.png`;
+
+    const oldRes = await app.request(`/file/raw?${q}&rev=HEAD`);
+    expect(oldRes.status).toBe(200);
+    expect(oldRes.headers.get("content-type")).toBe("image/png");
+    expect(oldRes.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(new Uint8Array(await oldRes.arrayBuffer())).toEqual(oldImage);
+
+    const newRes = await app.request(`/file/raw?${q}`);
+    expect(new Uint8Array(await newRes.arrayBuffer())).toEqual(newImage);
+
+    const escaped = await app.request(`/file/raw?dir=${encodeURIComponent(dir)}&path=..%2Fimage.png`);
+    expect(escaped.status).toBe(400);
   });
 
   test("comments: create, reply, patch, list, broadcast", async () => {

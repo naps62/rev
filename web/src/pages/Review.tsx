@@ -795,6 +795,7 @@ export function Review() {
                 key={f.path}
                 dir={dir}
                 currentBase={base}
+                mergeBase={diffQ.data.mergeBase}
                 file={f}
                 mode={mode}
                 threads={threadsByFile.get(f.path) ?? []}

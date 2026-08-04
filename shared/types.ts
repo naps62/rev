@@ -393,7 +393,7 @@ export type ServerMessage =
   | { type: "repos-changed" };
 
 // ---------------------------------------------------------------------------
-// REST surface (all JSON; errors are { error: string } with 4xx/5xx)
+// REST surface (JSON except /api/file/raw; errors are { error: string } with 4xx/5xx)
 // ---------------------------------------------------------------------------
 //
 // GET    /api/repos                          → RepoInfo[]
@@ -407,6 +407,7 @@ export type ServerMessage =
 // GET    /api/semantic?dir&base              → SemanticDiffResponse (entity-level
 //        diff via the optional sem CLI; available:false when sem can't deliver)
 // GET    /api/file?dir&path[&rev]            → FileContentResponse
+// GET    /api/file/raw?dir&path[&rev]        → raw file bytes (used by image previews)
 // PUT    /api/file                           ← FileWriteRequest → FileContentResponse
 // GET    /api/comments?dir[&base][&since][&submitted=1] → CommentListResponse
 //        Agent polling passes submitted=1: only submitted comments, `since`
