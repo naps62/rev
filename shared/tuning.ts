@@ -40,6 +40,25 @@ export const TUNING = {
   WATCH_IGNORE: ["node_modules", ".git", "dist", "build", "target", ".next", ".turbo", "coverage"],
 
   /**
+   * Dir names skipped when found directly in the user's home. The installed
+   * service scans all of home, and on macOS merely reading these pops a system
+   * permission dialog (Desktop, Documents, Downloads, Photos). Point REV_ROOTS
+   * at one to scan it anyway.
+   */
+  HOME_IGNORE: [
+    "Desktop",
+    "Documents",
+    "Downloads",
+    "Pictures",
+    "Movies",
+    "Music",
+    "Videos",
+    "Library",
+    "Applications",
+    "Public",
+  ],
+
+  /**
    * Repos with more watchable files than this get .git-only watching (diff
    * refreshes on commit/checkout, not on every edit). Guards against trees
    * that would need tens of thousands of inotify watches.

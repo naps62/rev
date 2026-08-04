@@ -27,10 +27,44 @@ test("personal owners are personal on any host", () => {
   expect(scopeFor("git@github.com:naps62/finance-planning.git")).toBe("personal");
 });
 
-import { mkdirSync, writeFileSync, utimesSync } from "node:fs";
+import { mkdirSync, realpathSync, writeFileSync, utimesSync } from "node:fs";
 import { join } from "node:path";
-import { gitStateFingerprint } from "./discovery.ts";
-import { git, makeRepo, write } from "./testutil.ts";
+import { gitStateFingerprint, scanForRepos } from "./discovery.ts";
+import { git, makeRepo, tmpdir, write } from "./testutil.ts";
+
+describe("scanForRepos", () => {
+  /** A home with a repo in a normal dir and one in a macOS-protected dir. */
+  function fakeHome(): string {
+    const home = realpathSync(tmpdir("home")); // scanForRepos reports real paths
+    for (const rel of ["tea/proj/.git", "Documents/notes/.git", "code/deep/nested/repo/.git"]) {
+      mkdirSync(join(home, rel), { recursive: true });
+    }
+    return home;
+  }
+
+  test("skips the protected dirs directly in home", () => {
+    const home = fakeHome();
+    const found = scanForRepos(home, 4, home);
+    expect(found).toContain(join(home, "tea/proj"));
+    expect(found).not.toContain(join(home, "Documents/notes"));
+  });
+
+  test("a root pointing into one is scanned anyway", () => {
+    const home = fakeHome();
+    expect(scanForRepos(join(home, "Documents"), 4, home)).toEqual([join(home, "Documents/notes")]);
+  });
+
+  test("the names are only special in home itself", () => {
+    const home = fakeHome();
+    mkdirSync(join(home, "tea/Documents/x/.git"), { recursive: true });
+    expect(scanForRepos(home, 4, home)).toContain(join(home, "tea/Documents/x"));
+  });
+
+  test("stops at maxDepth", () => {
+    const home = fakeHome();
+    expect(scanForRepos(home, 2, home)).not.toContain(join(home, "code/deep/nested/repo"));
+  });
+});
 
 describe("gitStateFingerprint", () => {
   test("stable when nothing changes, moves on commit and on ref updates", () => {

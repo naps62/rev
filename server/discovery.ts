@@ -9,7 +9,8 @@
  *
  * Scanning stops descending once a repo is found (nested independent repos
  * are not discovered; linked worktrees still are, via `git worktree list`).
- * Hidden directories are skipped.
+ * Hidden directories are skipped, as are the TUNING.HOME_IGNORE dirs when they
+ * sit directly in the user's home.
  */
 
 import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
@@ -38,6 +39,7 @@ const CACHE_TTL_MS = 5_000;
 const ENRICH_CONCURRENCY = 8;
 
 const IGNORED = new Set<string>(TUNING.WATCH_IGNORE);
+const HOME_IGNORED = new Set<string>(TUNING.HOME_IGNORE);
 
 let cache: { at: number; repos: RepoInfo[] } | null = null;
 /**
@@ -57,33 +59,55 @@ const knownDirs = new Set<string>();
 /** Dirs validated via git rev-parse (review URLs outside the roots). */
 const validated = new Set<string>();
 
-function walk(dir: string, depth: number, found: string[]): void {
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  if (entries.some((e) => e.name === ".git")) {
+/**
+ * Repo dirs under `root`, at most `maxDepth` levels down. `home` is the user's
+ * home directory: its HOME_IGNORE children are never descended, so scanning all
+ * of home does not touch the macOS TCC-protected dirs. Pass "" to descend
+ * everything — a root pointing inside one of them is an explicit opt-in.
+ */
+export function scanForRepos(root: string, maxDepth: number, home: string): string[] {
+  const found: string[] = [];
+  const walk = (dir: string, depth: number): void => {
+    let entries;
     try {
-      found.push(realpathSync(dir)); // match `git worktree list` output, which prints real paths
+      entries = readdirSync(dir, { withFileTypes: true });
     } catch {
-      found.push(dir);
+      return;
     }
-    return;
-  }
-  if (depth >= config.depth) return;
-  for (const e of entries) {
-    if (!e.isDirectory()) continue;
-    if (e.name.startsWith(".") || IGNORED.has(e.name)) continue;
-    walk(join(dir, e.name), depth + 1, found);
+    if (entries.some((e) => e.name === ".git")) {
+      try {
+        found.push(realpathSync(dir)); // match `git worktree list` output, which prints real paths
+      } catch {
+        found.push(dir);
+      }
+      return;
+    }
+    if (depth >= maxDepth) return;
+    const inHome = home !== "" && dir === home;
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (e.name.startsWith(".") || IGNORED.has(e.name)) continue;
+      if (inHome && HOME_IGNORED.has(e.name)) continue;
+      walk(join(dir, e.name), depth + 1);
+    }
+  };
+  walk(root, 0);
+  return found;
+}
+
+function realOrSelf(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
   }
 }
 
 /** dir → mainDir for every checkout: scanned repos ∪ their linked worktrees. */
 async function discover(): Promise<Map<string, string>> {
+  const home = realOrSelf(homedir());
   const scanned: string[] = [];
-  for (const root of config.roots) walk(root, 0, scanned);
+  for (const root of config.roots) scanned.push(...scanForRepos(realOrSelf(root), config.depth, home));
   const map = new Map<string, string>();
   for (const repo of scanned) {
     if (map.has(repo)) continue;
@@ -103,13 +127,7 @@ async function discover(): Promise<Map<string, string>> {
 function nameFor(dir: string, mainDir: string, isWorktree: boolean): string {
   if (isWorktree) return `${basename(mainDir)}/${basename(dir)}`;
   for (const root of config.roots) {
-    const real = (() => {
-      try {
-        return realpathSync(root);
-      } catch {
-        return root;
-      }
-    })();
+    const real = realOrSelf(root);
     if (dir.startsWith(real + sep)) return dir.slice(real.length + 1);
   }
   return basename(dir);
@@ -345,13 +363,7 @@ export async function isKnownRepo(dir: string): Promise<boolean> {
   } catch {
     return false;
   }
-  const allowed = [homedir(), ...config.roots].map((p) => {
-    try {
-      return realpathSync(p);
-    } catch {
-      return p;
-    }
-  });
+  const allowed = [homedir(), ...config.roots].map(realOrSelf);
   if (!allowed.some((p) => within(real, p))) return false;
   if (knownDirs.has(real) || knownDirs.has(dir) || validated.has(real)) return true;
   try {

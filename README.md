@@ -99,7 +99,7 @@ survives. A real environment variable still wins over it.
 | `REV_HOST` | `127.0.0.1` | Bind address (server and vite dev server). `0.0.0.0` to reach it from other machines — see the warning above |
 | `REV_URL` | `http://localhost:7373` | Base URL the hooks and `rev-watch.sh` talk to |
 | `REV_PUBLIC_URL` | `$REV_URL` | Base URL the agent hands to you. Set it when rev is behind a custom domain or reverse proxy — the hooks keep calling `REV_URL` locally |
-| `REV_ROOTS` | `~/tea` | Colon-separated roots scanned for repos; worktrees outside roots are found via `git worktree list`. The installed service sets `%h` (all of home). |
+| `REV_ROOTS` | `~/tea` | Colon-separated roots scanned for repos; worktrees outside roots are found via `git worktree list`. The installed service sets `%h` (all of home) — scanning home skips `Desktop`, `Documents`, `Downloads`, `Pictures`, `Movies`, `Music`, `Videos`, `Library`, `Applications`, `Public`, so macOS never asks for those permissions. Name one in `REV_ROOTS` to scan it anyway; a review URL pointing inside one works either way. |
 | `REV_DEPTH` | `4` | Max directory depth under each root when scanning (service sets 3) |
 | `REV_DB` | `~/.local/share/rev/rev.db` | SQLite (comments, seen-state) |
 | `REV_PERSONAL_HOSTS` | `git.naps.pt` | Comma-separated remote hosts whose repos land in the "personal" scope tab; any other remote is scoped by its owner org |

@@ -56,6 +56,9 @@ Prod: `pnpm build && pnpm start` — server serves `web/dist` statically.
 - **discovery.ts** — scans configured roots (default `~/tea`, `REV_ROOTS`)
   for `.git` dirs, then `git worktree list` from each to catch worktrees
   living outside the roots. Cached, re-scanned on demand and on a slow timer.
+  Dirs named in `TUNING.HOME_IGNORE` are skipped when they sit directly in
+  the user's home: the installed service scans all of home, and on macOS
+  reading `~/Desktop` or `~/Documents` pops a TCC permission dialog.
 - **watcher.ts** — chokidar per repo *with at least one live viewer*
   (subscribed over WS), ignoring `.git/objects`, `node_modules`, build dirs.
   Debounced; emits `diff-invalidated` with the changed paths. Watching only

@@ -39,6 +39,10 @@ class Rev < Formula
       Claude Code hooks are not wired up by brew. To install them:
         rev install-hooks
 
+      Repo discovery scans your home directory, skipping Desktop, Documents,
+      Downloads, Pictures and the other folders macOS guards — so it never
+      asks for those permissions. Put one in REV_ROOTS to scan it anyway.
+
       Per-machine config goes in ~/.config/rev/env (REV_PORT, REV_HOST,
       REV_ROOTS, ...); it survives upgrades. The server binds 127.0.0.1 and
       has no auth — see the README before setting REV_HOST=0.0.0.0.
