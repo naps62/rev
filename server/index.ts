@@ -34,8 +34,12 @@ function main(): void {
   const app = new Hono().route("/api", buildApi(broadcast));
   app.notFound((c) => c.json({ error: "not found" }, 404));
 
-  const webDist = join(import.meta.dirname, "..", "web", "dist");
-  if (existsSync(join(webDist, "index.html"))) {
+  // checkout: server/index.ts → ../web/dist. Release: rev.js → ./web/dist.
+  const webDist = [
+    join(import.meta.dirname, "..", "web", "dist"),
+    join(import.meta.dirname, "web", "dist"),
+  ].find((p) => existsSync(join(p, "index.html")));
+  if (webDist) {
     // serveStatic resolves root against cwd, not this file
     const root = relative(process.cwd(), webDist);
     app.get("*", serveStatic({ root }));

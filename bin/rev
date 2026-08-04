@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# rev entrypoint. Works from a release tarball (rev.js beside this bin/) and
+# from a git checkout (server/index.ts), so both installs run the same command.
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+NODE_MIN=26
+
+die() { printf 'rev: %s\n' "$1" >&2; exit 1; }
+
+node_major() { "$1" -p 'process.versions.node.split(".")[0]' 2>/dev/null || true; }
+
+# PATH node wins when it qualifies; otherwise fall back to the same toolchain
+# hunt the service installer uses (Homebrew keg-only, nvm, fnm, volta, ...).
+resolve_node() {
+  NODE="${REV_NODE:-$(command -v node 2>/dev/null || true)}"
+  local major
+  major=$(node_major "$NODE")
+  [[ "$major" =~ ^[0-9]+$ ]] && (( major >= NODE_MIN )) && return
+  . "$ROOT/scripts/service-lib.sh"
+  rev_resolve_node >/dev/null
+}
+
+version() {
+  if [[ -f "$ROOT/VERSION" ]]; then
+    cat "$ROOT/VERSION"
+  elif [[ -f "$ROOT/package.json" ]]; then
+    sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1
+  else
+    echo unknown
+  fi
+}
+
+usage() {
+  cat <<EOF
+rev $(version) — always-on local code review server
+
+  rev serve           run the server (default)
+  rev install-hooks   wire the Claude Code hooks into ~/.claude/settings.json
+  rev version         print the installed version
+  rev root            print the install directory
+
+Config lives in ~/.config/rev/env (REV_PORT, REV_HOST, REV_ROOTS, ...).
+EOF
+}
+
+case "${1:-serve}" in
+  serve)
+    resolve_node
+    entry="$ROOT/rev.js"
+    [[ -f "$entry" ]] || entry="$ROOT/server/index.ts"
+    [[ -f "$entry" ]] || die "no server entrypoint under $ROOT"
+    cd "$ROOT" # serveStatic resolves its root against cwd
+    exec "$NODE" "$entry"
+    ;;
+  install-hooks)
+    exec env REV_CHECKOUT="$ROOT" "$ROOT/scripts/install-hooks.sh"
+    ;;
+  version | --version | -v) version ;;
+  root) echo "$ROOT" ;;
+  help | --help | -h) usage ;;
+  *) usage >&2; die "unknown command: $1" ;;
+esac

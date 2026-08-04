@@ -23,7 +23,15 @@ need python3 "Install Python 3 (Xcode Command Line Tools provide it on macOS)."
 
 . "$CHECKOUT/scripts/service-lib.sh"
 rev_resolve_node
-rev_ensure_pnpm
+
+# A release tarball ships a prebuilt rev.js and no sources; only a git checkout
+# has to install deps and build the UI.
+if [[ -f "$CHECKOUT/rev.js" ]]; then
+  ENTRY=rev.js
+else
+  ENTRY=server/index.ts
+  rev_ensure_pnpm
+fi
 
 # A foreign process on the port would make the service flap on restart.
 if curl -sf --max-time 2 "http://localhost:$PORT/api/repos" >/dev/null 2>&1; then
@@ -34,8 +42,10 @@ fi
 
 # -------------------------------------------------------------------- build
 
-pnpm install
-pnpm run build
+if [[ "$ENTRY" == server/index.ts ]]; then
+  pnpm install
+  pnpm run build
+fi
 
 # ------------------------------------------------------------------ service
 

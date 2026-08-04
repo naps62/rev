@@ -10,19 +10,32 @@ Design: `docs/ARCHITECTURE.md`.
 
 ## Install
 
-Needs Node >= 26, git and python3. The installer finds a qualifying node on
-PATH, in Homebrew (including keg-only `node@NN`), nvm, fnm, volta, mise or
-asdf, and pins that exact binary in the service file — so a `brew install
-node@26` is enough even when another toolchain owns `node` on your PATH. pnpm
-is installed if missing.
+Releases ship a prebuilt server and UI, so node is the only runtime
+dependency — nothing is compiled on your machine.
+
+### Homebrew (macOS and Linux)
+
+```bash
+brew install naps62/tap/rev
+brew services start rev
+rev install-hooks          # optional: wire rev into Claude Code
+```
+
+`brew upgrade rev` updates it. Homebrew owns the launchd/systemd unit and
+pins its own node, so no toolchain hunting is involved.
+
+### Without Homebrew
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/naps62/rev/main/scripts/bootstrap.sh | bash
 ```
 
-Clones to `~/.rev`, builds the UI, installs an always-on user service (systemd
-on Linux, launchd on macOS), and wires the Claude Code hooks into
-`~/.claude/settings.json`. Idempotent — re-run the same line to update.
+Downloads the latest release to `~/.rev`, installs an always-on user service
+(systemd on Linux, launchd on macOS), and wires the Claude Code hooks into
+`~/.claude/settings.json`. Idempotent — re-run the same line to update. Needs
+Node >= 26, git, curl and python3; it finds a qualifying node on PATH, in
+Homebrew (including keg-only `node@NN`), nvm, fnm, volta, mise or asdf, and
+pins that exact binary in the service file.
 
 To read it before running it, or to pass options:
 
@@ -33,12 +46,16 @@ less rev-install.sh && bash rev-install.sh --no-hooks
 
 | Env | Default | |
 |---|---|---|
-| `REV_DIR` | `~/.rev` | Where to clone |
-| `REV_REPO` | `https://github.com/naps62/rev.git` | Clone URL (public mirror of the Gitea repo); use the SSH form if you authenticate that way |
-| `REV_REF` | `main` | Branch |
+| `REV_DIR` | `~/.rev` | Where to install |
+| `REV_VERSION` | latest release | Version to install |
+| `REV_GH_REPO` | `naps62/rev` | GitHub repo the releases live under (public mirror of the Gitea repo) |
+| `REV_SOURCE` | `release` | `git` to clone and build from source instead |
+| `REV_REPO` | `https://github.com/naps62/rev.git` | Clone URL, `REV_SOURCE=git` only; use the SSH form if you authenticate that way |
+| `REV_REF` | `main` | Branch, `REV_SOURCE=git` only |
 
-Already cloned? `./scripts/install-service.sh` is the same thing without the
-clone step. `--no-hooks` skips the hook wiring.
+Already have a checkout? `./scripts/install-service.sh` is the same thing
+without the download; it builds from source when there is no `rev.js` beside
+it. `--no-hooks` skips the hook wiring.
 
 The server listens on `127.0.0.1` and has no auth. To reach it from another
 machine, put `REV_HOST=0.0.0.0` in `~/.config/rev/env` and restart the service —
@@ -46,9 +63,10 @@ anyone who can then reach the port can read diffs of every repo on the machine
 and write files through it, so only do that on a network you trust. On macOS
 that first start triggers the firewall's "accept incoming connections?" prompt.
 
-To remove: `launchctl bootout gui/$(id -u)/com.naps62.rev` (macOS) or
-`systemctl --user disable --now rev.service` (Linux), then drop the hook
-entries from `~/.claude/settings.json`.
+To remove: `brew services stop rev && brew uninstall rev`, or for a bootstrap
+install `launchctl bootout gui/$(id -u)/com.naps62.rev` (macOS) /
+`systemctl --user disable --now rev.service` (Linux). Either way, drop the
+hook entries from `~/.claude/settings.json` afterwards.
 
 ## Run
 
@@ -98,6 +116,24 @@ services. The webhook secret lives in `~/.config/rev/deploy.env`
 (`REV_WEBHOOK_SECRET`); the listener rejects unsigned deliveries. Deploy runs
 are detached transient units — `journalctl --user -u run-*` has their logs,
 `journalctl --user -u rev-deploy` the listener's.
+
+## Releases
+
+`./scripts/release.sh 0.2.0` bumps the version, builds
+`dist/rev-0.2.0.tar.gz` (bundled `rev.js` + built UI + hook scripts, ~400 KB),
+tags, publishes the tarball on the GitHub mirror, and pushes the updated
+formula to `naps62/homebrew-tap`. `--dry-run` builds and prints the formula
+without touching any remote. Needs `gh` authenticated for both repos.
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which does the same
+thing on CI; it needs a `TAP_TOKEN` secret with write access to the tap, and
+skips the formula push without one. Use one path or the other, not both.
+
+`packaging/homebrew/rev.rb` is the canonical formula — edit it here, never in
+the tap. Both paths rewrite its url/sha256/version via
+`scripts/bump-formula.sh`.
+
+The tap repo needs one file, `Formula/rev.rb`; both paths create it.
 
 ## Agents
 

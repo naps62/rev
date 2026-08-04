@@ -7,7 +7,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=@CHECKOUT@
-ExecStart=@NODE@ server/index.ts
+ExecStart=@NODE@ @ENTRY@
 Environment=PATH=@PATH@
 Environment=NODE_ENV=production
 Environment=REV_ROOTS=%h

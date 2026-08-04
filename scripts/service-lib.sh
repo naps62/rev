@@ -57,10 +57,12 @@ rev_resolve_node() {
 }
 
 # rev_render <template> <out> <xml-escape 0|1> — substitutes @NODE@,
-# @CHECKOUT@, @HOME@, @PATH@. launchd and systemd hand a user unit a bare PATH
-# that omits Homebrew and nvm, and the server shells out to git.
+# @CHECKOUT@, @HOME@, @PATH@, @ENTRY@. launchd and systemd hand a user unit a
+# bare PATH that omits Homebrew and nvm, and the server shells out to git.
+# $ENTRY is the server entrypoint relative to $CHECKOUT (rev.js in a release
+# install, server/index.ts in a git checkout).
 rev_render() {
-  NODE="$NODE" CHECKOUT="$CHECKOUT" HOME="$HOME" \
+  NODE="$NODE" CHECKOUT="$CHECKOUT" HOME="$HOME" ENTRY="${ENTRY:-server/index.ts}" \
   TEMPLATE="$1" OUT="$2" XML="$3" \
   python3 <<'PY'
 import os
@@ -71,7 +73,7 @@ node = env["NODE"]
 dirs = [os.path.dirname(node), "/opt/homebrew/bin", "/usr/local/bin",
         "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
 subs = {"@NODE@": node, "@CHECKOUT@": env["CHECKOUT"], "@HOME@": env["HOME"],
-        "@PATH@": ":".join(dict.fromkeys(dirs))}
+        "@ENTRY@": env["ENTRY"], "@PATH@": ":".join(dict.fromkeys(dirs))}
 
 with open(env["TEMPLATE"]) as f:
     text = f.read()

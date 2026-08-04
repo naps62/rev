@@ -1,6 +1,7 @@
 {
   "name": "rev",
   "private": true,
+  "version": "0.1.0",
   "type": "module",
   "packageManager": "pnpm@10.32.1",
   "engines": {
@@ -14,6 +15,8 @@
     "dev:server": "node --watch server/index.ts",
     "dev:web": "vite",
     "build": "vite build",
+    "bundle": "esbuild server/index.ts --bundle --platform=node --format=esm --target=node26 --outfile=dist/rev.js --banner:js='import{createRequire as __cr}from\"node:module\";const require=__cr(import.meta.url);'",
+    "package": "./scripts/package.sh",
     "start": "NODE_ENV=production node server/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"server/**/*.test.ts\" \"web/src/**/*.test.ts\""
@@ -36,6 +39,7 @@
     "@types/react-dom": "^19",
     "@types/ws": "^8",
     "@vitejs/plugin-react": "^4",
+    "esbuild": "^0.28",
     "expect": "^30",
     "tailwindcss": "^4",
     "typescript": "^5",

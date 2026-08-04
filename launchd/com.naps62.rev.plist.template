@@ -11,7 +11,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>@NODE@</string>
-        <string>server/index.ts</string>
+        <string>@ENTRY@</string>
     </array>
 
     <key>WorkingDirectory</key>
