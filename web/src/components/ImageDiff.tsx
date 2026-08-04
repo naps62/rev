@@ -8,14 +8,23 @@ interface ImageDiffProps {
 }
 
 type LoadState = "loading" | "loaded" | "error";
+type ImageSize = { width: number; height: number };
 
 export function ImageDiff({ oldSrc, newSrc, status }: ImageDiffProps) {
   const [split, setSplit] = useState(50);
   const [oldState, setOldState] = useState<LoadState>(oldSrc ? "loading" : "loaded");
   const [newState, setNewState] = useState<LoadState>(newSrc ? "loading" : "loaded");
+  const [oldSize, setOldSize] = useState<ImageSize>();
+  const [newSize, setNewSize] = useState<ImageSize>();
 
-  useEffect(() => setOldState(oldSrc ? "loading" : "loaded"), [oldSrc]);
-  useEffect(() => setNewState(newSrc ? "loading" : "loaded"), [newSrc]);
+  useEffect(() => {
+    setOldState(oldSrc ? "loading" : "loaded");
+    setOldSize(undefined);
+  }, [oldSrc]);
+  useEffect(() => {
+    setNewState(newSrc ? "loading" : "loaded");
+    setNewSize(undefined);
+  }, [newSrc]);
 
   const updateFromPointer = (event: PointerEvent<HTMLDivElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -34,10 +43,21 @@ export function ImageDiff({ oldSrc, newSrc, status }: ImageDiffProps) {
   };
 
   const roundedSplit = Math.round(split);
+  const dimensionsKnown = oldSize != null || newSize != null;
+  const frameWidth = dimensionsKnown
+    ? Math.max(oldSize?.width ?? 0, newSize?.width ?? 0, 1)
+    : 320;
+  const frameHeight = dimensionsKnown
+    ? Math.max(oldSize?.height ?? 0, newSize?.height ?? 0, 1)
+    : 320;
   return (
     <div className="bg-bg/40 p-3 max-sm:p-2">
       <div
         className="image-diff-stage"
+        style={{
+          width: `min(100%, ${frameWidth}px, ${(72 * frameWidth / frameHeight).toFixed(4)}vh)`,
+          aspectRatio: `${frameWidth} / ${frameHeight}`,
+        }}
         role="slider"
         tabIndex={0}
         aria-label="Old and new image comparison"
@@ -57,7 +77,10 @@ export function ImageDiff({ oldSrc, newSrc, status }: ImageDiffProps) {
           src={newSrc}
           state={newState}
           absentLabel={status === "deleted" ? "Image deleted" : "No new image"}
-          onLoad={() => setNewState("loaded")}
+          onLoad={(size) => {
+            setNewSize(size);
+            setNewState("loaded");
+          }}
           onError={() => setNewState("error")}
         />
         <div
@@ -70,23 +93,26 @@ export function ImageDiff({ oldSrc, newSrc, status }: ImageDiffProps) {
             src={oldSrc}
             state={oldState}
             absentLabel={status === "added" || status === "untracked" ? "Image added" : "No old image"}
-            onLoad={() => setOldState("loaded")}
+            onLoad={(size) => {
+              setOldSize(size);
+              setOldState("loaded");
+            }}
             onError={() => setOldState("error")}
           />
         </div>
 
         <div className="pointer-events-none absolute inset-y-0 z-20 w-px bg-accent shadow-[0_0_0_1px_rgb(14_17_21/.65)]" style={{ left: `${split}%` }}>
-          <span className="absolute left-1/2 top-1/2 grid h-9 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-accent/60 bg-raise shadow-pop">
+          <span className="image-diff-handle absolute left-1/2 top-1/2 grid h-9 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-accent/60 bg-raise shadow-pop">
             <svg width="12" height="14" viewBox="0 0 12 14" fill="none" aria-hidden>
               <path d="M4.5 3 1.5 7l3 4M7.5 3l3 4-3 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </span>
         </div>
 
-        <span className="pointer-events-none absolute left-2 top-2 z-30 border border-edge bg-bg/90 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-mute">
+        <span className="image-diff-label pointer-events-none absolute left-2 top-2 z-30 border border-edge bg-bg/90 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-mute">
           old
         </span>
-        <span className="pointer-events-none absolute right-2 top-2 z-30 border border-edge bg-bg/90 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-mute">
+        <span className="image-diff-label pointer-events-none absolute right-2 top-2 z-30 border border-edge bg-bg/90 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-mute">
           new
         </span>
       </div>
@@ -110,7 +136,7 @@ function ImageSide({
   src?: string;
   state: LoadState;
   absentLabel: string;
-  onLoad: () => void;
+  onLoad: (size: ImageSize) => void;
   onError: () => void;
 }) {
   return (
@@ -120,9 +146,14 @@ function ImageSide({
           src={src}
           alt=""
           draggable={false}
-          onLoad={onLoad}
+          onLoad={(event) =>
+            onLoad({
+              width: event.currentTarget.naturalWidth,
+              height: event.currentTarget.naturalHeight,
+            })
+          }
           onError={onError}
-          className={`h-full w-full select-none object-contain transition-opacity duration-150 ${state === "loaded" ? "opacity-100" : "opacity-0"}`}
+          className={`max-h-full max-w-full select-none object-contain transition-opacity duration-150 ${state === "loaded" ? "opacity-100" : "opacity-0"}`}
         />
       )}
       {state !== "loaded" && (

@@ -180,11 +180,11 @@ summary {
 
 .image-diff-stage {
   position: relative;
-  height: clamp(18rem, 54vw, 44rem);
-  max-height: 72vh;
+  margin-inline: auto;
   overflow: hidden;
   cursor: ew-resize;
   touch-action: none;
+  container-type: inline-size;
   background-color: var(--color-panel);
   background-image:
     linear-gradient(45deg, color-mix(in srgb, var(--color-raise) 75%, transparent) 25%, transparent 25%),
@@ -200,9 +200,14 @@ summary {
   outline-offset: -2px;
 }
 
-@media (max-width: 640px) {
-  .image-diff-stage {
-    height: clamp(14rem, 78vw, 30rem);
+@container (max-width: 7rem) {
+  .image-diff-label {
+    display: none;
+  }
+
+  .image-diff-handle {
+    width: 0.875rem;
+    height: 1.75rem;
   }
 }
 
