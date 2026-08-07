@@ -300,6 +300,7 @@ export function Review() {
   // keeps its width.
   const heldPanel = useRef<ReactNode>(null);
   const heldWide = useRef(false);
+  const heldAlign = useRef(false);
 
   const loadAllHunks = () => {
     for (const f of files) {
@@ -1073,7 +1074,11 @@ export function Review() {
             if (live) {
               heldPanel.current = live;
               heldWide.current = commentsOpen;
+              // Only the current-file entity panel tracks the file's start;
+              // symbol search and comments span the full visible height.
+              heldAlign.current = !commentsOpen && !(symbol != null && symbolData);
             }
+            const full = `calc(100vh - ${HEADER_PX + 16}px)`;
             return (
               <aside
                 ref={panelRef}
@@ -1082,8 +1087,8 @@ export function Review() {
                 className="side-panel sticky hidden shrink-0 justify-end overflow-hidden lg:flex"
                 style={{
                   top: HEADER_PX + 8,
-                  marginTop: panelTop,
-                  maxHeight: `calc(100vh - ${HEADER_PX + 16}px)`,
+                  marginTop: heldAlign.current ? panelTop : 0,
+                  maxHeight: full,
                 }}
               >
                 {heldPanel.current && (
@@ -1092,6 +1097,7 @@ export function Review() {
                       "flex shrink-0 flex-col overflow-hidden rounded-md border border-edge bg-panel",
                       heldWide.current ? "w-96" : "w-72",
                     )}
+                    style={heldAlign.current ? undefined : { height: full }}
                   >
                     {heldPanel.current}
                   </div>
