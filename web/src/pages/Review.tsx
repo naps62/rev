@@ -498,11 +498,6 @@ export function Review() {
     requestAnimationFrame(attempt);
   };
 
-  // Landing height for thread jumps: the thread sits at ~30% of the viewport
-  // ("eye level") rather than tucked under the header.
-  const eyeAnchorY = () =>
-    Math.max(HEADER_PX + 16, Math.round(window.innerHeight * 0.3));
-
   /**
    * Jump to a comment thread. Same poll-while-streaming shape as
    * jumpToOccurrence: for in-diff anchors expand the file and glide toward it,
