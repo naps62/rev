@@ -62,6 +62,12 @@ interface DiffFileProps {
   defaultCollapsed?: boolean;
   /** Section-level collapse/expand-all: acts once per seq bump. */
   collapseCmd?: { seq: number; expand: boolean };
+  /**
+   * Keyboard toggle routed to this file, acting once per seq bump.
+   * "file" = open/close the body (same as a header click); "folds" = expand
+   * every fold strip, or fold them all back when nothing is folded.
+   */
+  keyCmd?: { seq: number; kind: "file" | "folds" };
   /** Mouse moved over this file — claim focus (rail + yellow indicator). */
   onHover?: () => void;
   onToggleSeen: (file: FileSummary, seen: boolean) => void;
@@ -87,6 +93,7 @@ export function DiffFile({
   fileClass,
   defaultCollapsed,
   collapseCmd,
+  keyCmd,
   onHover,
   onToggleSeen,
   onSymbolClick,
@@ -275,8 +282,8 @@ export function DiffFile({
   const foldBodies = fileClass === "tests" && !showBodies;
   // Import and test-body folds share hunk offsets; the prefix keeps a key
   // expanded in one mode from leaking into the other.
-  const foldKey = (hi: number, run: FoldRun) =>
-    `${foldBodies ? "t" : "i"}:${hi}:${run.start}`;
+  const foldKey = (hi: number, run: FoldRun, bodies = foldBodies) =>
+    `${bodies ? "t" : "i"}:${hi}:${run.start}`;
   const foldsByHunk = useMemo(() => {
     const lang = langOf(file.path);
     if (!lang || (!foldBodies && !foldImports)) return null;
@@ -287,6 +294,46 @@ export function DiffFile({
     });
     return m.size > 0 ? m : null;
   }, [foldImports, file.path, hunks, foldBodies]);
+
+  // e/E from the review keymap, one action per seq bump.
+  const lastKeySeq = useRef(keyCmd?.seq ?? 0);
+  useEffect(() => {
+    if (!keyCmd || keyCmd.seq === lastKeySeq.current) return;
+    lastKeySeq.current = keyCmd.seq;
+    if (keyCmd.kind === "file") {
+      if (canExpand && !editing) toggleOpen();
+      return;
+    }
+    // folds: a collapsed file first opens (without touching seen), so E is
+    // always "show me more" until everything is visible, then folds it back.
+    if (!expanded) {
+      if (canExpand) setPeek(true);
+      return;
+    }
+    const collapsed =
+      (fileClass === "tests" && !showBodies) ||
+      [...(foldsByHunk ?? new Map<number, FoldRun[]>())].some(([hi, runs]) =>
+        runs.some((r) => !expandedFolds.has(foldKey(hi, r))),
+      );
+    if (collapsed) {
+      // End state "everything visible": bodies shown AND import folds open.
+      // Import keys are computed directly — after setShowBodies flips the
+      // mode, foldsByHunk will re-derive with the i: prefix.
+      const lang = langOf(file.path);
+      const keys: string[] = [];
+      if (lang && foldImports) {
+        hunks.forEach((h, hi) => {
+          for (const r of importFolds(h.lines, lang)) keys.push(foldKey(hi, r, false));
+        });
+      }
+      setExpandedFolds(new Set(keys));
+      if (fileClass === "tests") setShowBodies(true);
+    } else {
+      setExpandedFolds(new Set());
+      if (fileClass === "tests") setShowBodies(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyCmd]);
 
   // Symbol panel wiring: resolve the identifier under the pointer and filter
   // through the language's stopwords before bubbling up.
@@ -692,6 +739,7 @@ export function DiffFile({
       >
         <button
           type="button"
+          data-hint
           onClick={(e) => {
             e.stopPropagation();
             if (!editing) toggleOpen();
@@ -754,6 +802,7 @@ export function DiffFile({
                 setShowBodies((b) => !b);
               }}
               title={showBodies ? "Fold test bodies back to names" : "Show full test bodies"}
+              data-hint
               className="rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-mute transition-colors duration-150 hover:bg-panel hover:text-fg"
             >
               {showBodies ? "hide bodies" : "show bodies"}
@@ -762,6 +811,7 @@ export function DiffFile({
           {canEdit && (
             <button
               type="button"
+              data-hint
               onClick={(e) => {
                 e.stopPropagation();
                 setEditing(true);
@@ -772,6 +822,7 @@ export function DiffFile({
             </button>
           )}
           <label
+            data-hint
             onClick={(e) => e.stopPropagation()}
             className="flex cursor-pointer items-center gap-1.5 text-[12px] text-mute transition-colors duration-150 hover:text-fg"
           >
@@ -933,6 +984,7 @@ function FoldStrip({
       <td colSpan={split ? 4 : 1} className="p-0">
         <button
           type="button"
+          data-hint
           onClick={onExpand}
           aria-expanded={false}
           title="Expand folded lines"

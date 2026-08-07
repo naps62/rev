@@ -81,6 +81,23 @@ export const TUNING = {
   /** Diff context lines, matching git's default so hunks look familiar. */
   DIFF_CONTEXT_LINES: 3,
 
+  /**
+   * Keyboard hunk navigation (n/p) rests the target this fraction of the
+   * usable viewport below the sticky header — "eye level". 0 would pin it
+   * under the header like file navigation; 0.5 is dead center. 0.3 keeps a
+   * screenful of context below while the landed hunk stays where the eyes
+   * already are.
+   */
+  HUNK_EYE_FRACTION: 0.3,
+
+  /**
+   * Hysteresis around the eye anchor when picking the next/prev hunk by
+   * geometry. The just-landed hunk rests exactly at the anchor, so without a
+   * band, subpixel scroll drift made p re-match the current hunk and go
+   * nowhere (issue #66).
+   */
+  HUNK_NAV_TOLERANCE_PX: 8,
+
   /** Expanded files start fetching their hunks this many px before entering the viewport. */
   HUNK_PREFETCH_MARGIN_PX: 1200,
 

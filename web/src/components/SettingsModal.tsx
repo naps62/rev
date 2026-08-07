@@ -420,9 +420,11 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
   {
     title: "navigate",
     keys: [
-      ["j / k", "next / previous file"],
-      ["J / K", "next / previous unseen or stale file"],
-      ["n / p", "next / previous hunk"],
+      ["j / k", "next / previous unseen or stale file"],
+      ["J / K", "next / previous file"],
+      ["n / p", "next / previous hunk, landed at eye level"],
+      ["d / u", "scroll half a page down / up"],
+      ["g g / G", "jump to the top / bottom"],
     ],
   },
   {
@@ -430,6 +432,7 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
     keys: [
       ["s, v or .", "toggle seen on the current file"],
       ["c", "comment on the line under the pointer"],
+      ["f", "hint labels on visible actions — type one to click it"],
       ["a", "send pending comments to the agent now"],
       ["click id", "symbol panel on: list occurrences of an identifier"],
     ],
@@ -437,6 +440,8 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
   {
     title: "view",
     keys: [
+      ["e", "expand / collapse the current file"],
+      ["E", "expand every fold in the current file (again folds back)"],
       ["x", "toggle pointer crosshair (line/column/word/char)"],
       ["?", "open this cheatsheet"],
       ["Esc", "close dialogs and panels"],
