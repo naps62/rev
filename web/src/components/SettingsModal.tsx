@@ -420,8 +420,8 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
   {
     title: "navigate",
     keys: [
-      ["j / k", "next / previous file"],
-      ["J / K", "next / previous unseen or stale file"],
+      ["j / k", "next / previous unseen or stale file"],
+      ["J / K", "next / previous file"],
       ["n / p", "next / previous hunk, landed at eye level"],
       ["d / u", "scroll half a page down / up"],
       ["g g / G", "jump to the top / bottom"],

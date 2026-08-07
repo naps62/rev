@@ -551,13 +551,13 @@ export function Review() {
         window.matchMedia("(prefers-reduced-motion: reduce)").matches
           ? ("auto" as const)
           : ("smooth" as const);
-      if (e.key === "j" || e.key === "k") {
+      if (e.key === "J" || e.key === "K") {
         if (fs.length === 0) return;
         e.preventDefault();
         hunkCursor.current = null;
         const idx = fs.findIndex((f) => f.path === currentRef.current);
         const next =
-          fs[e.key === "j" ? Math.min(idx + 1, fs.length - 1) : Math.max(idx - 1, 0)];
+          fs[e.key === "J" ? Math.min(idx + 1, fs.length - 1) : Math.max(idx - 1, 0)];
         const el = next && sectionEls.current.get(next.path);
         if (next && el) {
           autoScrollAt.current = performance.now();
@@ -566,14 +566,14 @@ export function Review() {
           });
           setCurrentPath(next.path);
         }
-      } else if (e.key === "J" || e.key === "K") {
+      } else if (e.key === "j" || e.key === "k") {
         if (fs.length === 0) return;
         e.preventDefault();
         // -1 (no current file) behaves like being on the first file
         const idx = Math.max(0, fs.findIndex((f) => f.path === currentRef.current));
         const wants = (f: (typeof fs)[number]) => !f.seen || f.stale;
         const order: typeof fs = [];
-        if (e.key === "J") {
+        if (e.key === "j") {
           for (let i = 1; i <= fs.length; i++) order.push(fs[(idx + i + fs.length) % fs.length]!);
         } else {
           for (let i = 1; i <= fs.length; i++) order.push(fs[(idx - i + 2 * fs.length) % fs.length]!);
@@ -946,7 +946,7 @@ export function Review() {
             </section>
 
             <p className="pb-4 text-center font-mono text-[11px] text-faint">
-              j/k files · J/K unseen · n/p hunks · d/u scroll · gg/G ends · e/E expand ·
+              j/k unseen · J/K files · n/p hunks · d/u scroll · gg/G ends · e/E expand ·
               f hints · . seen · c comment · a send · x crosshair · ? shortcuts
             </p>
           </main>
