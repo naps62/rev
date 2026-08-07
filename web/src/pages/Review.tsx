@@ -39,7 +39,9 @@ import { entityAnchor } from "../semantic/entities.ts";
 import { buildRollup } from "../semantic/rollup.ts";
 import { findOccurrences, type Occurrence } from "../semantic/symbols.ts";
 import { attachCrosshair } from "../crosshair";
+import { startHints } from "../hints";
 import { type FeatureFlags, loadFeatures, saveFeatures } from "../features";
+import { TUNING } from "#shared/tuning";
 import { buildFileTree, flattenTree } from "../tree";
 import { basename, buildThreads, cx, shortSha, type Thread } from "../util";
 import { useRevSocket } from "../ws";
@@ -229,6 +231,14 @@ export function Review() {
     cmdSeq.current += 1;
     setFileCmds((prev) => ({ ...prev, [path]: { seq: cmdSeq.current, expand } }));
   };
+  // Keyboard toggles routed to one file: e (open/close) and E (all folds).
+  const [keyCmds, setKeyCmds] = useState<
+    Record<string, { seq: number; kind: "file" | "folds" }>
+  >({});
+  const commandKey = (path: string, kind: "file" | "folds") => {
+    cmdSeq.current += 1;
+    setKeyCmds((prev) => ({ ...prev, [path]: { seq: cmdSeq.current, kind } }));
+  };
 
   // Symbol panel: click opens/retargets, Esc closes. Occurrence search runs
   // over whatever per-file hunks are already in the query cache — coverage
@@ -325,6 +335,13 @@ export function Review() {
   const currentRef = useRef<string | null>(null);
   currentRef.current = currentPath;
 
+  // n/p position: the last hunk row navigation landed on. Stepping from the
+  // cursor (not pure geometry) keeps n/p monotonic even when the target can't
+  // reach the eye anchor (bottom of the document clamps the scroll). Cleared
+  // by file-level jumps and by any scroll we didn't cause ourselves.
+  const hunkCursor = useRef<HTMLElement | null>(null);
+  const autoScrollAt = useRef(0);
+
   // Animated jump state: scroll-spy pauses while gliding so the rail doesn't
   // flick through every file passed on the way.
   const animRef = useRef<number | null>(null);
@@ -339,6 +356,9 @@ export function Review() {
   useEffect(() => {
     if (files.length === 0) return;
     const onScroll = () => {
+      // A scroll we didn't drive (wheel, scrollbar, smooth d/u tail) means
+      // the n/p cursor no longer matches what the eyes track.
+      if (performance.now() - autoScrollAt.current > 150) hunkCursor.current = null;
       if (glidingRef.current) return;
       let current = files[0]?.path ?? null;
       for (const f of files) {
@@ -358,24 +378,26 @@ export function Review() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diffQ.data]);
 
-  const targetTop = (el: HTMLElement) => {
-    const top = el.getBoundingClientRect().top + window.scrollY - HEADER_PX - 8;
+  const targetTop = (el: HTMLElement, offset: number) => {
+    const top = el.getBoundingClientRect().top + window.scrollY - offset;
     const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
     return Math.min(Math.max(top, 0), max);
   };
+
+  /** Viewport y where n/p rests the landed hunk (see TUNING.HUNK_EYE_FRACTION). */
+  const eyeAnchorY = () =>
+    HEADER_PX + (window.innerHeight - HEADER_PX) * TUNING.HUNK_EYE_FRACTION;
 
   /**
    * Fast glide instead of a teleport. Exponential approach re-measures the
    * element every frame, so files lazy-loading above (and shifting layout)
    * can't make it land short; wheel/touch input hands control back.
    */
-  const jumpTo = (path: string) => {
-    const el = sectionEls.current.get(path);
-    if (!el) return;
-    setCurrentPath(path);
+  const glideTo = (el: HTMLElement, offset = HEADER_PX + 8) => {
     cancelGlide();
+    autoScrollAt.current = performance.now();
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      window.scrollTo({ top: targetTop(el) });
+      window.scrollTo({ top: targetTop(el, offset) });
       return;
     }
     glidingRef.current = true;
@@ -385,9 +407,18 @@ export function Review() {
     let last = performance.now();
     const step = (now: number) => {
       if (!glidingRef.current) return;
-      const goal = targetTop(el);
+      // A target unmounted mid-glide (re-render, collapse) measures at 0,0
+      // and the loop would chase the top of the page forever.
+      if (!el.isConnected) {
+        cancelGlide();
+        return;
+      }
+      autoScrollAt.current = now;
+      const goal = targetTop(el, offset);
       const delta = goal - window.scrollY;
-      if (Math.abs(delta) < 1) {
+      // <=: a clamped goal can rest exactly 1px away (scrollY 1 vs goal 0),
+      // which must count as landed or the loop never exits.
+      if (Math.abs(delta) <= 1) {
         window.scrollTo({ top: goal });
         cancelGlide();
         return;
@@ -399,7 +430,22 @@ export function Review() {
     };
     animRef.current = requestAnimationFrame(step);
   };
+
+  const jumpTo = (path: string) => {
+    const el = sectionEls.current.get(path);
+    if (!el) return;
+    setCurrentPath(path);
+    hunkCursor.current = null;
+    glideTo(el);
+  };
   jumpToRef.current = jumpTo;
+
+  const flashRow = (el: HTMLElement) => {
+    el.classList.remove("hunk-flash");
+    void el.offsetWidth; // restart the animation when re-landing
+    el.classList.add("hunk-flash");
+    setTimeout(() => el.classList.remove("hunk-flash"), 1300);
+  };
 
   /**
    * Jump to a specific occurrence row. The row may not exist yet (file
@@ -418,10 +464,7 @@ export function Review() {
         window.scrollTo({
           top: el.getBoundingClientRect().top + window.scrollY - HEADER_PX - 80,
         });
-        el.classList.remove("hunk-flash");
-        void el.offsetWidth;
-        el.classList.add("hunk-flash");
-        setTimeout(() => el.classList.remove("hunk-flash"), 1300);
+        flashRow(el);
         setCurrentPath(o.path);
         return;
       }
@@ -492,21 +535,32 @@ export function Review() {
 
   const filesRef = useRef(files);
   filesRef.current = files;
+  // gg chord: timestamp of a lone g, cleared by any other key or timeout.
+  const lastG = useRef(0);
+  const hintsOff = useRef<(() => void) | null>(null);
+  useEffect(() => () => hintsOff.current?.(), []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key !== "g") lastG.current = 0;
       const fs = filesRef.current;
+      const smooth = () =>
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? ("auto" as const)
+          : ("smooth" as const);
       if (e.key === "j" || e.key === "k") {
         if (fs.length === 0) return;
         e.preventDefault();
+        hunkCursor.current = null;
         const idx = fs.findIndex((f) => f.path === currentRef.current);
         const next =
           fs[e.key === "j" ? Math.min(idx + 1, fs.length - 1) : Math.max(idx - 1, 0)];
         const el = next && sectionEls.current.get(next.path);
         if (next && el) {
+          autoScrollAt.current = performance.now();
           window.scrollTo({
             top: el.getBoundingClientRect().top + window.scrollY - HEADER_PX - 8,
           });
@@ -527,25 +581,59 @@ export function Review() {
         const next = order.find(wants);
         if (next) jumpToRef.current(next.path);
       } else if (e.key === "n" || e.key === "p") {
-        // Anchor sits just below the sticky header + file header; a landed
-        // hunk rests slightly above it so the next n moves on.
-        const anchor = HEADER_PX + 44;
-        const tops = [...hunkEls.current.values()]
+        const anchor = eyeAnchorY();
+        const tol = TUNING.HUNK_NAV_TOLERANCE_PX;
+        const entries = [...hunkEls.current.values()]
           .filter((el) => el.isConnected)
           .map((el) => ({ el, top: el.getBoundingClientRect().top }))
           .sort((x, y) => x.top - y.top);
-        const target =
-          e.key === "n"
-            ? tops.find((t) => t.top > anchor + 4)
-            : [...tops].reverse().find((t) => t.top < anchor - 4);
-        if (!target) return;
+        if (entries.length === 0) return;
         e.preventDefault();
-        window.scrollTo({ top: target.top + window.scrollY - HEADER_PX - 40 });
-        const el = target.el;
-        el.classList.remove("hunk-flash");
-        void el.offsetWidth; // restart the animation when re-landing
-        el.classList.add("hunk-flash");
-        setTimeout(() => el.classList.remove("hunk-flash"), 1300);
+        // Step from the cursor when it's still rendered; otherwise pick by
+        // geometry around the anchor, with a tolerance band so the hunk
+        // resting exactly there is never re-matched.
+        const curIdx = hunkCursor.current
+          ? entries.findIndex((t) => t.el === hunkCursor.current)
+          : -1;
+        const target =
+          curIdx >= 0
+            ? entries[curIdx + (e.key === "n" ? 1 : -1)]
+            : e.key === "n"
+              ? entries.find((t) => t.top > anchor + tol)
+              : [...entries].reverse().find((t) => t.top < anchor - tol);
+        if (!target) return;
+        hunkCursor.current = target.el;
+        glideTo(target.el, anchor);
+        flashRow(target.el);
+      } else if (e.key === "d" || e.key === "u") {
+        e.preventDefault();
+        hunkCursor.current = null;
+        const dy = ((window.innerHeight - HEADER_PX) / 2) * (e.key === "d" ? 1 : -1);
+        window.scrollBy({ top: dy, behavior: smooth() });
+      } else if (e.key === "g") {
+        const now = performance.now();
+        const chord = now - lastG.current < 600;
+        lastG.current = chord ? 0 : now;
+        if (!chord) return;
+        e.preventDefault();
+        hunkCursor.current = null;
+        window.scrollTo({ top: 0, behavior: smooth() });
+      } else if (e.key === "G") {
+        e.preventDefault();
+        hunkCursor.current = null;
+        window.scrollTo({
+          top: document.documentElement.scrollHeight,
+          behavior: smooth(),
+        });
+      } else if (e.key === "e" || e.key === "E") {
+        const path = currentRef.current;
+        if (!path) return;
+        e.preventDefault();
+        commandKey(path, e.key === "e" ? "file" : "folds");
+      } else if (e.key === "f") {
+        e.preventDefault();
+        hintsOff.current?.();
+        hintsOff.current = startHints(() => (hintsOff.current = null));
       } else if (e.key === "v" || e.key === "." || e.key === "s") {
         const f = fs.find((x) => x.path === currentRef.current);
         if (f) {
@@ -808,6 +896,7 @@ export function Review() {
                   const b = s ? sectionCmds[s.cls] : undefined;
                   return a && b ? (a.seq > b.seq ? a : b) : a ?? b;
                 })()}
+                keyCmd={keyCmds[f.path]}
                 onSymbolClick={features.symbols ? setSymbol : undefined}
                 onHover={() => hoverFocus(f.path)}
                 onToggleSeen={toggleSeen}
@@ -857,8 +946,8 @@ export function Review() {
             </section>
 
             <p className="pb-4 text-center font-mono text-[11px] text-faint">
-              j/k files · J/K unseen · n/p hunks · . seen · s block seen · c comment · a send · x
-              crosshair · ? shortcuts
+              j/k files · J/K unseen · n/p hunks · d/u scroll · gg/G ends · e/E expand ·
+              f hints · . seen · c comment · a send · x crosshair · ? shortcuts
             </p>
           </main>
 
@@ -944,6 +1033,7 @@ function ClassSectionHeader({
       <div className="ml-auto flex items-center gap-1.5">
         <button
           type="button"
+          data-hint
           onClick={() => onCollapseAll(false)}
           className="rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-faint transition-colors duration-150 hover:bg-raise hover:text-fg"
         >
@@ -951,6 +1041,7 @@ function ClassSectionHeader({
         </button>
         <button
           type="button"
+          data-hint
           onClick={() => onCollapseAll(true)}
           className="rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-faint transition-colors duration-150 hover:bg-raise hover:text-fg"
         >

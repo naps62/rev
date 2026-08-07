@@ -329,6 +329,32 @@ summary {
   border-radius: 3px;
 }
 
+/* Link-hint badges (f): positioned imperatively by hints.ts. */
+.hints-root {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+
+.hint-badge {
+  position: absolute;
+  transform: translateY(-50%);
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--color-bg);
+  background: var(--color-accent);
+  border-radius: 3px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+
+.hint-badge .hint-typed {
+  opacity: 0.45;
+}
+
 /* One-shot green radiate when the last file is marked seen. */
 @keyframes progress-pulse {
   0% {

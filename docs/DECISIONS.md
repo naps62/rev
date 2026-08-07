@@ -42,6 +42,20 @@ the pointer-targeted block detection didn't work well in practice.
 Seen-tracking is file-level only; the `seen_segments` table is dropped on
 startup.
 
+## Keyboard map vs vimium (2026-08-07)
+
+- n/p rest the landed hunk at an eye-level anchor
+  (`TUNING.HUNK_EYE_FRACTION`) with a hysteresis band. The old header-edge
+  anchor gave p a zero-width threshold: the just-landed hunk sat exactly on
+  it, so subpixel drift made p re-match in place (#66).
+- d/u, gg/G and native f link-hints cover what the vimium extension provided,
+  so vimium can be disabled for the rev origin without losing navigation.
+  With vimium left enabled its bindings win (it captures first) — notably
+  vimium's p (open clipboard URL) shadows rev's previous-hunk.
+- e toggles the current file open/closed without touching seen; E expands
+  every fold in the current file, and folds them all back once nothing is
+  folded.
+
 ## Rejected for now (2026-08-02)
 
 - **Reviewing refs that aren't checked out** (`head=<ref>` diffing the object
