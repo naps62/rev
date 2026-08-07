@@ -391,6 +391,16 @@ export function Review() {
     HEADER_PX + (window.innerHeight - HEADER_PX) * TUNING.HUNK_EYE_FRACTION;
 
   /**
+   * Landing offset for a file jump: eye level when the whole file fits below
+   * it, otherwise the top of the viewport — a file taller than the remaining
+   * space shouldn't waste its first screenful on the previous file's tail.
+   */
+  const fileOffset = (el: HTMLElement) => {
+    const eye = eyeAnchorY();
+    return el.offsetHeight <= window.innerHeight - eye ? eye : HEADER_PX + 8;
+  };
+
+  /**
    * Fast glide instead of a teleport. Exponential approach re-measures the
    * element every frame, so files lazy-loading above (and shifting layout)
    * can't make it land short; wheel/touch input hands control back.
@@ -438,7 +448,7 @@ export function Review() {
     if (!el) return;
     setCurrentPath(path);
     hunkCursor.current = null;
-    glideTo(el);
+    glideTo(el, fileOffset(el));
   };
   jumpToRef.current = jumpTo;
 
@@ -564,7 +574,7 @@ export function Review() {
         if (next && el) {
           autoScrollAt.current = performance.now();
           window.scrollTo({
-            top: el.getBoundingClientRect().top + window.scrollY - eyeAnchorY(),
+            top: el.getBoundingClientRect().top + window.scrollY - fileOffset(el),
           });
           setCurrentPath(next.path);
         }
