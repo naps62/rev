@@ -98,6 +98,13 @@ export const TUNING = {
    */
   HUNK_NAV_TOLERANCE_PX: 8,
 
+  /**
+   * Ceiling on first-parent commits walked for stack detection. A real stack
+   * is a handful of branches with a few commits each; past this the walk is
+   * cost without signal and the stack is reported truncated-silently.
+   */
+  STACK_MAX_COMMITS: 300,
+
   /** Expanded files start fetching their hunks this many px before entering the viewport. */
   HUNK_PREFETCH_MARGIN_PX: 1200,
 

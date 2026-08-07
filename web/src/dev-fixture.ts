@@ -20,6 +20,7 @@ import type {
   RepoInfo,
   SeenRequest,
   SemanticDiffResponse,
+  StackResponse,
 } from "#shared/types";
 
 const now = Date.now();
@@ -871,6 +872,19 @@ export function fxGetSemanticDiff(dir: string, base: string): SemanticDiffRespon
 
 export function fxGetRefs(dir: string): { dir: string; refs: string[] } {
   return { dir, refs: ["main", "develop", "origin/main", "origin/develop", "spike/always-on-review"] };
+}
+
+export function fxGetStack(dir: string, base: string): StackResponse {
+  return {
+    dir,
+    base,
+    segments: [
+      { branch: "spike/always-on-review", head: "9c2f41ab01de", commits: 4, checkoutDir: dir, parent: "spike/queue-rework" },
+      { branch: "spike/queue-rework", head: "b91c220f7742", commits: 2, checkoutDir: "/home/naps62/tea/maestro/old-spike", parent: "fix-auth" },
+      { branch: "fix-auth", head: "1b7d90233aa8", commits: 3, checkoutDir: null, parent: base },
+    ],
+    computedAt: now,
+  };
 }
 
 /** Stale fixture file (server/db.ts) gets a small delta since seen. */

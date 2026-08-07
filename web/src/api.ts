@@ -19,6 +19,7 @@ import type {
   RepoInfo,
   SeenRequest,
   SemanticDiffResponse,
+  StackResponse,
 } from "#shared/types";
 
 export class ApiError extends Error {
@@ -109,6 +110,12 @@ export async function getRefs(dir: string): Promise<RefsResponse> {
   if (isFixture()) return tick((await fx()).fxGetRefs(dir));
   const q = new URLSearchParams({ dir });
   return request(`/api/refs?${q}`);
+}
+
+export async function getStack(dir: string, base: string): Promise<StackResponse> {
+  if (isFixture()) return tick((await fx()).fxGetStack(dir, base));
+  const q = new URLSearchParams({ dir, base });
+  return request(`/api/stack?${q}`);
 }
 
 export async function getInterdiff(

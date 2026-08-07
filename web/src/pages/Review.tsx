@@ -28,6 +28,7 @@ import { ReviewProgress } from "../components/ReviewProgress";
 import { Checkbox } from "../components/Checkbox";
 import { EntityPanel } from "../components/EntityPanel";
 import { RollupPanel } from "../components/RollupPanel";
+import { StackStrip } from "../components/StackStrip";
 import { SymbolPanel } from "../components/SymbolPanel";
 import {
   buildClassSections,
@@ -85,11 +86,18 @@ export function Review() {
     enabled: !!dir,
     staleTime: 5 * 60_000,
   });
+  // Branch-stack detection; the strip renders only for real stacks (≥2).
+  const stackQ = useQuery({
+    queryKey: ["stack", dir, base],
+    queryFn: () => api.getStack(dir, base),
+    enabled: !!dir && !!base,
+  });
 
   const wsStatus = useRevSocket(dir || undefined, (msg) => {
     if (msg.type === "diff-invalidated" && msg.dir === dir) {
       qc.invalidateQueries({ queryKey: ["diff-summary", dir] });
       qc.invalidateQueries({ queryKey: ["semantic", dir] });
+      qc.invalidateQueries({ queryKey: ["stack", dir] });
       if (msg.paths.length > 0) {
         for (const p of msg.paths) qc.invalidateQueries({ queryKey: ["diff-file", dir, base, p] });
       } else {
@@ -954,6 +962,13 @@ export function Review() {
           </aside>
 
           <main ref={mainRef} className="relative flex min-w-0 flex-1 flex-col gap-3">
+            {stackQ.data != null && stackQ.data.segments.length >= 2 && (
+              <StackStrip
+                stack={stackQ.data}
+                currentBase={base}
+                onBase={(ref) => navigate(api.href("/review", { dir, base: ref }))}
+              />
+            )}
             {rollup && <RollupPanel groups={rollup} onJump={jumpToEntityIn} />}
             {(sections ?? [null]).map((s) => (
               <Fragment key={s?.cls ?? "all"}>
