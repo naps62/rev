@@ -245,6 +245,11 @@ summary {
   transition-delay: 0s;
 }
 
+/* Comments panel needs more room than the symbol/entity panels. */
+.side-panel[data-open][data-wide] {
+  width: 24rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .side-panel {
     transition: none;
@@ -278,6 +283,13 @@ summary {
 
 .hunk-flash td {
   animation: hunk-flash 1.2s ease-out both;
+}
+
+/* Same amber wash for arbitrary elements (comment-thread jumps). Uses the
+   stale-flash keyframes because they end transparent — thread shells don't
+   rest on a raise tint, so the hunk-flash ending would pop on removal. */
+.el-flash {
+  animation: stale-flash 1.2s ease-out both;
 }
 
 /* Wash over an expanded fold run while its gutter rail is hovered. Inset

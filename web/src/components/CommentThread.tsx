@@ -69,7 +69,7 @@ function CommentBlock({ comment, baseLabel }: { comment: Comment; baseLabel?: st
           </span>
         )}
       </div>
-      <div className="whitespace-pre-wrap px-3 pb-1.5 pt-1 font-sans text-[13px] leading-relaxed text-fg">
+      <div className="whitespace-pre-wrap px-3 pb-1.5 pt-1 font-sans text-[14px] leading-relaxed text-fg">
         <Markdown text={comment.body} />
       </div>
     </div>
@@ -109,7 +109,7 @@ export function CommentThread({
 
   if (resolved && !expanded) {
     return (
-      <div className={threadShell}>
+      <div className={threadShell} data-thread-id={root.id}>
         <button
           type="button"
           onClick={() => setOverride(true)}
@@ -143,7 +143,7 @@ export function CommentThread({
   }
 
   return (
-    <div className={threadShell}>
+    <div className={threadShell} data-thread-id={root.id}>
       {anchorNote && (
         <div className="border-b border-edge-soft px-3 py-1.5 font-mono text-[11px] text-faint">
           {anchorNote}
