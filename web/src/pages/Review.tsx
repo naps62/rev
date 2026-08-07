@@ -513,7 +513,8 @@ export function Review() {
       commandFile(a.file, true);
       jumpTo(a.file);
     }
-    const sel = `[data-thread-id="${CSS.escape(t.root.id)}"]`;
+    // Scoped to main: the sidebar renders the same thread (same attribute).
+    const sel = `main [data-thread-id="${CSS.escape(t.root.id)}"]`;
     const t0 = performance.now();
     const attempt = () => {
       const el = document.querySelector<HTMLElement>(sel);
@@ -1051,6 +1052,8 @@ export function Review() {
                 currentBase={base}
                 fileOrder={files.map((f) => f.path)}
                 onJump={jumpToThread}
+                onReply={reply}
+                onResolve={resolve}
                 onClose={() => setCommentsOpen(false)}
               />
             ) : symbol != null && symbolData ? (

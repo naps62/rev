@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
+import type { Comment } from "#shared/types";
 import { basename, cx, type Thread } from "../util";
-import { AuthorChip } from "./CommentThread";
+import { CommentThread } from "./CommentThread";
 
 type Filter = "all" | "open" | "resolved";
 
@@ -11,6 +12,8 @@ interface CommentsPanelProps {
   /** Paths in pane order — anchored threads sort by this, then line. */
   fileOrder: string[];
   onJump: (t: Thread) => void;
+  onReply: (root: Comment, body: string) => void;
+  onResolve: (root: Comment, resolved: boolean) => void;
   onClose: () => void;
 }
 
@@ -21,6 +24,8 @@ export function CommentsPanel({
   currentBase,
   fileOrder,
   onJump,
+  onReply,
+  onResolve,
   onClose,
 }: CommentsPanelProps) {
   const openCount = threads.filter(isOpen).length;
@@ -54,6 +59,17 @@ export function CommentsPanel({
     open: openCount,
     resolved: threads.length - openCount,
   };
+
+  const row = (t: Thread) => (
+    <ThreadRow
+      key={t.root.id}
+      thread={t}
+      currentBase={currentBase}
+      onJump={onJump}
+      onReply={onReply}
+      onResolve={onResolve}
+    />
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -90,15 +106,13 @@ export function CommentsPanel({
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+      <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
         {shownAnchored.length === 0 && shownNotes.length === 0 && (
           <p className="px-3 py-2 text-[12px] text-faint">
             No {filter === "all" ? "" : `${filter} `}comments.
           </p>
         )}
-        {shownAnchored.map((t) => (
-          <ThreadRow key={t.root.id} thread={t} currentBase={currentBase} onJump={onJump} />
-        ))}
+        {shownAnchored.map(row)}
         {shownNotes.length > 0 && (
           <>
             <p
@@ -109,57 +123,49 @@ export function CommentsPanel({
             >
               Review notes
             </p>
-            {shownNotes.map((t) => (
-              <ThreadRow key={t.root.id} thread={t} currentBase={currentBase} onJump={onJump} />
-            ))}
+            {shownNotes.map(row)}
           </>
         )}
       </div>
 
       <p className="border-t border-edge-soft px-3 py-1.5 text-[11px] text-faint">
-        click a thread to jump to it
+        header jumps to the thread · reply/resolve inline
       </p>
     </div>
   );
 }
 
+/** Jump header + the full interactive thread (reply composer, resolve). */
 function ThreadRow({
   thread,
   currentBase,
   onJump,
+  onReply,
+  onResolve,
 }: {
   thread: Thread;
   currentBase: string;
   onJump: (t: Thread) => void;
+  onReply: (root: Comment, body: string) => void;
+  onResolve: (root: Comment, resolved: boolean) => void;
 }) {
-  const { root, replies } = thread;
-  const resolved = root.resolvedAt != null;
+  const { root } = thread;
   const a = root.anchor;
   return (
-    <button
-      type="button"
-      onClick={() => onJump(thread)}
-      className={cx(
-        "block w-full px-3 py-1.5 text-left hover:bg-raise/50",
-        resolved && "opacity-60",
-      )}
-    >
-      <span className="flex items-center gap-2">
+    <div className="px-2 pb-2">
+      <button
+        type="button"
+        onClick={() => onJump(thread)}
+        title="Jump to this thread in the diff"
+        className="flex w-full items-center gap-2 rounded-t-sm px-1 py-1 text-left hover:bg-raise/50"
+      >
         <span
           className="min-w-0 truncate font-mono text-[11px] text-faint"
           title={a ? `${a.file}:${a.line}` : undefined}
         >
           {a ? `${basename(a.file)}:${a.line}` : "review note"}
         </span>
-        {root.base !== currentBase && (
-          <span
-            title={`written against base ${root.base}`}
-            className="shrink-0 rounded-sm border border-edge px-1 font-mono text-[10.5px] leading-4 text-faint"
-          >
-            {root.base}
-          </span>
-        )}
-        {resolved && (
+        {root.resolvedAt != null && (
           <svg
             width="11"
             height="11"
@@ -177,20 +183,13 @@ function ThreadRow({
             />
           </svg>
         )}
-      </span>
-      {[root, ...replies].map((c) => (
-        <span
-          key={c.id}
-          className={cx("mt-1 block", c.parentId != null && "border-l-2 border-edge-soft pl-2")}
-        >
-          <span className="flex items-baseline gap-2">
-            <AuthorChip author={c.author} />
-          </span>
-          <span className="mt-0.5 block whitespace-pre-wrap text-[14px] leading-snug text-mute">
-            {c.body}
-          </span>
-        </span>
-      ))}
-    </button>
+      </button>
+      <CommentThread
+        thread={thread}
+        baseLabel={root.base !== currentBase ? root.base : undefined}
+        onReply={(body) => onReply(root, body)}
+        onResolve={(resolved) => onResolve(root, resolved)}
+      />
+    </div>
   );
 }
