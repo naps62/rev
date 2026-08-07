@@ -67,6 +67,19 @@ startup.
   checkout reviewed against its parent branch (↗ link), offered only when
   that branch is checked out in some worktree. No object-DB diffing.
 
+## Visual reviews (2026-08-07, spike)
+
+- `/visual?dir=&url=` frames the target page with a pin overlay; pins are
+  ordinary comments with `anchor.visual = {url, x, y}`, so the whole
+  pipeline (pending batch, agent long-poll, replies, resolve) works with
+  zero server changes.
+- Pins are frame-positional, not DOM-anchored: a cross-origin iframe can't
+  be inspected, so pins don't track the framed page's scroll or layout, and
+  the `c` shortcut doesn't fire while the frame has focus (keys land inside
+  it — use the header button). Block-level anchoring requires a crit-style
+  proxy that injects an overlay script into the target (a dedicated port
+  per target); that is the known follow-up if the spike sticks.
+
 ## Rejected for now (2026-08-02)
 
 - **Reviewing refs that aren't checked out** (`head=<ref>` diffing the object

@@ -313,6 +313,12 @@ export interface CommentAnchor {
    * comments and terse API callers omit it.
    */
   context?: { before: string[]; after: string[] };
+  /**
+   * Visual-review pin (the /visual page): fractional position over the framed
+   * page, 0..1 of the frame's width/height. Such anchors carry the target URL
+   * in `file` (so re-anchoring orphans them harmlessly), side "new", line 0.
+   */
+  visual?: { url: string; x: number; y: number };
 }
 
 export interface Comment {

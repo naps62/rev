@@ -37,3 +37,11 @@ Rules:
   only your own comment bodies).
 - Keep the watcher armed until the user says the review is done. If it dies,
   a Stop hook will remind you to re-arm.
+
+## Visual reviews (spike)
+
+To have the user review a running page (dev server, preview) instead of a
+diff, hand them `{{HOST}}/visual?dir={{DIR}}&url=<url-encoded page URL>`.
+They drop pins on the page; each pin arrives on the same comment long-poll,
+with `anchor.visual = {url, x, y}` (fractional page-frame coordinates) and
+`anchor.file` set to the URL. Reply in-thread exactly like diff comments.
