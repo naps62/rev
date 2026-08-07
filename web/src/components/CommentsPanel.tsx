@@ -186,7 +186,7 @@ function ThreadRow({
           <span className="flex items-baseline gap-2">
             <AuthorChip author={c.author} />
           </span>
-          <span className="mt-0.5 block whitespace-pre-wrap text-[12px] leading-snug text-mute">
+          <span className="mt-0.5 block whitespace-pre-wrap text-[14px] leading-snug text-mute">
             {c.body}
           </span>
         </span>

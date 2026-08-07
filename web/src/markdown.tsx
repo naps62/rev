@@ -25,7 +25,7 @@ function inlineNodes(text: string, keyBase: string): ReactNode[] {
       out.push(
         <code
           key={key}
-          className="rounded-[2px] bg-raise px-1 py-px font-mono text-[12px]"
+          className="rounded-[2px] bg-raise px-1 py-px font-mono text-[13px]"
         >
           {code.slice(1, -1)}
         </code>,

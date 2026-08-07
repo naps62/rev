@@ -69,7 +69,7 @@ function CommentBlock({ comment, baseLabel }: { comment: Comment; baseLabel?: st
           </span>
         )}
       </div>
-      <div className="whitespace-pre-wrap px-3 pb-1.5 pt-1 font-sans text-[13px] leading-relaxed text-fg">
+      <div className="whitespace-pre-wrap px-3 pb-1.5 pt-1 font-sans text-[14px] leading-relaxed text-fg">
         <Markdown text={comment.body} />
       </div>
     </div>
