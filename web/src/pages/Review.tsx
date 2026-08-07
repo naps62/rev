@@ -17,6 +17,7 @@ import type {
 } from "#shared/types";
 import * as api from "../api";
 import { AppHeader, HEADER_PX } from "../components/AppHeader";
+import { CommentsPanel } from "../components/CommentsPanel";
 import { CommentThread } from "../components/CommentThread";
 import { Composer } from "../components/Composer";
 import { PendingSubmit } from "../components/PendingSubmit";
@@ -248,6 +249,11 @@ export function Review() {
     if (!features.symbols) setSymbol(null);
   }, [features.symbols]);
 
+  // Comments sidebar; takes over the side-panel slot (wider) when open.
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const commentsOpenRef = useRef(commentsOpen);
+  commentsOpenRef.current = commentsOpen;
+
   // Re-run the occurrence search when new file hunks land in the cache.
   const [cacheTick, setCacheTick] = useState(0);
   useEffect(() => {
@@ -289,8 +295,11 @@ export function Review() {
   }, [symbol, files, dir, base, cacheTick]);
 
   // Last-shown panel content stays mounted so the close slide has something
-  // to show; the aside itself animates via .side-panel[data-open].
+  // to show; the aside itself animates via .side-panel[data-open]. heldWide
+  // remembers whether that content wants the 24rem variant so the close slide
+  // keeps its width.
   const heldPanel = useRef<ReactNode>(null);
+  const heldWide = useRef(false);
 
   const loadAllHunks = () => {
     for (const f of files) {
@@ -303,16 +312,20 @@ export function Review() {
     }
   };
 
+  const allThreads = useMemo(
+    () => buildThreads(commentsQ.data?.comments ?? []),
+    [commentsQ.data],
+  );
+
   // Route threads by file: to their file's DiffFile (which places them on
   // lines once its hunks load), or to the review-level panel (unanchored, or
   // file absent from this diff).
   const { threadsByFile, reviewLevel, unresolvedByFile } = useMemo(() => {
-    const threads = buildThreads(commentsQ.data?.comments ?? []);
     const inDiff = new Set(files.map((f) => f.path));
     const threadsByFile = new Map<string, Thread[]>();
     const reviewLevel: Thread[] = [];
     const unresolvedByFile = new Map<string, number>();
-    for (const t of threads) {
+    for (const t of allThreads) {
       const a = t.root.anchor;
       if (!a || !inDiff.has(a.file)) {
         reviewLevel.push(t);
@@ -324,7 +337,7 @@ export function Review() {
       }
     }
     return { threadsByFile, reviewLevel, unresolvedByFile };
-  }, [commentsQ.data, files]);
+  }, [allThreads, files]);
 
   // Current-file tracking (scroll spy + j/k target).
   const sectionEls = useRef(new Map<string, HTMLElement>());
@@ -478,6 +491,46 @@ export function Review() {
         });
         flashRow(el);
         setCurrentPath(o.path);
+        return;
+      }
+      if (performance.now() - t0 < 3000) requestAnimationFrame(attempt);
+    };
+    requestAnimationFrame(attempt);
+  };
+
+  // Landing height for thread jumps: the thread sits at ~30% of the viewport
+  // ("eye level") rather than tucked under the header.
+  const eyeAnchorY = () =>
+    Math.max(HEADER_PX + 16, Math.round(window.innerHeight * 0.3));
+
+  /**
+   * Jump to a comment thread. Same poll-while-streaming shape as
+   * jumpToOccurrence: for in-diff anchors expand the file and glide toward it,
+   * then re-target the thread element once its hunks (and thread) render.
+   * Review-level threads live in the always-mounted notes section, so the
+   * first attempt finds them.
+   */
+  const jumpToThread = (t: Thread) => {
+    const a = t.root.anchor;
+    const inDiff = a != null && files.some((f) => f.path === a.file);
+    if (inDiff) {
+      commandFile(a.file, true);
+      jumpTo(a.file);
+    }
+    const sel = `[data-thread-id="${CSS.escape(t.root.id)}"]`;
+    const t0 = performance.now();
+    const attempt = () => {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (el) {
+        cancelGlide();
+        window.scrollTo({
+          top: el.getBoundingClientRect().top + window.scrollY - eyeAnchorY(),
+        });
+        el.classList.remove("el-flash");
+        void el.offsetWidth;
+        el.classList.add("el-flash");
+        setTimeout(() => el.classList.remove("el-flash"), 1300);
+        if (inDiff) setCurrentPath(a.file);
         return;
       }
       if (performance.now() - t0 < 3000) requestAnimationFrame(attempt);
@@ -676,7 +729,8 @@ export function Review() {
       } else if (e.key === "x") {
         setFeatures((p) => ({ ...p, crosshair: !p.crosshair }));
       } else if (e.key === "Escape") {
-        setSymbol(null);
+        if (commentsOpenRef.current) setCommentsOpen(false);
+        else setSymbol(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -793,7 +847,36 @@ export function Review() {
         {files.length > 0 && (
           <ReviewProgress files={files} currentPath={currentPath} onJump={jumpTo} />
         )}
-        <div className="min-w-0 flex-1 basis-0" aria-hidden />
+        <div className="flex min-w-0 flex-1 basis-0 items-center justify-end">
+          {files.length > 0 && allThreads.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setCommentsOpen((v) => !v)}
+              aria-pressed={commentsOpen}
+              title={commentsOpen ? "Close comments (Esc)" : "Comments"}
+              className={cx(
+                "flex shrink-0 items-center gap-1.5 rounded-sm border px-1.5 py-0.5 font-mono text-[11.5px] tabular-nums transition-colors duration-150",
+                commentsOpen
+                  ? "border-accent/40 bg-accent-soft text-accent"
+                  : "border-edge text-mute hover:border-accent/50 hover:text-fg",
+              )}
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M2.5 3.5h11v8h-6l-3 2.5v-2.5h-2z" />
+              </svg>
+              {allThreads.filter((t) => t.root.resolvedAt == null).length}
+            </button>
+          )}
+        </div>
       </AppHeader>
 
       {dir && <PendingSubmit dir={dir} comments={commentsQ.data?.comments ?? []} />}
@@ -966,8 +1049,15 @@ export function Review() {
           {(() => {
             const currentEntities =
               currentPath != null ? entitiesByPath.get(currentPath) : undefined;
-            const live =
-              symbol != null && symbolData ? (
+            const live = commentsOpen ? (
+              <CommentsPanel
+                threads={allThreads}
+                currentBase={base}
+                fileOrder={files.map((f) => f.path)}
+                onJump={jumpToThread}
+                onClose={() => setCommentsOpen(false)}
+              />
+            ) : symbol != null && symbolData ? (
                 <SymbolPanel
                   symbol={symbol}
                   occurrences={symbolData.occurrences}
@@ -985,11 +1075,15 @@ export function Review() {
                   onJump={jumpToEntityIn}
                 />
               ) : null;
-            if (live) heldPanel.current = live;
+            if (live) {
+              heldPanel.current = live;
+              heldWide.current = commentsOpen;
+            }
             return (
               <aside
                 ref={panelRef}
                 data-open={live ? "" : undefined}
+                data-wide={heldWide.current ? "" : undefined}
                 className="side-panel sticky hidden shrink-0 justify-end overflow-hidden lg:flex"
                 style={{
                   top: HEADER_PX + 8,
@@ -998,7 +1092,12 @@ export function Review() {
                 }}
               >
                 {heldPanel.current && (
-                  <div className="flex w-72 shrink-0 flex-col overflow-hidden rounded-md border border-edge bg-panel">
+                  <div
+                    className={cx(
+                      "flex shrink-0 flex-col overflow-hidden rounded-md border border-edge bg-panel",
+                      heldWide.current ? "w-96" : "w-72",
+                    )}
+                  >
                     {heldPanel.current}
                   </div>
                 )}

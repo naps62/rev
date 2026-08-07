@@ -109,7 +109,7 @@ export function CommentThread({
 
   if (resolved && !expanded) {
     return (
-      <div className={threadShell}>
+      <div className={threadShell} data-thread-id={root.id}>
         <button
           type="button"
           onClick={() => setOverride(true)}
@@ -143,7 +143,7 @@ export function CommentThread({
   }
 
   return (
-    <div className={threadShell}>
+    <div className={threadShell} data-thread-id={root.id}>
       {anchorNote && (
         <div className="border-b border-edge-soft px-3 py-1.5 font-mono text-[11px] text-faint">
           {anchorNote}
