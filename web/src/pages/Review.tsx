@@ -360,11 +360,13 @@ export function Review() {
       // the n/p cursor no longer matches what the eyes track.
       if (performance.now() - autoScrollAt.current > 150) hunkCursor.current = null;
       if (glidingRef.current) return;
+      // Same threshold as the jump landings: the file at eye level is
+      // current, so a just-landed file can't spy-flip to its predecessor.
       let current = files[0]?.path ?? null;
       for (const f of files) {
         const el = sectionEls.current.get(f.path);
         if (!el) continue;
-        if (el.getBoundingClientRect().top <= HEADER_PX + 40) current = f.path;
+        if (el.getBoundingClientRect().top <= eyeAnchorY() + 8) current = f.path;
         else break;
       }
       setCurrentPath(current);
@@ -384,7 +386,7 @@ export function Review() {
     return Math.min(Math.max(top, 0), max);
   };
 
-  /** Viewport y where n/p rests the landed hunk (see TUNING.HUNK_EYE_FRACTION). */
+  /** Viewport y where navigation rests its target (see TUNING.HUNK_EYE_FRACTION). */
   const eyeAnchorY = () =>
     HEADER_PX + (window.innerHeight - HEADER_PX) * TUNING.HUNK_EYE_FRACTION;
 
@@ -393,7 +395,7 @@ export function Review() {
    * element every frame, so files lazy-loading above (and shifting layout)
    * can't make it land short; wheel/touch input hands control back.
    */
-  const glideTo = (el: HTMLElement, offset = HEADER_PX + 8) => {
+  const glideTo = (el: HTMLElement, offset = eyeAnchorY()) => {
     cancelGlide();
     autoScrollAt.current = performance.now();
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -562,7 +564,7 @@ export function Review() {
         if (next && el) {
           autoScrollAt.current = performance.now();
           window.scrollTo({
-            top: el.getBoundingClientRect().top + window.scrollY - HEADER_PX - 8,
+            top: el.getBoundingClientRect().top + window.scrollY - eyeAnchorY(),
           });
           setCurrentPath(next.path);
         }
