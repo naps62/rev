@@ -180,15 +180,25 @@ function ThreadRow({
       </span>
       <span className="mt-0.5 flex items-baseline gap-2">
         <AuthorChip author={root.author} />
-        {replies.length > 0 && (
-          <span className="font-mono text-[10.5px] tabular-nums text-faint">
-            {replies.length} repl{replies.length === 1 ? "y" : "ies"}
-          </span>
-        )}
       </span>
       <span className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-mute">
         {root.body}
       </span>
+      {replies.length > 0 && (
+        <span className="mt-1 block border-l-2 border-edge-soft pl-2">
+          <span className="flex items-baseline gap-2">
+            <AuthorChip author={replies[replies.length - 1]!.author} />
+            {replies.length > 1 && (
+              <span className="font-mono text-[10.5px] tabular-nums text-faint">
+                +{replies.length - 1} earlier
+              </span>
+            )}
+          </span>
+          <span className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-mute">
+            {replies[replies.length - 1]!.body}
+          </span>
+        </span>
+      )}
     </button>
   );
 }
