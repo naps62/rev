@@ -172,6 +172,40 @@ export interface InterdiffResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Branch stacks
+// ---------------------------------------------------------------------------
+
+/** One branch of a stack: the commits between its tip and the next tip down. */
+export interface StackSegment {
+  branch: string;
+  /** Short sha of the segment's tip. */
+  head: string;
+  /** First-parent commits belonging to this segment. */
+  commits: number;
+  /** Checkout of this branch (any worktree of the repo), null when not checked out. */
+  checkoutDir: string | null;
+  /**
+   * Ref this segment sits on: the next segment's branch, or the stack base
+   * for the bottom segment. Reviewing `checkoutDir` against `parent` shows
+   * this segment's isolated diff.
+   */
+  parent: string;
+}
+
+/**
+ * The stack `dir`'s HEAD sits on: first-parent history down to
+ * merge-base(base, HEAD), split at commits that are tips of other local
+ * branches. segments[0] is HEAD's branch; a plain (unstacked) branch yields
+ * exactly one segment; empty when detached or HEAD == merge-base.
+ */
+export interface StackResponse {
+  dir: string;
+  base: string;
+  segments: StackSegment[];
+  computedAt: number;
+}
+
+// ---------------------------------------------------------------------------
 // Semantic entities (sem CLI)
 // ---------------------------------------------------------------------------
 
@@ -402,6 +436,7 @@ export type ServerMessage =
 // GET    /api/diff/summary?dir&base          → DiffSummaryResponse (no hunks, fast)
 // GET    /api/diff/file?dir&base&path[&oldPath] → FileDiffResponse (one file's hunks)
 // GET    /api/refs?dir                       → RefsResponse   (base-ref candidates)
+// GET    /api/stack?dir&base                 → StackResponse  (branch-stack detection)
 // GET    /api/diff/interdiff?dir&base&path   → InterdiffResponse (delta since the
 //        seen snapshot; 404 when the path has no snapshot)
 // GET    /api/semantic?dir&base              → SemanticDiffResponse (entity-level

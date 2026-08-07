@@ -56,6 +56,17 @@ startup.
   every fold in the current file, and folds them all back once nothing is
   folded.
 
+## Branch stacks (2026-08-07, spike)
+
+- `GET /api/stack` splits HEAD's first-parent history down to
+  merge-base(base, HEAD) at commits that are tips of other local branches;
+  the review page shows a stack strip when that finds ≥2 segments.
+- Segment review respects the checked-out-worktrees rule below: clicking a
+  branch in the strip re-bases the current review at it (the cumulative diff
+  of everything stacked above); a segment's *isolated* diff is its own
+  checkout reviewed against its parent branch (↗ link), offered only when
+  that branch is checked out in some worktree. No object-DB diffing.
+
 ## Rejected for now (2026-08-02)
 
 - **Reviewing refs that aren't checked out** (`head=<ref>` diffing the object

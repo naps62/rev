@@ -39,6 +39,7 @@ import {
 } from "./db.ts";
 import { resolveComments } from "./anchor.ts";
 import { computeSemanticDiff } from "./semantic.ts";
+import { computeStack } from "./stack.ts";
 import { invalidateRepoList, isKnownRepo, listRepos, rescan } from "./discovery.ts";
 import {
   baseBehind,
@@ -255,6 +256,22 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     if (!dir) return c.json({ error: "dir is required" }, 400);
     if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
     return c.json({ dir, refs: await listRefs(dir) });
+  });
+
+  app.get("/stack", async (c) => {
+    const dir = c.req.query("dir");
+    const base = c.req.query("base");
+    if (!dir || !base) return c.json({ error: "dir and base are required" }, 400);
+    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    // branch → checkout across this repo's worktrees, so stack segments can
+    // link to the checkout that reviews them.
+    const repos = await listRepos();
+    const mainDir = repos.find((r) => r.dir === dir)?.mainDir;
+    const checkouts = new Map<string, string>();
+    for (const r of repos) {
+      if (r.mainDir === mainDir && r.branch !== null) checkouts.set(r.branch, r.dir);
+    }
+    return c.json(await computeStack(dir, base, checkouts));
   });
 
   app.get("/file", async (c) => {
