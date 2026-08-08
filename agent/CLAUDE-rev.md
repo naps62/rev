@@ -16,7 +16,7 @@ uncommitted and untracked changes appear live, no commit needed):
 Arm it now if it isn't already armed this session — via the Bash tool with
 `run_in_background: true`:
 
-    {{WATCH}} {{DIR}}
+    {{ARM}}
 
 It blocks until the user submits review comments (the UI batches a review
 pass and sends it explicitly or on idle), then exits printing the batch as
