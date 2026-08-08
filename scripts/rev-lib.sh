@@ -92,6 +92,22 @@ rev_known() {
   mv "$marker.tmp" "$marker"
 }
 
+# PID of the session a hook runs under: nearest non-shell ancestor (hooks
+# may sit behind `bash -c` wrappers). Nonzero when the walk hits init.
+rev_owner_pid() {
+  local pid=$PPID comm
+  while [[ -n "$pid" ]] && (( pid > 1 )); do
+    comm=$(ps -o comm= -p "$pid" 2>/dev/null | tr -d ' ') || return 1
+    comm=${comm##*/} comm=${comm#-}
+    case "$comm" in
+      bash|sh|zsh|dash|ksh) pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ') ;;
+      "") return 1 ;;
+      *) printf '%s' "$pid"; return 0 ;;
+    esac
+  done
+  return 1
+}
+
 # Is a live rev-watch process holding $1?
 rev_watcher_alive() {
   local pf="$REV_STATE/$(rev_key "$1").pid" pid

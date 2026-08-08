@@ -30,12 +30,16 @@ if [[ -f "$flag" ]] && (( $(date +%s) - $(rev_mtime "$flag") < 600 )); then
 fi
 touch "$flag"
 
-ROOT="$root" WATCH="$SCRIPT_DIR/rev-watch.sh" python3 <<'PY'
+OWNER=$(rev_owner_pid) || OWNER=""
+
+ROOT="$root" WATCH="$SCRIPT_DIR/rev-watch.sh" OWNER="$OWNER" python3 <<'PY'
 import json, os
 root, watch = os.environ["ROOT"], os.environ["WATCH"]
+owner = os.environ.get("OWNER", "")
+arm = f"{watch} {root}" + (f" --owner-pid {owner}" if owner else "")
 print(json.dumps({"decision": "block", "reason":
     f"The rev comment watcher is not armed for {root}. Arm it now via the "
-    f"Bash tool with run_in_background: true: `{watch} {root}` — it delivers "
+    f"Bash tool with run_in_background: true: `{arm}` — it delivers "
     "the user's review comments when they arrive; address them, reply "
     "in-thread, and re-arm it. Then continue (or finish) your turn."}))
 PY

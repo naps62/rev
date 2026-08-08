@@ -23,9 +23,11 @@ printf '%s' "$summary" >"$REV_STATE/$(rev_key "$root").known"
 comments=$(curl -sfG --max-time 2 "$REV_URL/api/comments" \
   --data-urlencode "dir=$root" --data-urlencode "submitted=1" 2>/dev/null) || comments='{"comments":[]}'
 
+OWNER=$(rev_owner_pid) || OWNER=""
+
 SUMMARY="$summary" COMMENTS="$comments" ROOT="$root" BASE="$base" \
 HOST="$REV_URL" PUBLIC="$REV_PUBLIC_URL" WATCH="$SCRIPT_DIR/rev-watch.sh" \
-TEMPLATE="$SCRIPT_DIR/../agent/CLAUDE-rev.md" \
+OWNER="$OWNER" TEMPLATE="$SCRIPT_DIR/../agent/CLAUDE-rev.md" \
 python3 <<'PY'
 import json, os, urllib.parse
 
@@ -52,9 +54,11 @@ else:
 
 url = (f"{public.rstrip('/')}/review?dir={urllib.parse.quote(root, safe='')}"
        f"&base={urllib.parse.quote(base, safe='')}")
+owner = env.get("OWNER", "")
+arm = f"{env['WATCH']} {root}" + (f" --owner-pid {owner}" if owner else "")
 text = open(env["TEMPLATE"]).read()
 for k, v in {"DIR": root, "URL": url, "HOST": host, "BASE": base,
-             "WATCH": env["WATCH"], "STATUS": status}.items():
+             "ARM": arm, "STATUS": status}.items():
     text = text.replace("{{%s}}" % k, v)
 
 print(json.dumps({"hookSpecificOutput": {
