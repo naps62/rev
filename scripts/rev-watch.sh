@@ -1,17 +1,30 @@
 #!/usr/bin/env bash
-# rev-watch.sh <dir> [cursor]
+# rev-watch.sh <dir> [cursor] [--owner-pid N]
 # Blocks until rev has SUBMITTED comments for <dir> newer than the shared
 # per-dir cursor (the UI batches at submit time), prints the batch as JSON,
 # advances the cursor, acks the delivery. No timeout; server errors retry
-# with backoff. Exit 0: delivered. 2: usage.
+# with backoff. Exit 0: delivered, or arming session gone (notice on
+# stderr). 2: usage.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=rev-lib.sh
 source "$SCRIPT_DIR/rev-lib.sh"
 
-DIR="${1:?usage: rev-watch.sh <dir> [cursor]}"
-CURSOR="${2:-}"
+usage() { echo 'usage: rev-watch.sh <dir> [cursor] [--owner-pid N]' >&2; exit 2; }
+
+DIR="" CURSOR="" OWNER_PID=""
+while (( $# )); do
+  case "$1" in
+    --owner-pid) [[ -n "${2:-}" ]] || usage; OWNER_PID="$2"; shift 2 ;;
+    -*) usage ;;
+    *) if [[ -z "$DIR" ]]; then DIR="$1"
+       elif [[ -z "$CURSOR" ]]; then CURSOR="$1"
+       else usage; fi
+       shift ;;
+  esac
+done
+[[ -n "$DIR" ]] || usage
 QUIET="${REV_WATCH_QUIET:-0}"
 CAP="${REV_WATCH_CAP:-60}"
 
@@ -30,9 +43,19 @@ cleanup() {
 release_lock() { [[ -n "$HELD_LOCK" ]] && { rev_unlock "$HELD_LOCK"; HELD_LOCK=""; } || true; }
 trap cleanup EXIT
 
-# Reparented to init = the arming session is gone; exiting would re-invoke
-# nobody, and advancing the cursor would eat comments meant for the next one.
-orphaned() { [[ "$(ps -o ppid= -p $$ | tr -d ' ')" == "1" ]]; }
+# Arming session gone = advancing the cursor would eat comments meant for
+# the next session. The PPID fallback breaks when the harness detaches
+# background tasks at birth (PPID is 1 immediately), hence --owner-pid.
+if [[ -n "$OWNER_PID" ]]; then
+  orphaned() { ! kill -0 "$OWNER_PID" 2>/dev/null; }
+else
+  orphaned() { [[ "$(ps -o ppid= -p $$ | tr -d ' ')" == "1" ]]; }
+fi
+orphan_exit() {
+  printf 'rev-watch: arming session gone%s; exiting without delivering.\n' \
+    "${OWNER_PID:+ (owner pid $OWNER_PID dead)}" >&2
+  exit 0
+}
 
 fetch() { # fetch <since> <wait|""> <max-time-secs>
   local args=(-sfG --max-time "$3" --data-urlencode "dir=$DIR" --data-urlencode "since=$1")
@@ -62,7 +85,7 @@ if [[ -z "$CURSOR" ]]; then
     CURSOR=$(<"$CURSOR_FILE")
   else
     while :; do
-      orphaned && exit 0
+      orphaned && orphan_exit
       resp=$(fetch 0 "" 5) && break
       bump_backoff
     done
@@ -74,7 +97,7 @@ fi
 
 backoff=2
 while :; do
-  orphaned && exit 0
+  orphaned && orphan_exit
   resp=$(fetch "$CURSOR" 1 40) || { bump_backoff; continue; }
   backoff=2
   count=$(printf '%s' "$resp" | jfield count) || continue
@@ -98,7 +121,7 @@ while (( SECONDS - last_change < QUIET && SECONDS - first < CAP )); do
   final="$r"
 done
 
-orphaned && exit 0
+orphaned && orphan_exit
 NEW_CURSOR=$(printf '%s' "$final" | jfield cursor)
 rev_lock "$LOCK_FILE" && HELD_LOCK="$LOCK_FILE" || true
 printf '%s\n' "$NEW_CURSOR" >"$CURSOR_FILE"
