@@ -314,11 +314,24 @@ export interface CommentAnchor {
    */
   context?: { before: string[]; after: string[] };
   /**
-   * Visual-review pin (the /visual page): fractional position over the framed
-   * page, 0..1 of the frame's width/height. Such anchors carry the target URL
-   * in `file` (so re-anchoring orphans them harmlessly), side "new", line 0.
+   * Visual-review pin (the /visual page). Such anchors carry the target URL
+   * in `file` (so text re-anchoring orphans them harmlessly), side "new",
+   * line 0. `x`/`y` are fractional viewport coordinates at comment time —
+   * always present, and the fallback when the element can't be resolved.
+   * The element fields are set when the pin was placed through the injected
+   * overlay (proxied session): `selector` re-finds the element, `ex`/`ey`
+   * are the fractional offset within it, `outerHtml` is a trimmed snapshot
+   * for agents and for humans reading the thread after the UI changed.
    */
-  visual?: { url: string; x: number; y: number };
+  visual?: {
+    url: string;
+    x: number;
+    y: number;
+    selector?: string;
+    ex?: number;
+    ey?: number;
+    outerHtml?: string;
+  };
 }
 
 export interface Comment {
@@ -396,6 +409,76 @@ export interface CommentListResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Visual review sessions (injecting proxy)
+// ---------------------------------------------------------------------------
+
+/**
+ * A live proxy of `targetUrl` on `port`, serving the target with rev's
+ * overlay script injected into HTML responses (CSP / X-Frame-Options
+ * stripped so the dashboard can frame it; websockets passed through).
+ * Sessions are keyed by target URL — re-POSTing the same URL returns the
+ * existing session — and close after VISUAL_SESSION_IDLE_MS without traffic.
+ * Targets must resolve to loopback or private (RFC1918) addresses: the
+ * daemon is LAN-trusted and must not proxy the open internet.
+ */
+export interface VisualSession {
+  id: string;
+  targetUrl: string;
+  /** Proxy port on the daemon host; the dashboard frames http://<host>:<port>/. */
+  port: number;
+  /** Epoch ms when the session dies absent further traffic. */
+  expiresAt: number;
+}
+
+export interface VisualSessionRequest {
+  url: string;
+}
+
+/**
+ * postMessage protocol between the /visual dashboard (host page) and the
+ * overlay script injected into the proxied app. The overlay mirrors these
+ * shapes in plain JS (server/overlay.js) — keep both in sync. No origin
+ * allow-list: the proxy port is minted per session and the daemon is
+ * LAN-trusted; both sides only react to messages whose `type` matches.
+ */
+export type VisualOverlayMessage =
+  /** Overlay booted inside the proxied page; host may now send pins/mode. */
+  | { type: "rev-overlay-ready"; url: string }
+  /** Pick-mode click. Fractional viewport x/y always set; element fields when resolved. */
+  | {
+      type: "rev-pick";
+      x: number;
+      y: number;
+      selector?: string;
+      ex?: number;
+      ey?: number;
+      outerHtml?: string;
+    }
+  /** User clicked a rendered pin; host opens that thread. */
+  | { type: "rev-pin-click"; id: string }
+  /** The framed app navigated (pushState/popstate/hashchange). */
+  | { type: "rev-route"; url: string };
+
+export type VisualHostMessage =
+  /** Enter/leave element-pick mode (crosshair + hover highlight). */
+  | { type: "rev-mode"; pick: boolean }
+  /**
+   * Full pin set to render in-page. The overlay re-resolves selectors and
+   * positions pins on their elements (falling back to viewport x/y), so
+   * pins scroll with the page content.
+   */
+  | {
+      type: "rev-pins";
+      pins: Array<{
+        id: string;
+        /** 1-based display number. */
+        n: number;
+        resolved: boolean;
+        anchor: NonNullable<CommentAnchor["visual"]>;
+      }>;
+    };
+
+// ---------------------------------------------------------------------------
 // Seen state
 // ---------------------------------------------------------------------------
 
@@ -443,6 +526,9 @@ export type ServerMessage =
 // GET    /api/diff/file?dir&base&path[&oldPath] → FileDiffResponse (one file's hunks)
 // GET    /api/refs?dir                       → RefsResponse   (base-ref candidates)
 // GET    /api/stack?dir&base                 → StackResponse  (branch-stack detection)
+// POST   /api/visual/sessions                ← VisualSessionRequest → VisualSession
+//        Starts (or returns, keyed by URL) an injecting proxy of the target
+//        for element-anchored visual reviews. Loopback/private targets only.
 // GET    /api/diff/interdiff?dir&base&path   → InterdiffResponse (delta since the
 //        seen snapshot; 404 when the path has no snapshot)
 // GET    /api/semantic?dir&base              → SemanticDiffResponse (entity-level

@@ -114,6 +114,19 @@ export const TUNING = {
   /** Kill a sem invocation after this long; the client falls back to text heuristics. Measured ~20ms on medium repos — this is a hang guard, not a budget. */
   SEM_TIMEOUT_MS: 10_000,
 
+  /**
+   * Ports the visual-review proxy hands out, inclusive. One port per live
+   * session; a fixed range keeps the firewall story to a single decision.
+   * Override with REV_VISUAL_PORTS ("7400-7419").
+   */
+  VISUAL_PROXY_PORTS: [7400, 7419],
+
+  /** Idle visual sessions (no proxied traffic) close after this long. */
+  VISUAL_SESSION_IDLE_MS: 10 * 60_000,
+
+  /** outerHtml snapshots in visual anchors are truncated to this many chars. */
+  VISUAL_OUTERHTML_MAX: 2000,
+
   /** SQLite location, under XDG data dir. */
   DB_PATH: "~/.local/share/rev/rev.db",
 
