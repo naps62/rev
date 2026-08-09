@@ -22,6 +22,7 @@ import type {
   FileWriteRequest,
   SeenRequest,
   ServerMessage,
+  VisualSessionRequest,
 } from "#shared/types";
 import { TUNING } from "#shared/tuning";
 import {
@@ -41,6 +42,7 @@ import { resolveComments } from "./anchor.ts";
 import { computeSemanticDiff } from "./semantic.ts";
 import { computeStack } from "./stack.ts";
 import { invalidateRepoList, isKnownRepo, listRepos, rescan } from "./discovery.ts";
+import { getOrCreateSession, VisualError } from "./visual-proxy.ts";
 import {
   baseBehind,
   computeDiff,
@@ -272,6 +274,21 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       if (r.mainDir === mainDir && r.branch !== null) checkouts.set(r.branch, r.dir);
     }
     return c.json(await computeStack(dir, base, checkouts));
+  });
+
+  app.post("/visual/sessions", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as VisualSessionRequest | null;
+    if (!b || typeof b.url !== "string" || b.url.trim() === "") {
+      return c.json({ error: "url is required" }, 400);
+    }
+    // Deliberately no isKnownRepo guard — no dir involved. The private-address
+    // guard inside getOrCreateSession is the security boundary here.
+    try {
+      return c.json(await getOrCreateSession(b.url));
+    } catch (err) {
+      if (err instanceof VisualError) return c.json({ error: err.message }, err.status);
+      throw err;
+    }
   });
 
   app.get("/file", async (c) => {

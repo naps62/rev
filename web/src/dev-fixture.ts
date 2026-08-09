@@ -970,6 +970,11 @@ export function fxPostFetch(req: {
   return { ok: true, baseBehind: 0 };
 }
 
+/** Fixture mode has no proxy; the visual page must land in fallback mode. */
+export function fxCreateVisualSession(url: string): never {
+  throw Object.assign(new Error(`no visual proxy in fixture mode: ${url}`), { status: 503 });
+}
+
 export function fxPatchComment(id: string, patch: CommentPatchRequest): Comment {
   const c = state.comments.find((x) => x.id === id);
   if (!c) throw Object.assign(new Error(`no such comment: ${id}`), { status: 404 });

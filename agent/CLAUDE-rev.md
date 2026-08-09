@@ -42,6 +42,10 @@ Rules:
 
 To have the user review a running page (dev server, preview) instead of a
 diff, hand them `{{HOST}}/visual?dir={{DIR}}&url=<url-encoded page URL>`.
-They drop pins on the page; each pin arrives on the same comment long-poll,
-with `anchor.visual = {url, x, y}` (fractional page-frame coordinates) and
-`anchor.file` set to the URL. Reply in-thread exactly like diff comments.
+They drop pins on the page; each pin arrives on the same comment long-poll
+with `anchor.file` set to the URL and `anchor.visual` describing the spot:
+fractional frame coordinates `{x, y}` always, and — when the page went
+through rev's injecting proxy — the picked element as `selector`, `ex`/`ey`
+(offset within it) and `outerHtml` (a snapshot of the element's markup, the
+most useful field for locating the code). Reply in-thread exactly like diff
+comments.

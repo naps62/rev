@@ -1,26 +1,53 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import type { Comment, CommentAnchor, CommentPatchRequest } from "#shared/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  Comment,
+  CommentAnchor,
+  CommentPatchRequest,
+  VisualHostMessage,
+  VisualOverlayMessage,
+  VisualSession,
+} from "#shared/types";
 import * as api from "../api";
 import { AppHeader, HEADER_PX } from "../components/AppHeader";
 import { CommentThread } from "../components/CommentThread";
 import { Composer } from "../components/Composer";
 import { PendingSubmit } from "../components/PendingSubmit";
-import { buildThreads, cx, type Thread } from "../util";
+import { buildThreads, cx } from "../util";
 import { useRevSocket } from "../ws";
 import { useSearch } from "wouter";
 
 /**
- * Visual review (spike, #71): the target page in an iframe with a pin
- * overlay. Comment mode turns clicks into pins at fractional frame
- * coordinates; threads reuse the whole comments pipeline (pending batch,
- * agent long-poll, replies, resolve) keyed to `dir` like any code review.
+ * Visual review (#71): the target page in an iframe with a pin overlay.
+ * Threads reuse the whole comments pipeline (pending batch, agent long-poll,
+ * replies, resolve) keyed to `dir` like any code review.
  *
- * Pins are frame-positional, not DOM-anchored: a cross-origin iframe can't
- * be inspected, so pins don't track the framed page's scroll or layout.
- * DOM/block anchoring needs a crit-style injecting proxy — see
- * docs/DECISIONS.md.
+ * Two modes:
+ * - overlay: the page is framed through the injecting proxy
+ *   (POST /api/visual/sessions), which serves server/overlay.js inside it.
+ *   The overlay does element picking and renders pins in-page (they track
+ *   scroll/layout); the dashboard talks to it over postMessage
+ *   (VisualOverlayMessage / VisualHostMessage) and anchors comments to a
+ *   CSS selector + offset, falling back to viewport coordinates.
+ * - fallback (no proxy session, or the overlay never reported ready): the
+ *   original spike behavior — direct iframe, comment-mode click shield,
+ *   dashboard-rendered pins at fractional frame coordinates.
  */
+
+/** How long to wait for rev-overlay-ready before falling back to coordinates. */
+const OVERLAY_READY_TIMEOUT_MS = 3000;
+
+type Mode = "connecting" | "overlay" | "fallback";
+
+interface Draft {
+  x: number;
+  y: number;
+  selector?: string;
+  ex?: number;
+  ey?: number;
+  outerHtml?: string;
+}
+
 export function Visual() {
   const search = useSearch();
   const params = new URLSearchParams(search);
@@ -49,23 +76,148 @@ export function Visual() {
     onSettled: () => qc.invalidateQueries({ queryKey: ["comments", dir] }),
   });
 
-  const threads = buildThreads(commentsQ.data?.comments ?? []).filter(
-    (t) => t.root.anchor?.visual?.url === url,
-  );
-
+  const [mode, setMode] = useState<Mode>("connecting");
+  const [session, setSession] = useState<VisualSession | null>(null);
+  // Bumped per rev-overlay-ready so mode/pins are re-pushed after the framed
+  // app does a full page load (each load boots a fresh overlay instance).
+  const [readySeq, setReadySeq] = useState(0);
+  // URL threads are filtered by; starts as the target and follows rev-route.
+  const [pageUrl, setPageUrl] = useState(url);
   const [commentMode, setCommentMode] = useState(false);
-  const [draft, setDraft] = useState<{ x: number; y: number } | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
   const [openPin, setOpenPin] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+
+  const postToFrame = useCallback((msg: VisualHostMessage) => {
+    frameRef.current?.contentWindow?.postMessage(msg, "*");
+  }, []);
+
+  useEffect(() => {
+    if (!url) return;
+    let cancelled = false;
+    api.createVisualSession(url).then(
+      (s) => {
+        if (!cancelled) setSession(s);
+      },
+      () => {
+        if (!cancelled) setMode("fallback");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  useEffect(() => {
+    if (!session || mode !== "connecting") return;
+    const t = setTimeout(() => setMode("fallback"), OVERLAY_READY_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [session, mode]);
+
+  // The proxy serves the target's origin; the dashboard host reaches it by
+  // its own hostname so LAN access keeps working.
+  const proxySrc = useMemo(() => {
+    if (!session) return null;
+    try {
+      const target = new URL(session.targetUrl);
+      return `http://${location.hostname}:${session.port}${target.pathname}${target.search}`;
+    } catch {
+      return null;
+    }
+  }, [session]);
+  const frameSrc = mode === "fallback" ? url : (proxySrc ?? (session ? url : null));
+
+  // Overlay messages carry the proxy origin; anchors store the target's.
+  const toTargetUrl = useCallback(
+    (overlayUrl: string) => {
+      try {
+        const u = new URL(overlayUrl);
+        const t = new URL(url);
+        return `${t.origin}${u.pathname}${u.search}${u.hash}`;
+      } catch {
+        return url;
+      }
+    },
+    [url],
+  );
+
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (!frameRef.current || e.source !== frameRef.current.contentWindow) return;
+      const msg = e.data as VisualOverlayMessage | null;
+      if (!msg || typeof msg !== "object") return;
+      switch (msg.type) {
+        case "rev-overlay-ready":
+          setMode("overlay");
+          setReadySeq((n) => n + 1);
+          setPageUrl(toTargetUrl(msg.url));
+          break;
+        case "rev-pick":
+          setOpenPin(null);
+          setDraft({
+            x: msg.x,
+            y: msg.y,
+            selector: msg.selector,
+            ex: msg.ex,
+            ey: msg.ey,
+            outerHtml: msg.outerHtml,
+          });
+          break;
+        case "rev-pin-click":
+          setDraft(null);
+          setOpenPin((cur) => (cur === msg.id ? null : msg.id));
+          break;
+        case "rev-route":
+          setPageUrl(toTargetUrl(msg.url));
+          break;
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [toTargetUrl]);
+
+  const threads = buildThreads(commentsQ.data?.comments ?? []).filter(
+    (t) => t.root.anchor?.visual?.url === pageUrl,
+  );
+
+  // Overlay renders the pins in-page; push the set whenever it changes.
+  const pinsKey = JSON.stringify(
+    threads.map((t, i) => ({
+      id: t.root.id,
+      n: i + 1,
+      resolved: t.root.resolvedAt != null,
+      anchor: t.root.anchor!.visual!,
+    })),
+  );
+  useEffect(() => {
+    if (mode !== "overlay") return;
+    postToFrame({ type: "rev-pins", pins: JSON.parse(pinsKey) });
+  }, [mode, readySeq, pinsKey, postToFrame]);
+
+  useEffect(() => {
+    if (mode !== "overlay") return;
+    postToFrame({ type: "rev-mode", pick: commentMode });
+  }, [mode, readySeq, commentMode, postToFrame]);
 
   const submitDraft = (body: string) => {
     if (!draft) return;
     const anchor: CommentAnchor = {
-      file: url,
+      file: pageUrl,
       side: "new",
       line: 0,
       snippet: "",
-      visual: { url, x: draft.x, y: draft.y },
+      visual: {
+        url: pageUrl,
+        x: draft.x,
+        y: draft.y,
+        ...(draft.selector !== undefined && {
+          selector: draft.selector,
+          ex: draft.ex,
+          ey: draft.ey,
+          outerHtml: draft.outerHtml,
+        }),
+      },
     };
     createMut.mutate({ dir, base, anchor, author: "user", body, pending: true });
     setDraft(null);
@@ -123,13 +275,22 @@ export function Visual() {
     );
   }
 
+  const openThread = openPin ? threads.find((t) => t.root.id === openPin) : undefined;
+
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <AppHeader>
         <span className="min-w-0 items-center truncate font-mono text-[12px] text-mute">
-          visual · <span className="text-fg">{url}</span>
+          visual · <span className="text-fg">{pageUrl}</span>
         </span>
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          <span className="font-mono text-[11px] text-faint max-sm:hidden">
+            {mode === "overlay"
+              ? "element anchors"
+              : mode === "fallback"
+                ? "coordinates only"
+                : "connecting…"}
+          </span>
           <span className="font-mono text-[11px] text-faint max-sm:hidden">
             {threads.filter((t) => t.root.resolvedAt == null).length} open ·{" "}
             {threads.length} pin{threads.length === 1 ? "" : "s"}
@@ -156,53 +317,81 @@ export function Visual() {
       {dir && <PendingSubmit dir={dir} comments={commentsQ.data?.comments ?? []} />}
 
       <div ref={stageRef} className="relative min-h-0 flex-1">
-        <iframe
-          src={url}
-          title={`visual review of ${url}`}
-          className="size-full border-0 bg-white"
-        />
-        {/* Comment-mode shield: swallows clicks so the frame doesn't get them. */}
-        {commentMode && (
+        {frameSrc && (
+          <iframe
+            ref={frameRef}
+            src={frameSrc}
+            title={`visual review of ${url}`}
+            className="size-full border-0 bg-white"
+          />
+        )}
+        {/* Fallback comment-mode shield: swallows clicks so the frame doesn't
+            get them. In overlay mode the frame itself handles pick clicks. */}
+        {commentMode && mode !== "overlay" && (
           <div
             onClick={stageClick}
             className="absolute inset-0 cursor-crosshair bg-accent/5"
           />
         )}
 
-        {threads.map((t, i) => {
-          const v = t.root.anchor!.visual!;
-          const resolved = t.root.resolvedAt != null;
-          return (
-            <div
-              key={t.root.id}
-              className="absolute"
-              style={{ left: `${v.x * 100}%`, top: `${v.y * 100}%` }}
-            >
-              <button
-                type="button"
-                onClick={() => setOpenPin((cur) => (cur === t.root.id ? null : t.root.id))}
-                title={t.root.body}
-                className={cx(
-                  "grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border font-mono text-[11px] font-bold shadow-pop transition-transform hover:scale-110",
-                  resolved
-                    ? "border-edge bg-panel text-faint opacity-70"
-                    : "border-accent bg-accent text-bg",
-                )}
+        {/* Fallback pins: dashboard-rendered at frame coordinates. In overlay
+            mode the page renders pins itself; only the popover lives here. */}
+        {mode !== "overlay" &&
+          threads.map((t, i) => {
+            const v = t.root.anchor!.visual!;
+            const resolved = t.root.resolvedAt != null;
+            return (
+              <div
+                key={t.root.id}
+                className="absolute"
+                style={{ left: `${v.x * 100}%`, top: `${v.y * 100}%` }}
               >
-                {i + 1}
-              </button>
-              {openPin === t.root.id && (
-                <PinPopover side={popSide(v.x)} y={v.y}>
-                  <CommentThread
-                    thread={t}
-                    onReply={(body) => reply(t.root, body)}
-                    onResolve={(r) => resolve(t.root, r)}
-                  />
-                </PinPopover>
-              )}
-            </div>
-          );
-        })}
+                <button
+                  type="button"
+                  onClick={() => setOpenPin((cur) => (cur === t.root.id ? null : t.root.id))}
+                  title={t.root.body}
+                  className={cx(
+                    "grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border font-mono text-[11px] font-bold shadow-pop transition-transform hover:scale-110",
+                    resolved
+                      ? "border-edge bg-panel text-faint opacity-70"
+                      : "border-accent bg-accent text-bg",
+                  )}
+                >
+                  {i + 1}
+                </button>
+                {openPin === t.root.id && (
+                  <PinPopover side={popSide(v.x)} y={v.y}>
+                    <CommentThread
+                      thread={t}
+                      onReply={(body) => reply(t.root, body)}
+                      onResolve={(r) => resolve(t.root, r)}
+                    />
+                  </PinPopover>
+                )}
+              </div>
+            );
+          })}
+
+        {mode === "overlay" && openThread && openThread.root.anchor?.visual && (
+          <div
+            className="absolute"
+            style={{
+              left: `${openThread.root.anchor.visual.x * 100}%`,
+              top: `${openThread.root.anchor.visual.y * 100}%`,
+            }}
+          >
+            <PinPopover
+              side={popSide(openThread.root.anchor.visual.x)}
+              y={openThread.root.anchor.visual.y}
+            >
+              <CommentThread
+                thread={openThread}
+                onReply={(body) => reply(openThread.root, body)}
+                onResolve={(r) => resolve(openThread.root, r)}
+              />
+            </PinPopover>
+          </div>
+        )}
 
         {draft && (
           <div
@@ -215,7 +404,9 @@ export function Visual() {
             <PinPopover side={popSide(draft.x)} y={draft.y}>
               <div className="rounded-md border border-edge bg-panel shadow-pop">
                 <Composer
-                  placeholder="Comment on this spot…"
+                  placeholder={
+                    draft.selector ? "Comment on this element…" : "Comment on this spot…"
+                  }
                   autoFocus
                   onSubmit={submitDraft}
                   onCancel={() => setDraft(null)}

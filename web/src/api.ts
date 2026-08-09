@@ -20,6 +20,7 @@ import type {
   SeenRequest,
   SemanticDiffResponse,
   StackResponse,
+  VisualSession,
 } from "#shared/types";
 
 export class ApiError extends Error {
@@ -185,6 +186,11 @@ export async function patchComment(id: string, patch: CommentPatchRequest): Prom
 export async function putSeen(req: SeenRequest): Promise<{ ok: true }> {
   if (isFixture()) return tick((await fx()).fxPutSeen(req));
   return request("/api/seen", { method: "PUT", body: JSON.stringify(req) });
+}
+
+export async function createVisualSession(url: string): Promise<VisualSession> {
+  if (isFixture()) return tick((await fx()).fxCreateVisualSession(url));
+  return request("/api/visual/sessions", { method: "POST", body: JSON.stringify({ url }) });
 }
 
 export async function postFetch(req: {

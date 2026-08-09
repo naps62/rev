@@ -67,18 +67,31 @@ startup.
   checkout reviewed against its parent branch (↗ link), offered only when
   that branch is checked out in some worktree. No object-DB diffing.
 
-## Visual reviews (2026-08-07, spike)
+## Visual reviews (2026-08-07 spike; proxy folded in 2026-08-09)
 
-- `/visual?dir=&url=` frames the target page with a pin overlay; pins are
-  ordinary comments with `anchor.visual = {url, x, y}`, so the whole
-  pipeline (pending batch, agent long-poll, replies, resolve) works with
-  zero server changes.
-- Pins are frame-positional, not DOM-anchored: a cross-origin iframe can't
-  be inspected, so pins don't track the framed page's scroll or layout, and
-  the `c` shortcut doesn't fire while the frame has focus (keys land inside
-  it — use the header button). Block-level anchoring requires a crit-style
-  proxy that injects an overlay script into the target (a dedicated port
-  per target); that is the known follow-up if the spike sticks.
+- `/visual?dir=&url=` reviews a running page. Pins are ordinary comments
+  with `anchor.visual`, so the whole pipeline (pending batch, agent
+  long-poll, replies, resolve) works unchanged.
+- Two modes. **Element anchors** (default): `POST /api/visual/sessions`
+  starts an injecting proxy of the target on a port from
+  `VISUAL_PROXY_PORTS`; the injected `server/overlay.js` runs same-origin
+  in the framed app, does element picking, and renders pins in-page so
+  they track scroll/layout. Anchors carry `{selector, ex, ey, outerHtml}`
+  on top of the viewport `x, y` fallback. **Coordinates only** (fallback,
+  the original spike): when the session can't be created or the overlay
+  never reports ready, the dashboard frames the URL directly and pins are
+  frame-positional.
+- Proxy limits, accepted: targets must resolve to loopback/private
+  addresses (LAN-trust, not an open proxy); idle sessions expire
+  (`VISUAL_SESSION_IDLE_MS`); an HTTPS dashboard can't frame the http
+  proxy ports (mixed content) — use LAN/http access, or grow host-routed
+  sessions on a wildcard subdomain if that ever matters. The `c` shortcut
+  still doesn't fire while the frame has focus (keys land inside it — use
+  the header button).
+- Rejected on the way here: per-comment viewport screenshots
+  (`getDisplayMedia` needs a per-session permission click and isn't
+  reliable in Firefox); path-prefix proxying under the rev origin
+  (absolute asset paths and SPA routers break under a prefix).
 
 ## Rejected for now (2026-08-02)
 
