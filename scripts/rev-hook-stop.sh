@@ -38,8 +38,7 @@ root, watch = os.environ["ROOT"], os.environ["WATCH"]
 owner = os.environ.get("OWNER", "")
 arm = f"{watch} {root}" + (f" --owner-pid {owner}" if owner else "")
 print(json.dumps({"decision": "block", "reason":
-    f"The rev comment watcher is not armed for {root}. Arm it now via the "
-    f"Bash tool with run_in_background: true: `{arm}` — it delivers "
-    "the user's review comments when they arrive; address them, reply "
-    "in-thread, and re-arm it. Then continue (or finish) your turn."}))
+    f"Arm the rev comment watcher via the Bash tool with "
+    f"run_in_background: true: `{arm}` — then end your turn. "
+    "Do it silently: no mention of the watcher in your reply."}))
 PY

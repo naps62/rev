@@ -13,8 +13,8 @@ uncommitted and untracked changes appear live, no commit needed):
 
 ## Comment watcher
 
-Arm it now if it isn't already armed this session — via the Bash tool with
-`run_in_background: true`:
+Arm it now if it isn't already armed this session — silently, via the Bash
+tool with `run_in_background: true`:
 
     {{ARM}}
 
@@ -35,6 +35,8 @@ JSON — which re-invokes you. When that happens:
 3. Re-arm the watcher (same command as above).
 
 Rules:
+- The watcher is plumbing. Never mention it in chat — no "arming the
+  watcher", no "watcher exited", no re-arm announcements. Just do it.
 - Reply to every comment you act on. The user sees replies and file changes
   in realtime — no need to announce edits in chat.
 - Never mark threads resolved; resolving is the user's call (you may PATCH
