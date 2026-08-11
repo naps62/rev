@@ -133,5 +133,5 @@ ack=$(python3 -c 'import json,sys; print(json.dumps({"dir": sys.argv[1], "upTo":
     -H 'content-type: application/json' -d "$ack" >/dev/null || true
 
 printf '%s\n' "$final"
-printf 'rev: %s new review comment(s) on %s. Address each one, reply in-thread (POST %s/api/comments with author "agent" and parentId = the root comment id), then re-arm this watcher as a background task.\n' \
+printf 'rev: %s new review comment(s) on %s. Address each one, reply in-thread (POST %s/api/comments with author "agent", parentId = the root comment id, and a multi-line markdown body — heredoc recipe in the session-start instructions), then re-arm this watcher as a background task.\n' \
   "$prev" "$DIR" "$REV_URL"

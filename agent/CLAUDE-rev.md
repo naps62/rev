@@ -23,10 +23,14 @@ pass and sends it explicitly or on idle), then exits printing the batch as
 JSON — which re-invokes you. When that happens:
 
 1. Address each comment (make the change it asks for).
-2. Reply in-thread, briefly, after the change lands:
+2. Reply in-thread, briefly, after the change lands. Bodies are markdown
+   and the UI keeps newlines — write real paragraphs and lists via the
+   heredoc, never a body squashed onto one line:
 
-       curl -s -X POST {{HOST}}/api/comments -H 'content-type: application/json' \
-         -d '{"dir":"{{DIR}}","base":"{{BASE}}","parentId":"<root comment id>","author":"agent","body":"..."}'
+       jq -Rs '{dir: "{{DIR}}", base: "{{BASE}}", parentId: "<root comment id>", author: "agent", body: rtrimstr("\n")}' <<'EOF' \
+         | curl -s -X POST {{HOST}}/api/comments -H 'content-type: application/json' -d @-
+       reply body — multi-line markdown, closing EOF at column 0
+       EOF
 
 3. Re-arm the watcher (same command as above).
 
