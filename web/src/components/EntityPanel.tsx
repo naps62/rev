@@ -16,9 +16,8 @@ interface EntityPanelProps {
 }
 
 /**
- * Outline of the current file's semantic changes — the sidebar counterpart
- * of the rollup: rollup answers "what changed globally", this answers
- * "what changed in the file I'm looking at". Follows scroll focus.
+ * Outline of the current file's semantic changes — answers "what changed
+ * in the file I'm looking at". Follows scroll focus.
  */
 export function EntityPanel({ path, entities, onJump }: EntityPanelProps) {
   const shown = entities.slice(0, MAX_ROWS);
