@@ -1,7 +1,8 @@
 /**
  * Vimium-style link hints, scoped to review actions: press f and every
  * visible contextual control — seen checkboxes, file collapse chevrons,
- * section expand/collapse buttons, fold strips, per-line comment buttons —
+ * section expand/collapse buttons, hunk headers, fold strips, per-line
+ * comment buttons —
  * grows a label; typing the label clicks it. Pure DOM, same pattern as
  * crosshair.ts: nothing re-renders in React.
  *

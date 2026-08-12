@@ -442,6 +442,7 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
     keys: [
       ["e", "expand / collapse the current file"],
       ["E", "expand every fold in the current file (again folds back)"],
+      ["z", "collapse / expand the hunk under the pointer, else at eye level"],
       ["x", "toggle pointer crosshair (line/column/word/char)"],
       ["?", "open this cheatsheet"],
       ["Esc", "close dialogs and panels"],

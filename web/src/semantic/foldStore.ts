@@ -11,6 +11,8 @@ const MAX_ENTRIES = 300;
 export interface FoldState {
   folds: string[];
   showBodies: boolean;
+  /** Collapsed hunk indices — hunks default expanded, unlike fold strips. */
+  hunks: number[];
 }
 
 interface Entry extends FoldState {
@@ -44,7 +46,7 @@ function writeStore(store: Store) {
 export function loadFoldState(dir: string, path: string, hash: string): FoldState | null {
   const e = readStore()[entryKey(dir, path)];
   if (!e || e.hash !== hash) return null;
-  return { folds: e.folds ?? [], showBodies: e.showBodies ?? false };
+  return { folds: e.folds ?? [], showBodies: e.showBodies ?? false, hunks: e.hunks ?? [] };
 }
 
 export function saveFoldState(
@@ -55,7 +57,7 @@ export function saveFoldState(
 ) {
   const store = readStore();
   const k = entryKey(dir, path);
-  if (state.folds.length === 0 && !state.showBodies) {
+  if (state.folds.length === 0 && !state.showBodies && state.hunks.length === 0) {
     if (!(k in store)) return;
     delete store[k];
   } else {

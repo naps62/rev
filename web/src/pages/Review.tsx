@@ -700,6 +700,30 @@ export function Review() {
         if (!path) return;
         e.preventDefault();
         commandKey(path, e.key === "e" ? "file" : "folds");
+      } else if (e.key === "z") {
+        // Hybrid target, like c vs n/p: pointer over a diff table toggles the
+        // hunk under it (no glide — content must not move under the mouse);
+        // otherwise the hunk at eye level, re-anchored so z-z round-trips.
+        const p = pointer.current;
+        const hit = p ? (document.elementFromPoint(p.x, p.y) as HTMLElement | null) : null;
+        const overDiff = hit?.closest("table")
+          ? hit.closest<HTMLElement>("section[data-path]")
+          : null;
+        const anchor = overDiff && p ? p.y : eyeAnchorY();
+        const tol = overDiff ? 0 : TUNING.HUNK_NAV_TOLERANCE_PX;
+        const headers = [
+          ...(overDiff ?? document).querySelectorAll<HTMLElement>("tr[data-hunk-header]"),
+        ]
+          .map((el) => ({ el, top: el.getBoundingClientRect().top }))
+          .sort((x, y) => y.top - x.top);
+        const target = headers.find((t) => t.top <= anchor + tol);
+        const btn = target?.el.querySelector<HTMLButtonElement>("button");
+        if (!target || !btn) return;
+        e.preventDefault();
+        btn.click();
+        hunkCursor.current = target.el;
+        if (!overDiff) glideTo(target.el, anchor);
+        flashRow(target.el);
       } else if (e.key === "f") {
         e.preventDefault();
         hintsOff.current?.();
