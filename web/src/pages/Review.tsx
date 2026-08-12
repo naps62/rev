@@ -27,7 +27,6 @@ import { FileNav } from "../components/FileNav";
 import { ReviewProgress } from "../components/ReviewProgress";
 import { Checkbox } from "../components/Checkbox";
 import { EntityPanel } from "../components/EntityPanel";
-import { RollupPanel } from "../components/RollupPanel";
 import { StackStrip } from "../components/StackStrip";
 import { SymbolPanel } from "../components/SymbolPanel";
 import {
@@ -38,7 +37,6 @@ import {
   type FileClass,
 } from "../semantic/classify.ts";
 import { entityAnchor } from "../semantic/entities.ts";
-import { buildRollup } from "../semantic/rollup.ts";
 import { findOccurrences, type Occurrence } from "../semantic/symbols.ts";
 import { attachCrosshair } from "../crosshair";
 import { startHints } from "../hints";
@@ -548,11 +546,6 @@ export function Review() {
     if (a) jumpToOccurrence({ path, side: a.side, line: a.line, kind: "context", text: "" });
   };
 
-  const rollup = useMemo(
-    () => (features.entities && semQ.data?.available ? buildRollup(semQ.data.files) : null),
-    [features.entities, semQ.data],
-  );
-
   // Hovering a diff claims focus; ignored mid-glide so a rail click isn't
   // hijacked by files sliding under the stationary-ish cursor.
   const hoverFocus = (path: string) => {
@@ -993,7 +986,6 @@ export function Review() {
                 onBase={(ref) => navigate(api.href("/review", { dir, base: ref }))}
               />
             )}
-            {rollup && <RollupPanel groups={rollup} onJump={jumpToEntityIn} />}
             {(sections ?? [null]).map((s) => (
               <Fragment key={s?.cls ?? "all"}>
                 {s && (
@@ -1106,7 +1098,7 @@ export function Review() {
                   onJump={jumpToOccurrence}
                   onClose={() => setSymbol(null)}
                 />
-              ) : rollup && currentPath ? (
+              ) : features.entities && semQ.data?.available && currentPath ? (
                 <EntityPanel
                   path={currentPath}
                   entities={currentEntities ?? []}
