@@ -258,16 +258,29 @@ export function DiffFile({
     () => new Set(persistedFolds?.folds ?? []),
   );
   const [showBodies, setShowBodies] = useState(persistedFolds?.showBodies ?? false);
+  const [collapsedHunks, setCollapsedHunks] = useState<Set<number>>(
+    () => new Set(persistedFolds?.hunks ?? []),
+  );
   useEffect(() => {
     setExpandedFolds(new Set(persistedFolds?.folds ?? []));
     setShowBodies(persistedFolds?.showBodies ?? false);
+    setCollapsedHunks(new Set(persistedFolds?.hunks ?? []));
   }, [persistedFolds]);
   useEffect(() => {
     saveFoldState(dir, file.path, file.contentHash, {
       folds: [...expandedFolds],
       showBodies,
+      hunks: [...collapsedHunks],
     });
-  }, [dir, file.path, file.contentHash, expandedFolds, showBodies]);
+  }, [dir, file.path, file.contentHash, expandedFolds, showBodies, collapsedHunks]);
+  const toggleHunk = useCallback((hi: number) => {
+    setCollapsedHunks((prev) => {
+      const next = new Set(prev);
+      if (next.has(hi)) next.delete(hi);
+      else next.add(hi);
+      return next;
+    });
+  }, []);
   // Fold whose gutter rail is under the pointer; its rows get a wash.
   const [hotFold, setHotFold] = useState<string | null>(null);
   const toggleFold = useCallback((key: string) => {
@@ -311,14 +324,15 @@ export function DiffFile({
       return;
     }
     const collapsed =
+      collapsedHunks.size > 0 ||
       (fileClass === "tests" && !showBodies) ||
       [...(foldsByHunk ?? new Map<number, FoldRun[]>())].some(([hi, runs]) =>
         runs.some((r) => !expandedFolds.has(foldKey(hi, r))),
       );
     if (collapsed) {
-      // End state "everything visible": bodies shown AND import folds open.
-      // Import keys are computed directly — after setShowBodies flips the
-      // mode, foldsByHunk will re-derive with the i: prefix.
+      // End state "everything visible": hunks open, bodies shown AND import
+      // folds open. Import keys are computed directly — after setShowBodies
+      // flips the mode, foldsByHunk will re-derive with the i: prefix.
       const lang = langOf(file.path);
       const keys: string[] = [];
       if (lang && foldImports) {
@@ -327,6 +341,7 @@ export function DiffFile({
         });
       }
       setExpandedFolds(new Set(keys));
+      setCollapsedHunks(new Set());
       if (fileClass === "tests") setShowBodies(true);
     } else {
       setExpandedFolds(new Set());
@@ -492,24 +507,33 @@ export function DiffFile({
   if ((expanded || lingering) && !editing) {
     let flatIdx = 0;
     hunks.forEach((hunk, hi) => {
+      const hunkCollapsed = collapsedHunks.has(hi);
+      // A collapsed hunk hides its threads; the count keeps them findable.
+      const hiddenThreads = hunkCollapsed
+        ? hunk.lines.reduce(
+            (n, l) =>
+              n +
+              (l.oldLine != null ? (threadsByLine.get(lineKey("old", l.oldLine))?.length ?? 0) : 0) +
+              (l.newLine != null ? (threadsByLine.get(lineKey("new", l.newLine))?.length ?? 0) : 0),
+            0,
+          )
+        : 0;
       rows.push(
-        split ? (
-          <tr key={`h${hi}`} ref={(el) => hunkRef?.(hi, el)}>
-            <td colSpan={4} className="bg-raise/50 py-1 pl-7 font-mono text-[11px] text-faint max-sm:pl-2">
-              @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
-              {hunk.header ? <span className="text-mute"> {hunk.header}</span> : null}
-            </td>
-          </tr>
-        ) : (
-          <tr key={`h${hi}`} ref={(el) => hunkRef?.(hi, el)}>
-            <td colSpan={2} className="select-none border-r border-edge-soft bg-raise/50" />
-            <td className="bg-raise/50 py-1 pl-7 font-mono text-[11px] text-faint max-sm:pl-2">
-              @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
-              {hunk.header ? <span className="text-mute"> {hunk.header}</span> : null}
-            </td>
-          </tr>
-        ),
+        <HunkHeader
+          key={`h${hi}`}
+          hunk={hunk}
+          split={split}
+          collapsed={hunkCollapsed}
+          threads={hiddenThreads}
+          rowRef={(el) => hunkRef?.(hi, el)}
+          onToggle={() => toggleHunk(hi)}
+        />,
       );
+      if (hunkCollapsed) {
+        // Tokens and intraline spans index into `flat`; keep them aligned.
+        flatIdx += hunk.lines.length;
+        return;
+      }
 
       // A fold with a thread or open composer inside must stay visible —
       // a hidden comment is worse than a visible import block.
@@ -962,6 +986,80 @@ const IMAGE_EXTENSIONS = /\.(?:apng|avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i;
 
 function isPreviewableImage(path: string): boolean {
   return IMAGE_EXTENSIONS.test(path);
+}
+
+/** Clickable @@ row: collapses/expands its hunk (also the z key's target). */
+function HunkHeader({
+  hunk,
+  split,
+  collapsed,
+  threads,
+  rowRef,
+  onToggle,
+}: {
+  hunk: DiffHunk;
+  split: boolean;
+  collapsed: boolean;
+  /** Threads hidden inside the collapsed hunk (0 when expanded). */
+  threads: number;
+  rowRef: (el: HTMLTableRowElement | null) => void;
+  onToggle: () => void;
+}) {
+  let adds = 0;
+  let dels = 0;
+  for (const l of hunk.lines) {
+    if (l.kind === "add") adds++;
+    else if (l.kind === "del") dels++;
+  }
+  return (
+    <tr ref={rowRef} data-hunk-header>
+      {!split && (
+        <td colSpan={2} className="select-none border-r border-edge-soft bg-raise/50" />
+      )}
+      <td colSpan={split ? 4 : 1} className="bg-raise/50 p-0">
+        <button
+          type="button"
+          data-hint
+          onClick={onToggle}
+          aria-expanded={!collapsed}
+          title={collapsed ? "Expand hunk (z)" : "Collapse hunk (z)"}
+          className="flex w-full items-center gap-1.5 py-1 pl-2 pr-4 text-left font-mono text-[11px] text-faint transition-colors duration-150 hover:bg-raise/40 hover:text-mute max-sm:pl-1"
+        >
+          <svg
+            width="9"
+            height="9"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden
+            className={cx("shrink-0 transition-transform duration-150", !collapsed && "rotate-90")}
+          >
+            <path
+              d="M5.5 3 11 8l-5.5 5"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span className="min-w-0 truncate">
+            @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
+            {hunk.header ? <span className="text-mute"> {hunk.header}</span> : null}
+          </span>
+          {collapsed && (
+            <span className="ml-auto flex shrink-0 items-center gap-1.5">
+              <span className="text-add">+{adds}</span>
+              <span className="text-del">−{dels}</span>
+              {threads > 0 && (
+                <span className="text-accent">
+                  {threads} comment{threads === 1 ? "" : "s"}
+                </span>
+              )}
+            </span>
+          )}
+        </button>
+      </td>
+    </tr>
+  );
 }
 
 /** Collapsed run of folded lines; click restores the real rows. */

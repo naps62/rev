@@ -700,6 +700,23 @@ export function Review() {
         if (!path) return;
         e.preventDefault();
         commandKey(path, e.key === "e" ? "file" : "folds");
+      } else if (e.key === "z") {
+        // Toggle the hunk at eye level: its @@ header is the nearest one at
+        // or above the anchor. Re-anchoring the header keeps z-z a no-op —
+        // without the glide, collapsing shifts a different hunk under the eye.
+        const anchor = eyeAnchorY();
+        const tol = TUNING.HUNK_NAV_TOLERANCE_PX;
+        const headers = [...document.querySelectorAll<HTMLElement>("tr[data-hunk-header]")]
+          .map((el) => ({ el, top: el.getBoundingClientRect().top }))
+          .sort((x, y) => y.top - x.top);
+        const target = headers.find((t) => t.top <= anchor + tol);
+        const btn = target?.el.querySelector<HTMLButtonElement>("button");
+        if (!target || !btn) return;
+        e.preventDefault();
+        btn.click();
+        hunkCursor.current = target.el;
+        glideTo(target.el, anchor);
+        flashRow(target.el);
       } else if (e.key === "f") {
         e.preventDefault();
         hintsOff.current?.();
