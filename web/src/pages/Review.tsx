@@ -701,12 +701,19 @@ export function Review() {
         e.preventDefault();
         commandKey(path, e.key === "e" ? "file" : "folds");
       } else if (e.key === "z") {
-        // Toggle the hunk at eye level: its @@ header is the nearest one at
-        // or above the anchor. Re-anchoring the header keeps z-z a no-op —
-        // without the glide, collapsing shifts a different hunk under the eye.
-        const anchor = eyeAnchorY();
-        const tol = TUNING.HUNK_NAV_TOLERANCE_PX;
-        const headers = [...document.querySelectorAll<HTMLElement>("tr[data-hunk-header]")]
+        // Hybrid target, like c vs n/p: pointer over a diff table toggles the
+        // hunk under it (no glide — content must not move under the mouse);
+        // otherwise the hunk at eye level, re-anchored so z-z round-trips.
+        const p = pointer.current;
+        const hit = p ? (document.elementFromPoint(p.x, p.y) as HTMLElement | null) : null;
+        const overDiff = hit?.closest("table")
+          ? hit.closest<HTMLElement>("section[data-path]")
+          : null;
+        const anchor = overDiff && p ? p.y : eyeAnchorY();
+        const tol = overDiff ? 0 : TUNING.HUNK_NAV_TOLERANCE_PX;
+        const headers = [
+          ...(overDiff ?? document).querySelectorAll<HTMLElement>("tr[data-hunk-header]"),
+        ]
           .map((el) => ({ el, top: el.getBoundingClientRect().top }))
           .sort((x, y) => y.top - x.top);
         const target = headers.find((t) => t.top <= anchor + tol);
@@ -715,7 +722,7 @@ export function Review() {
         e.preventDefault();
         btn.click();
         hunkCursor.current = target.el;
-        glideTo(target.el, anchor);
+        if (!overDiff) glideTo(target.el, anchor);
         flashRow(target.el);
       } else if (e.key === "f") {
         e.preventDefault();
