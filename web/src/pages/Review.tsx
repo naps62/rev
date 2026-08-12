@@ -121,6 +121,7 @@ export function Review() {
             }
           : old,
       );
+      refocusUnderPointer();
     },
     onError: () => qc.invalidateQueries({ queryKey: ["diff-summary", dir, base] }),
   });
@@ -602,6 +603,26 @@ export function Review() {
     window.addEventListener("mousemove", onMove, { passive: true });
     return () => window.removeEventListener("mousemove", onMove);
   }, []);
+
+  // Toggling seen slides files under a stationary pointer, which fires no
+  // mousemove — re-derive hover focus once the 250ms collapse settles.
+  const refocusTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(refocusTimer.current), []);
+  const refocusUnderPointer = () => {
+    window.clearTimeout(refocusTimer.current);
+    refocusTimer.current = window.setTimeout(() => {
+      const p = pointer.current;
+      if (!p || glidingRef.current) return;
+      const hit = document.elementFromPoint(p.x, p.y);
+      if (!hit) return;
+      for (const [path, el] of sectionEls.current) {
+        if (el.contains(hit)) {
+          setCurrentPath(path);
+          return;
+        }
+      }
+    }, 300);
+  };
 
   const filesRef = useRef(files);
   filesRef.current = files;
