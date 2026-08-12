@@ -27,9 +27,6 @@ export function RollupPanel({ groups, onJump }: RollupPanelProps) {
 
   return (
     <section className="rounded-md border border-edge bg-panel max-sm:rounded-none max-sm:border-x-0">
-      <h2 className="border-b border-edge-soft px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-mute">
-        What changed
-      </h2>
       <div className="flex flex-col">
         {groups.map((g) => {
           const key = groupKey(g);
