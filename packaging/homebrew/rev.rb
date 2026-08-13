@@ -4,9 +4,9 @@
 class Rev < Formula
   desc "Always-on local code review server for every git repo on the machine"
   homepage "https://github.com/naps62/rev"
-  url "https://github.com/naps62/rev/releases/download/v0.1.0/rev-0.1.0.tar.gz"
-  sha256 "347c1b2aa9ec5ebf8fd25dde41c5581ee14844692129553520c709e5f7ef3e76"
-  version "0.1.0"
+  url "https://github.com/naps62/rev/releases/download/v0.2.0/rev-0.2.0.tar.gz"
+  sha256 "bfe6be54d26b56435eb110efa2e31b9fa35b6af41746534c025989fd0261889c"
+  version "0.2.0"
 
   depends_on "git"
   depends_on "node"
