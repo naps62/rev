@@ -66,6 +66,13 @@ install_launchd() {
 }
 
 install_systemd() {
+  # See deploy.sh for REV_SKIP_UNIT_INSTALL.
+  if [ "${REV_SKIP_UNIT_INSTALL:-0}" = 1 ]; then
+    echo "install: REV_SKIP_UNIT_INSTALL=1, leaving unit files to the config manager"
+    systemctl --user restart rev.service
+    loginctl enable-linger "$USER" >/dev/null 2>&1 || true
+    return
+  fi
   mkdir -p ~/.config/systemd/user
   rev_render "$CHECKOUT/systemd/rev.service.template" ~/.config/systemd/user/rev.service 0
   systemctl --user daemon-reload

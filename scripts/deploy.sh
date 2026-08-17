@@ -12,12 +12,21 @@ rev_resolve_node
 pnpm install --frozen-lockfile
 pnpm build
 
-mkdir -p ~/.config/systemd/user
-rev_render "$CHECKOUT/systemd/rev.service.template" ~/.config/systemd/user/rev.service 0
-cp systemd/rev-deploy.service ~/.config/systemd/user/
-systemctl --user daemon-reload
+# Set REV_SKIP_UNIT_INSTALL=1 when something else owns the unit files (a nix
+# home-manager generation, ansible, ...). Writing them here would replace files
+# that config manager considers its own, and its next run then refuses to
+# reconcile. Unset — the default — installs them as before.
+if [ "${REV_SKIP_UNIT_INSTALL:-0}" = 1 ]; then
+  echo "deploy: REV_SKIP_UNIT_INSTALL=1, leaving unit files to the config manager"
+else
+  mkdir -p ~/.config/systemd/user
+  rev_render "$CHECKOUT/systemd/rev.service.template" ~/.config/systemd/user/rev.service 0
+  cp systemd/rev-deploy.service ~/.config/systemd/user/
+  systemctl --user daemon-reload
 
-systemctl --user enable rev.service rev-deploy.service >/dev/null
+  systemctl --user enable rev.service rev-deploy.service >/dev/null
+fi
+
 systemctl --user restart rev.service
 
 # The deploy job runs detached (systemd-run), so it is safe to replace the
