@@ -16,6 +16,7 @@ import type { ClientMessage, ServerMessage } from "#shared/types";
 import { config } from "./config.ts";
 import { openDb } from "./db.ts";
 import { isKnownRepo, startDiscoveryTimer } from "./discovery.ts";
+import * as presence from "./presence.ts";
 import { buildApi } from "./routes.ts";
 import * as watcher from "./watcher.ts";
 
@@ -74,13 +75,20 @@ function main(): void {
         if (!(await isKnownRepo(msg.dir))) return;
         dirs.add(msg.dir);
         watcher.subscribe(msg.dir);
+        presence.enter(msg.dir);
       } else if (msg.type === "unwatch" && typeof msg.dir === "string") {
-        if (dirs.delete(msg.dir)) watcher.unsubscribe(msg.dir);
+        if (dirs.delete(msg.dir)) {
+          watcher.unsubscribe(msg.dir);
+          presence.leave(msg.dir);
+        }
       }
     });
     ws.on("close", () => {
       socketDirs.delete(ws);
-      for (const dir of dirs) watcher.unsubscribe(dir);
+      for (const dir of dirs) {
+        watcher.unsubscribe(dir);
+        presence.leave(dir);
+      }
     });
   });
 

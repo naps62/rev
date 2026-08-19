@@ -10,11 +10,13 @@ import type {
   DiffSummaryResponse,
   FileDiffResponse,
   InterdiffResponse,
+  PresenceResponse,
   ServerMessage,
 } from "#shared/types";
 import { config } from "./config.ts";
 import { closeDb, openDb } from "./db.ts";
 import { hashContent } from "./git.ts";
+import { enter as presenceEnter, leave as presenceLeave } from "./presence.ts";
 import { buildApi, resolveInRepo } from "./routes.ts";
 import { git, makeRepo, SCRATCH, tmpdir, write } from "./testutil.ts";
 
@@ -341,6 +343,36 @@ describe("GET /refs", () => {
     expect(body.refs).not.toContain("origin");
 
     const bad = await app.request("/refs?dir=/etc");
+    expect(bad.status).toBe(400);
+  });
+});
+
+describe("GET /presence", () => {
+  test("counts live viewers, keeps a last-seen stamp after they leave", async () => {
+    const dir = makeRepo("routes-presence");
+    const get = async () => {
+      const res = await app.request(`/presence?dir=${encodeURIComponent(dir)}`);
+      expect(res.status).toBe(200);
+      return (await res.json()) as PresenceResponse;
+    };
+
+    expect(await get()).toEqual({ dir, viewers: 0, lastSeen: 0 });
+
+    presenceEnter(dir);
+    presenceEnter(dir);
+    expect((await get()).viewers).toBe(2);
+
+    presenceLeave(dir);
+    expect((await get()).viewers).toBe(1);
+    presenceLeave(dir);
+    const gone = await get();
+    expect(gone.viewers).toBe(0);
+    expect(gone.lastSeen).toBeGreaterThan(0); // still "recently reviewed"
+
+    presenceLeave(dir); // extra unwatch must not drive the count negative
+    expect((await get()).viewers).toBe(0);
+
+    const bad = await app.request("/presence?dir=/etc");
     expect(bad.status).toBe(400);
   });
 });

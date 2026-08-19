@@ -63,6 +63,10 @@ Prod: `pnpm build && pnpm start` — server serves `web/dist` statically.
   (subscribed over WS), ignoring `.git/objects`, `node_modules`, build dirs.
   Debounced; emits `diff-invalidated` with the changed paths. Watching only
   viewed repos keeps the daemon cheap with dozens of repos discovered.
+- **presence.ts** — viewer counts per dir, fed by the same WS subscribe /
+  unsubscribe pair, plus a last-seen stamp that outlives the last viewer.
+  The Stop hook reads it so it only nags about an unarmed comment watcher
+  while the user actually has that review open.
 - **db.ts** — `node:sqlite` at `~/.local/share/rev/rev.db`. Tables: comments
   (threaded via `parentId`, resolvable, delivery lifecycle
   pending → submitted → picked_up on a separate `submitted_seq` axis),

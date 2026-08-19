@@ -158,6 +158,17 @@ export interface RefsResponse {
 }
 
 /**
+ * Who has dir's review page open. `viewers` counts live review-page sockets;
+ * `lastSeen` is when one last opened or closed it (0 = never in this server's
+ * lifetime). Hooks use it to tell "the user is reviewing" from "nobody is".
+ */
+export interface PresenceResponse {
+  dir: string;
+  viewers: number;
+  lastSeen: number;
+}
+
+/**
  * Delta between the content snapshotted when a file was marked seen and the
  * current working tree — what still needs re-review on a stale file. New-side
  * line numbers are working-tree lines (same axis as the full diff's new side).

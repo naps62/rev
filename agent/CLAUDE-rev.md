@@ -41,5 +41,6 @@ Rules:
   in realtime — no need to announce edits in chat.
 - Never mark threads resolved; resolving is the user's call (you may PATCH
   only your own comment bodies).
-- Keep the watcher armed until the user says the review is done. If it dies,
-  a Stop hook will remind you to re-arm.
+- Keep the watcher armed until the user says the review is done. If it dies
+  while the user has the review page open, a Stop hook will remind you to
+  re-arm.

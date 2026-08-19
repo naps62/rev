@@ -20,6 +20,7 @@ import type {
   CommentsAckRequest,
   CommentsSubmitRequest,
   FileWriteRequest,
+  PresenceResponse,
   SeenRequest,
   ServerMessage,
 } from "#shared/types";
@@ -38,6 +39,7 @@ import {
   submitPending,
 } from "./db.ts";
 import { resolveComments } from "./anchor.ts";
+import { presence } from "./presence.ts";
 import { computeSemanticDiff } from "./semantic.ts";
 import { computeStack } from "./stack.ts";
 import { invalidateRepoList, isKnownRepo, listRepos, rescan } from "./discovery.ts";
@@ -256,6 +258,13 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     if (!dir) return c.json({ error: "dir is required" }, 400);
     if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
     return c.json({ dir, refs: await listRefs(dir) });
+  });
+
+  app.get("/presence", async (c) => {
+    const dir = c.req.query("dir");
+    if (!dir) return c.json({ error: "dir is required" }, 400);
+    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    return c.json({ dir, ...presence(dir) } satisfies PresenceResponse);
   });
 
   app.get("/stack", async (c) => {

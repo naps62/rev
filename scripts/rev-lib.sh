@@ -92,6 +92,29 @@ rev_known() {
   mv "$marker.tmp" "$marker"
 }
 
+# Cached-only variant: true when a previous hook already confirmed $1 with the
+# server. Keeps the Stop hook free of round trips in repos rev doesn't know.
+rev_known_cached() { [[ -f "$REV_STATE/$(rev_key "$1").known" ]]; }
+
+# Is anyone looking at $1's review right now? True while a review page holds
+# its socket, and for REV_REVIEW_IDLE seconds (default 900) after the last one
+# closed. Nonzero when nobody is, when the server is unreachable, and on a
+# server too old to serve /api/presence — this only gates a fallback nag, so a
+# wrong guess costs the user noise for nothing.
+rev_reviewing() {
+  local resp
+  resp=$(curl -sfG --max-time 2 "$REV_URL/api/presence" --data-urlencode "dir=$1" 2>/dev/null) || return 1
+  printf '%s' "$resp" | REV_IDLE="${REV_REVIEW_IDLE:-900}" python3 -c '
+import json, os, sys, time
+try:
+    d = json.load(sys.stdin)
+    viewers, last = int(d["viewers"]), float(d["lastSeen"])
+except Exception:
+    sys.exit(1)
+recent = bool(last) and time.time() - last / 1000 <= float(os.environ["REV_IDLE"])
+sys.exit(0 if viewers > 0 or recent else 1)'
+}
+
 # PID of the session a hook runs under: nearest non-shell ancestor (hooks
 # may sit behind `bash -c` wrappers). Nonzero when the walk hits init.
 rev_owner_pid() {
