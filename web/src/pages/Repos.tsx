@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import type { RepoInfo } from "#shared/types";
+import type { PrInfo, RepoInfo } from "#shared/types";
 import { TUNING } from "#shared/tuning";
 import * as api from "../api";
 import { AppHeader } from "../components/AppHeader";
@@ -752,7 +752,96 @@ function ProjectCard({
             : `show ${c.idleCount} idle worktree${c.idleCount === 1 ? "" : "s"}`}
         </button>
       )}
+
+      <RemotePrs repo={r} />
     </section>
+  );
+}
+
+/**
+ * Open PRs on origin whose branch has no local checkout, collapsed by
+ * default — on shared repos most open PRs are other people's. Each row can
+ * create an aoe worktree + agent session for the branch.
+ */
+function RemotePrs({ repo: r }: { repo: RepoInfo }) {
+  const [open, setOpen] = useState(false);
+  const prsQ = useQuery({
+    queryKey: ["prs", r.dir],
+    queryFn: () => api.getPrs(r.dir),
+    enabled: r.remoteUrl !== null,
+    staleTime: TUNING.PR_CACHE_TTL_MS,
+    refetchOnWindowFocus: false,
+  });
+  const unattached = (prsQ.data?.prs ?? []).filter((p) => p.checkoutDir === null);
+  if (unattached.length === 0) return null;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="block w-full border-t border-edge-soft px-3 py-1.5 text-left font-mono text-[11px] text-faint transition-colors duration-150 hover:text-mute"
+      >
+        {open
+          ? "hide open PRs"
+          : `show ${unattached.length} open PR${unattached.length === 1 ? "" : "s"} without a worktree`}
+      </button>
+      {open && (
+        <div className="divide-y divide-edge-soft border-t border-edge-soft">
+          {unattached.map((pr) => (
+            <PrRow key={pr.number} pr={pr} dir={r.dir} />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function PrRow({ pr, dir }: { pr: PrInfo; dir: string }) {
+  const qc = useQueryClient();
+  const create = useMutation({
+    mutationFn: () => api.createWorktree({ dir, branch: pr.branch }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["repos"] });
+      qc.invalidateQueries({ queryKey: ["prs", dir] });
+    },
+  });
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 opacity-70">
+      <span className="size-1.5 shrink-0 rounded-full border border-edge" />
+      <span title={pr.title} className="min-w-0 truncate font-mono text-[12px] text-mute">
+        {pr.branch}
+      </span>
+      <a
+        href={pr.url}
+        target="_blank"
+        rel="noreferrer"
+        title={pr.title}
+        className="shrink-0 font-mono text-[10.5px] text-faint transition-colors duration-150 hover:text-fg"
+      >
+        #{pr.number}
+      </a>
+      {pr.draft && (
+        <span className="shrink-0 rounded-sm bg-raise px-1 py-px font-mono text-[10px] text-faint">
+          draft
+        </span>
+      )}
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        {create.isError && (
+          <span title={(create.error as Error).message} className="font-mono text-[10.5px] text-del">
+            failed
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => create.mutate()}
+          disabled={create.isPending}
+          title="create a worktree and an agent-of-empires session for this branch"
+          className="rounded-sm border border-edge px-1.5 py-0.5 font-mono text-[10.5px] text-mute transition-colors duration-150 hover:border-accent/50 hover:text-fg disabled:text-faint"
+        >
+          {create.isPending ? "creating…" : "+ worktree"}
+        </button>
+      </span>
+    </div>
   );
 }
 

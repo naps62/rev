@@ -22,4 +22,6 @@ export const config = {
     ?? [...TUNING.PERSONAL_HOSTS],
   personalOwners: process.env.REV_PERSONAL_OWNERS?.split(",").map((o) => o.trim().toLowerCase()).filter(Boolean)
     ?? [...TUNING.PERSONAL_OWNERS],
+  ghToken: process.env.REV_GH_TOKEN ?? process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN ?? null,
+  giteaToken: process.env.REV_GITEA_TOKEN ?? process.env.GITEA_TOKEN ?? null,
 };

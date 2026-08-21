@@ -15,11 +15,14 @@ import type {
   FileDiffResponse,
   FileWriteRequest,
   InterdiffResponse,
+  PrListResponse,
   RefsResponse,
   RepoInfo,
   SeenRequest,
   SemanticDiffResponse,
   StackResponse,
+  WorktreeCreateRequest,
+  WorktreeCreateResponse,
 } from "#shared/types";
 
 export class ApiError extends Error {
@@ -74,6 +77,17 @@ export async function getRepos(): Promise<RepoInfo[]> {
 export async function rescanRepos(): Promise<RepoInfo[]> {
   if (isFixture()) return tick((await fx()).fxGetRepos());
   return request("/api/repos/rescan", { method: "POST" });
+}
+
+export async function getPrs(dir: string): Promise<PrListResponse> {
+  if (isFixture()) return tick((await fx()).fxGetPrs(dir));
+  const q = new URLSearchParams({ dir });
+  return request(`/api/prs?${q}`);
+}
+
+export async function createWorktree(req: WorktreeCreateRequest): Promise<WorktreeCreateResponse> {
+  if (isFixture()) return tick((await fx()).fxCreateWorktree(req));
+  return request("/api/worktrees", { method: "POST", body: JSON.stringify(req) });
 }
 
 export async function getDiff(dir: string, base: string): Promise<DiffResponse> {

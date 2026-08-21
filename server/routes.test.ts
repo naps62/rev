@@ -432,3 +432,25 @@ describe("interdiff", () => {
     expect(inter.file.contentHash).toBe("");
   });
 });
+
+describe("PRs and worktree creation", () => {
+  test("GET /prs returns prs:null for a repo with no remote", async () => {
+    const dir = makeRepo("prs-noremote");
+    const res = await app.request(`/prs?dir=${encodeURIComponent(dir)}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ dir, prs: null });
+  });
+
+  test("GET /prs rejects unknown dirs", async () => {
+    const res = await app.request("/prs?dir=/nope");
+    expect(res.status).toBe(400);
+  });
+
+  test("POST /worktrees validates body and branch name", async () => {
+    const dir = makeRepo("wt-validate");
+    expect((await json("POST", "/worktrees", { dir })).status).toBe(400);
+    expect((await json("POST", "/worktrees", { dir: "/nope", branch: "x" })).status).toBe(400);
+    expect((await json("POST", "/worktrees", { dir, branch: "--delete" })).status).toBe(400);
+    expect((await json("POST", "/worktrees", { dir, branch: "a..b" })).status).toBe(400);
+  });
+});

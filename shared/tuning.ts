@@ -114,6 +114,12 @@ export const TUNING = {
   /** Kill a sem invocation after this long; the client falls back to text heuristics. Measured ~20ms on medium repos — this is a hang guard, not a budget. */
   SEM_TIMEOUT_MS: 10_000,
 
+  /** Open-PR lists fetched from a forge API are reused this long per remote. */
+  PR_CACHE_TTL_MS: 60_000,
+
+  /** Kill an `aoe add` after this long; worktree creation includes a git fetch, which can be slow on big repos. */
+  AOE_TIMEOUT_MS: 120_000,
+
   /** SQLite location, under XDG data dir. */
   DB_PATH: "~/.local/share/rev/rev.db",
 

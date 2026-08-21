@@ -23,6 +23,7 @@ import type {
   PresenceResponse,
   SeenRequest,
   ServerMessage,
+  WorktreeCreateRequest,
 } from "#shared/types";
 import { TUNING } from "#shared/tuning";
 import {
@@ -42,7 +43,9 @@ import { resolveComments } from "./anchor.ts";
 import { presence } from "./presence.ts";
 import { computeSemanticDiff } from "./semantic.ts";
 import { computeStack } from "./stack.ts";
+import { AoeError, createWorktreeSession, validBranch } from "./aoe.ts";
 import { invalidateRepoList, isKnownRepo, listRepos, rescan } from "./discovery.ts";
+import { listOpenPrs } from "./forge.ts";
 import {
   baseBehind,
   computeDiff,
@@ -164,6 +167,48 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     const repos = await rescan(true); // user-forced: bypass per-repo stats cache
     broadcast({ type: "repos-changed" });
     return c.json(repos);
+  });
+
+  app.get("/prs", async (c) => {
+    const dir = c.req.query("dir");
+    if (!dir) return c.json({ error: "dir is required" }, 400);
+    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    const repos = await listRepos();
+    const me = repos.find((r) => r.dir === dir);
+    const mainDir = me?.mainDir ?? dir;
+    const remote = repos.find((r) => r.dir === mainDir)?.remoteUrl ?? me?.remoteUrl ?? null;
+    if (remote === null) return c.json({ dir, prs: null });
+    const prs = await listOpenPrs(remote);
+    if (prs === null) return c.json({ dir, prs: null });
+    const checkouts = new Map<string, string>();
+    for (const r of repos) {
+      if (r.mainDir === mainDir && r.branch !== null) checkouts.set(r.branch, r.dir);
+    }
+    return c.json({
+      dir,
+      prs: prs.map((p) => ({ ...p, checkoutDir: checkouts.get(p.branch) ?? null })),
+    });
+  });
+
+  app.post("/worktrees", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as WorktreeCreateRequest | null;
+    if (!b || typeof b.dir !== "string" || typeof b.branch !== "string") {
+      return c.json({ error: "dir and branch are required" }, 400);
+    }
+    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    if (!validBranch(b.branch)) return c.json({ error: `invalid branch name: ${b.branch}` }, 400);
+    const repos = await listRepos();
+    const mainDir = repos.find((r) => r.dir === b.dir)?.mainDir ?? b.dir;
+    let created;
+    try {
+      created = await createWorktreeSession(mainDir, b.branch);
+    } catch (err) {
+      if (err instanceof AoeError) return c.json({ error: err.message }, 400);
+      throw err;
+    }
+    await rescan(true);
+    broadcast({ type: "repos-changed" });
+    return c.json({ dir: created.dir, branch: b.branch, session: created.session }, 201);
   });
 
   app.get("/diff", async (c) => {
