@@ -1,6 +1,6 @@
 import { existsSync, symlinkSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { before as beforeAll, describe, test } from "node:test";
 import { expect } from "expect";
 import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
@@ -633,7 +633,9 @@ describe("session spawn on submit", () => {
 
   test("submit spawns a session and holds the batch until its watcher arrives", async () => {
     const dir = makeRepo("spawn-e2e");
-    await json("PUT", "/commands", { sessionSpawn: "touch {dir}/spawned" });
+    await json("PUT", "/commands", {
+      sessionSpawn: "touch {dir}/spawned-{repo}",
+    });
     await json("POST", "/comments", {
       dir,
       base: "main",
@@ -658,7 +660,7 @@ describe("session spawn on submit", () => {
       cursor: expect.any(Number),
       spawned: true,
     });
-    expect(existsSync(join(dir, "spawned"))).toBe(true);
+    expect(existsSync(join(dir, `spawned-${basename(dir)}`))).toBe(true);
     const delivered = (await (await watcher).json()) as CommentListResponse;
     expect(delivered.comments.map((c) => c.body)).toEqual(["fix this"]);
     await json("PUT", "/commands", { sessionSpawn: "" });

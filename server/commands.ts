@@ -96,6 +96,7 @@ export function setSessionSpawnCommand(template: string): void {
 export async function runSessionSpawnCommand(
   dir: string,
   branch: string | null,
+  repo: string,
 ): Promise<void> {
   const template = sessionSpawnCommand();
   if (template === "")
@@ -103,6 +104,7 @@ export async function runSessionSpawnCommand(
   const argv = substitute(splitTemplate(template), {
     dir,
     branch: branch ?? "",
+    repo,
   });
   await exec(argv, dir, TUNING.SESSION_SPAWN_CMD_TIMEOUT_MS);
 }
