@@ -88,10 +88,14 @@ export function setSessionSpawnCommand(template: string): void {
 }
 
 /** Run the configured session-spawn command for a checkout; cwd = the checkout. */
-export async function runSessionSpawnCommand(dir: string, branch: string | null): Promise<void> {
+export async function runSessionSpawnCommand(
+  dir: string,
+  branch: string | null,
+  repo: string,
+): Promise<void> {
   const template = sessionSpawnCommand();
   if (template === "") throw new CommandError("no session-spawn command configured");
-  const argv = substitute(splitTemplate(template), { dir, branch: branch ?? "" });
+  const argv = substitute(splitTemplate(template), { dir, branch: branch ?? "", repo });
   await exec(argv, dir, TUNING.SESSION_SPAWN_CMD_TIMEOUT_MS);
 }
 

@@ -41,6 +41,7 @@ export const DEFAULT_WORKTREE_CMD = WORKTREE_CMD_PRESETS[0]!.template;
 export const SESSION_SPAWN_PLACEHOLDERS: Record<string, string> = {
   "{dir}": "absolute path of the checkout the comments target",
   "{branch}": "the checkout's branch (empty when detached)",
+  "{repo}": "the repo's name (basename of its main checkout)",
 };
 
 /**
@@ -52,8 +53,11 @@ export const SESSION_SPAWN_PROMPT = "Address the incoming rev review comments.";
 
 export const SESSION_SPAWN_PRESETS: CommandPreset[] = [
   {
+    // aoe shlex-splits --extra-args into words appended after the agent
+    // binary, so the prompt needs its own embedded quotes to reach claude
+    // as one argument.
     name: "aoe",
-    template: `aoe add {dir} --launch --extra-args "${SESSION_SPAWN_PROMPT}"`,
+    template: `aoe add {dir} -g {repo} --launch --extra-args '"${SESSION_SPAWN_PROMPT}"'`,
     blurb: "agent-of-empires session, launched immediately",
   },
   {

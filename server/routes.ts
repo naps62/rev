@@ -11,7 +11,7 @@
 
 import { existsSync, realpathSync } from "node:fs";
 import { readFile as readFileBytes, writeFile } from "node:fs/promises";
-import { dirname, extname, isAbsolute, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, resolve, sep } from "node:path";
 import { Hono } from "hono";
 import { TUNING } from "#shared/tuning";
 import type {
@@ -672,7 +672,8 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       if (!spawn) {
         spawn = (async () => {
           const repos = await listRepos();
-          await runSessionSpawnCommand(b.dir, repos.find((r) => r.dir === b.dir)?.branch ?? null);
+          const me = repos.find((r) => r.dir === b.dir);
+          await runSessionSpawnCommand(b.dir, me?.branch ?? null, basename(me?.mainDir ?? b.dir));
           return waitForAgent(b.dir);
         })();
         spawn.finally(() => spawns.delete(b.dir)).catch(() => {});
