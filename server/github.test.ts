@@ -314,4 +314,24 @@ describe("agent mirroring (REV_GITHUB_TO_AGENT)", () => {
       config.githubToAgent = false;
     }
   });
+
+  test("threads already resolved at first sync are never mirrored; unresolve mirrors them", async () => {
+    config.githubToAgent = true;
+    const dir = makeGithubRepo("gh-mirror-resolved");
+    try {
+      stubGraphql({ isResolved: true });
+      await githubConvos(dir, true);
+      // only the conversation comment lands — root and reply are skipped
+      const first = listComments(dir, undefined, undefined, true).comments;
+      expect(first).toHaveLength(1);
+      expect(first[0]!.anchor).toBeNull();
+
+      stubGraphql({ isResolved: false });
+      await githubConvos(dir, true);
+      expect(listComments(dir, undefined, undefined, true).comments).toHaveLength(3);
+    } finally {
+      stubGraphql();
+      config.githubToAgent = false;
+    }
+  });
 });

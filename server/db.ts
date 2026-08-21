@@ -68,9 +68,13 @@ export function openDb(path: string = config.dbPath): void {
   if (!cols.some((c) => c.name === "github_id")) {
     db.exec("ALTER TABLE comments ADD COLUMN github_id TEXT;");
   }
-  db.exec(
-    "CREATE UNIQUE INDEX IF NOT EXISTS comments_github_id ON comments (github_id) WHERE github_id IS NOT NULL;",
-  );
+  // Per dir, not global: the same PR mirrors independently into each checkout
+  // (main repo + worktrees) reviewing its branch.
+  db.exec(`
+    DROP INDEX IF EXISTS comments_github_id;
+    CREATE UNIQUE INDEX IF NOT EXISTS comments_dir_github_id
+      ON comments (dir, github_id) WHERE github_id IS NOT NULL;
+  `);
 }
 
 export function closeDb(): void {
@@ -171,9 +175,11 @@ export function createComment(req: CommentCreateRequest): Comment {
 /**
  * Mirror one GitHub comment into the store for agent delivery
  * (REV_GITHUB_TO_AGENT). Keyed by github_id: an existing row just gets its
- * body and (roots) resolved state refreshed — never re-delivered. Mirrored
- * rows are author "reviewer", submitted immediately, and hidden from the UI
- * listing (the review page renders GitHub threads live instead).
+ * body and (roots) resolved state refreshed — never re-delivered. Threads
+ * already resolved when first seen are not mirrored at all (nothing left for
+ * the agent to act on); resolution arriving later lands on the existing row.
+ * Mirrored rows are author "reviewer", submitted immediately, and hidden
+ * from the UI listing (the review page renders GitHub threads live instead).
  * Returns true when a new row was inserted.
  */
 export function mirrorGithubComment(req: {
@@ -190,8 +196,8 @@ export function mirrorGithubComment(req: {
   const d = must();
   return transaction(d, () => {
     const existing = d
-      .prepare("SELECT id, parent_id, body, resolved_at FROM comments WHERE github_id = ?")
-      .get(req.githubId) as
+      .prepare("SELECT id, parent_id, body, resolved_at FROM comments WHERE dir = ? AND github_id = ?")
+      .get(req.dir, req.githubId) as
       | { id: string; parent_id: string | null; body: string; resolved_at: number | null }
       | undefined;
     if (existing) {
@@ -206,11 +212,14 @@ export function mirrorGithubComment(req: {
       }
       return false;
     }
+    // Already resolved and never delivered: skip. Its replies skip too via
+    // the failed parent lookup below, and an unresolve later inserts all.
+    if (req.resolved) return false;
     let parentId: string | null = null;
     if (req.parentGithubId !== undefined) {
       const parent = d
-        .prepare("SELECT id, parent_id FROM comments WHERE github_id = ?")
-        .get(req.parentGithubId) as { id: string; parent_id: string | null } | undefined;
+        .prepare("SELECT id, parent_id FROM comments WHERE dir = ? AND github_id = ?")
+        .get(req.dir, req.parentGithubId) as { id: string; parent_id: string | null } | undefined;
       if (!parent) return false; // root not mirrored (yet); the next sync retries
       parentId = parent.parent_id ?? parent.id;
     }
@@ -226,7 +235,7 @@ export function mirrorGithubComment(req: {
       parentId,
       req.body,
       req.createdAt,
-      req.resolved && parentId === null ? Date.now() : null,
+      null,
       seq,
       nextSubmittedSeq(d),
       req.githubId,
