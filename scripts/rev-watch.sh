@@ -70,6 +70,10 @@ orphan_exit() {
 fetch() { # fetch <since> <wait|""> <max-time-secs>
   local args=(-sfG --max-time "$3" --data-urlencode "dir=$DIR" --data-urlencode "since=$1")
   args+=(--data-urlencode "submitted=1")
+  # Owner pid lets the server treat "recent poll from a since-killed
+  # session" as not-listening, so submit spawns a fresh session instead
+  # of queueing the batch for a dead one.
+  [[ -n "$OWNER_PID" ]] && args+=(--data-urlencode "owner=$OWNER_PID")
   [[ -n "$2" ]] && args+=(--data-urlencode "wait=1")
   curl "${args[@]}" "$REV_URL/api/comments"
 }

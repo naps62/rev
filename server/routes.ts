@@ -195,11 +195,24 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   // Agent-session liveness per dir: last submitted-channel poll / delivery
   // ack / agent-authored comment, plus callbacks parked by submit waiting for
   // a spawned session's watcher to arrive. In-memory, like presence.
-  const agentSeen = new Map<string, number>();
+  // `owner` is the agent session's pid (watchers pass it): recent activity
+  // from a session that has since been killed must not count as alive, or
+  // submit skips the spawn and the batch queues with nobody to take it.
+  const agentSeen = new Map<string, { at: number; owner: number | null }>();
   const agentArrivals = new Map<string, Array<() => void>>();
 
-  function agentActivity(dir: string): void {
-    agentSeen.set(dir, Date.now());
+  function agentActivity(dir: string, owner?: number): void {
+    const prev = agentSeen.get(dir);
+    agentSeen.set(dir, { at: Date.now(), owner: owner ?? prev?.owner ?? null });
+  }
+
+  function pidAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** A watcher parked a submitted-channel long-poll on dir. */
@@ -216,7 +229,9 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     for (const w of waiters) {
       if (w.dir === dir && w.submittedOnly) return true;
     }
-    return Date.now() - (agentSeen.get(dir) ?? 0) < TUNING.AGENT_LIVE_WINDOW_MS;
+    const seen = agentSeen.get(dir);
+    if (seen === undefined || Date.now() - seen.at >= TUNING.AGENT_LIVE_WINDOW_MS) return false;
+    return seen.owner === null || pidAlive(seen.owner);
   }
 
   /** Resolves true when a watcher arrives for dir, false on timeout. */
@@ -620,7 +635,10 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     if (since !== undefined && !Number.isFinite(since))
       return c.json({ error: "bad since" }, 400);
     const submittedOnly = c.req.query("submitted") === "1";
-    if (submittedOnly) agentActivity(dir);
+    if (submittedOnly) {
+      const owner = Number(c.req.query("owner"));
+      agentActivity(dir, Number.isInteger(owner) && owner > 0 ? owner : undefined);
+    }
     let res = listComments(dir, base, since, submittedOnly);
     if (c.req.query("wait") === "1" && res.comments.length === 0) {
       res = await waitForComments(

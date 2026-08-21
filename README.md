@@ -168,7 +168,9 @@ it and holds the batch until the new session's watcher polls, so the fresh
 cursor can't skip it; if no watcher arrives within 2 minutes the comments
 stay pending and the UI shows the error. Recent agent activity (a poll, an
 ack, an agent reply — within 5 minutes) counts as a live session, so a busy
-agent between deliveries doesn't get a duplicate.
+agent between deliveries doesn't get a duplicate — unless the session that
+produced it is gone: watchers report their owning session's pid, and
+activity from a dead pid doesn't block the spawn.
 
 ## Caveats (spike)
 
