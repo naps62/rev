@@ -1,7 +1,7 @@
-import { before as beforeAll, describe, test } from "node:test";
-import { expect } from "expect";
 import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { before as beforeAll, describe, test } from "node:test";
+import { expect } from "expect";
 import { config } from "./config.ts";
 import { closeDb, createComment, listComments, openDb } from "./db.ts";
 import { git, makeRepo, tmpdir, write } from "./testutil.ts";
@@ -133,14 +133,24 @@ beforeAll(() => {
 
 describe("anchorFromHunk", () => {
   test("new side: last +/context line is the snippet, prior ones the context", () => {
-    const a = anchorFromHunk("f.ts", "new", 5, "@@ -1,4 +1,4 @@\n one\n-gone\n+two\n three\n+four");
+    const a = anchorFromHunk(
+      "f.ts",
+      "new",
+      5,
+      "@@ -1,4 +1,4 @@\n one\n-gone\n+two\n three\n+four",
+    );
     expect(a.snippet).toBe("four");
     expect(a.context).toEqual({ before: ["one", "two", "three"], after: [] });
     expect(a.line).toBe(5);
   });
 
   test("old side keeps -/context lines only", () => {
-    const a = anchorFromHunk("f.ts", "old", 2, "@@ -1,3 +1,2 @@\n one\n+added\n-gone");
+    const a = anchorFromHunk(
+      "f.ts",
+      "old",
+      2,
+      "@@ -1,3 +1,2 @@\n one\n+added\n-gone",
+    );
     expect(a.snippet).toBe("gone");
     expect(a.context).toEqual({ before: ["one"], after: [] });
   });
@@ -203,7 +213,12 @@ describe("githubConvos", () => {
     stubPr([]);
     const dir = makeGithubRepo("gh-nopr");
     const res = await githubConvos(dir);
-    expect(res).toMatchObject({ available: false, reason: "no-pr", pr: null, threads: [] });
+    expect(res).toMatchObject({
+      available: false,
+      reason: "no-pr",
+      pr: null,
+      threads: [],
+    });
     stubPr();
   });
 
@@ -245,7 +260,9 @@ describe("mutations", () => {
     await githubConvos(dir);
     const before = calls().length;
     await githubReply(dir, undefined, "top level");
-    expect(calls().slice(before)).toContain("api repos/acme/widget/issues/7/comments -f body=top level");
+    expect(calls().slice(before)).toContain(
+      "api repos/acme/widget/issues/7/comments -f body=top level",
+    );
   });
 
   test("resolve goes through graphql with the thread node id", async () => {
@@ -267,7 +284,9 @@ describe("agent mirroring (REV_GITHUB_TO_AGENT)", () => {
       await githubConvos(dir, true);
       const delivered = listComments(dir, undefined, undefined, true);
       expect(delivered.comments).toHaveLength(3);
-      const root = delivered.comments.find((c) => c.parentId === null && c.anchor !== null)!;
+      const root = delivered.comments.find(
+        (c) => c.parentId === null && c.anchor !== null,
+      )!;
       expect(root.author).toBe("reviewer");
       expect(root.body).toBe("**@octo** (GitHub PR #7):\n\nroot body");
       expect(root.anchor!.snippet).toBe("line2");
@@ -279,14 +298,19 @@ describe("agent mirroring (REV_GITHUB_TO_AGENT)", () => {
 
       // second sync: dedup, nothing re-delivered
       await githubConvos(dir, true);
-      expect(listComments(dir, undefined, undefined, true).comments).toHaveLength(3);
+      expect(
+        listComments(dir, undefined, undefined, true).comments,
+      ).toHaveLength(3);
 
       // resolution flows into the mirrored root
       stubGraphql({ isResolved: true });
       await githubConvos(dir, true);
-      const resolvedRoot = listComments(dir, undefined, undefined, true).comments.find(
-        (c) => c.id === root.id,
-      )!;
+      const resolvedRoot = listComments(
+        dir,
+        undefined,
+        undefined,
+        true,
+      ).comments.find((c) => c.id === root.id)!;
       expect(resolvedRoot.resolvedAt).not.toBeNull();
       stubGraphql();
 
@@ -308,7 +332,9 @@ describe("agent mirroring (REV_GITHUB_TO_AGENT)", () => {
       expect(listComments(dir).comments).toHaveLength(0);
       await githubConvos(dir, true);
       expect(
-        listComments(dir, undefined, undefined, true).comments.filter((c) => c.id === agentReply.id),
+        listComments(dir, undefined, undefined, true).comments.filter(
+          (c) => c.id === agentReply.id,
+        ),
       ).toHaveLength(1);
     } finally {
       config.githubToAgent = false;
@@ -328,7 +354,9 @@ describe("agent mirroring (REV_GITHUB_TO_AGENT)", () => {
 
       stubGraphql({ isResolved: false });
       await githubConvos(dir, true);
-      expect(listComments(dir, undefined, undefined, true).comments).toHaveLength(3);
+      expect(
+        listComments(dir, undefined, undefined, true).comments,
+      ).toHaveLength(3);
     } finally {
       stubGraphql();
       config.githubToAgent = false;

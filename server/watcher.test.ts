@@ -1,12 +1,14 @@
 import { describe, test } from "node:test";
 import { expect } from "expect";
-import { onRepoChange, subscribe, unsubscribe } from "./watcher.ts";
 import { makeRepo, write } from "./testutil.ts";
+import { onRepoChange, subscribe, unsubscribe } from "./watcher.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe("watcher", () => {
-  test("edits emit; gitignored subtrees stay silent", { timeout: 10_000 }, async () => {
+  test("edits emit; gitignored subtrees stay silent", {
+    timeout: 10_000,
+  }, async () => {
     const dir = makeRepo("watch", { ".gitignore": "junk/\n", "a.txt": "x\n" });
     write(dir, "junk/pre.bin", "z");
 

@@ -12,7 +12,7 @@ interface CommentsPanelProps {
   /** Paths in pane order — anchored threads sort by this, then line. */
   fileOrder: string[];
   onJump: (t: Thread) => void;
-  onReply: (root: Comment, body: string) => void;
+  onReply: (root: Comment, body: string) => undefined | Promise<unknown>;
   onResolve: (root: Comment, resolved: boolean) => void;
   onClose: () => void;
 }
@@ -45,7 +45,7 @@ export function CommentsPanel({
     anchored.sort((x, y) => {
       const ax = x.root.anchor!;
       const ay = y.root.anchor!;
-      return (order.get(ax.file)! - order.get(ay.file)!) || ax.line - ay.line;
+      return order.get(ax.file)! - order.get(ay.file)! || ax.line - ay.line;
     });
     return { anchored, notes };
   }, [threads, fileOrder]);
@@ -146,7 +146,7 @@ function ThreadRow({
   thread: Thread;
   currentBase: string;
   onJump: (t: Thread) => void;
-  onReply: (root: Comment, body: string) => void;
+  onReply: (root: Comment, body: string) => undefined | Promise<unknown>;
   onResolve: (root: Comment, resolved: boolean) => void;
 }) {
   const { root } = thread;
@@ -154,12 +154,16 @@ function ThreadRow({
   // Whole row jumps; clicks on inner controls (reply, resolve, links, the
   // composer) and text selections must not.
   const jumpFromContainer = (e: MouseEvent) => {
-    if ((e.target as HTMLElement).closest("button, a, textarea, input, select, label")) return;
+    if (
+      (e.target as HTMLElement).closest(
+        "button, a, textarea, input, select, label",
+      )
+    )
+      return;
     if (window.getSelection()?.toString()) return;
     onJump(thread);
   };
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: the header button is the keyboard path
     <div className="cursor-pointer px-2 pb-2" onClick={jumpFromContainer}>
       <button
         type="button"

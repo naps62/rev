@@ -6,7 +6,11 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Comment, CommentAnchor, CommentCreateRequest } from "#shared/types";
+import type {
+  Comment,
+  CommentAnchor,
+  CommentCreateRequest,
+} from "#shared/types";
 import { config } from "./config.ts";
 
 /** Thrown for caller errors (unknown id, bad parent) the API maps to 4xx. */
@@ -61,7 +65,9 @@ export function openDb(path: string = config.dbPath): void {
   `);
   // Pre-pending-states DBs: add the columns and backfill submitted_seq = seq,
   // so watcher cursor files (which held seq values) stay valid.
-  const cols = db.prepare("PRAGMA table_info(comments)").all() as Array<{ name: string }>;
+  const cols = db.prepare("PRAGMA table_info(comments)").all() as Array<{
+    name: string;
+  }>;
   if (!cols.some((c) => c.name === "submitted_seq")) {
     db.exec(`
       ALTER TABLE comments ADD COLUMN submitted_seq INTEGER;
@@ -92,15 +98,17 @@ function must(): DatabaseSync {
 }
 
 export function getSetting(key: string): string | null {
-  const row = must().prepare("SELECT value FROM settings WHERE key = ?").get(key) as
-    | { value: string }
-    | undefined;
+  const row = must()
+    .prepare("SELECT value FROM settings WHERE key = ?")
+    .get(key) as { value: string } | undefined;
   return row?.value ?? null;
 }
 
 export function setSetting(key: string, value: string): void {
   must()
-    .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    .prepare(
+      "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
     .run(key, value);
 }
 
@@ -146,19 +154,29 @@ function rowToComment(r: CommentRow): Comment {
     resolvedAt: r.resolved_at,
     seq: r.seq,
     status:
-      r.submitted_seq == null ? "pending" : r.picked_up_at == null ? "submitted" : "picked_up",
+      r.submitted_seq == null
+        ? "pending"
+        : r.picked_up_at == null
+          ? "submitted"
+          : "picked_up",
     submittedSeq: r.submitted_seq,
   };
 }
 
 function getRow(d: DatabaseSync, id: string): CommentRow | null {
-  return (d.prepare("SELECT * FROM comments WHERE id = ?").get(id) as CommentRow | undefined) ?? null;
+  return (
+    (d.prepare("SELECT * FROM comments WHERE id = ?").get(id) as
+      | CommentRow
+      | undefined) ?? null
+  );
 }
 
 /** Next value on the submission axis (independent of the creation axis, seq). */
 function nextSubmittedSeq(d: DatabaseSync): number {
   return (
-    d.prepare("SELECT COALESCE(MAX(submitted_seq), 0) + 1 AS s FROM comments").get() as {
+    d
+      .prepare("SELECT COALESCE(MAX(submitted_seq), 0) + 1 AS s FROM comments")
+      .get() as {
       s: number;
     }
   ).s;
@@ -179,12 +197,27 @@ export function createComment(req: CommentCreateRequest): Comment {
       parentId = parent.parent_id ?? parent.id;
       anchor = null;
     }
-    const seq = (d.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS s FROM comments").get() as { s: number }).s;
+    const seq = (
+      d
+        .prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS s FROM comments")
+        .get() as { s: number }
+    ).s;
     const submittedSeq = req.pending ? null : nextSubmittedSeq(d);
     d.prepare(
       `INSERT INTO comments (id, dir, base, anchor, parent_id, author, body, created_at, resolved_at, seq, submitted_seq)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
-    ).run(id, req.dir, req.base, anchor, parentId, req.author, req.body, createdAt, seq, submittedSeq);
+    ).run(
+      id,
+      req.dir,
+      req.base,
+      anchor,
+      parentId,
+      req.author,
+      req.body,
+      createdAt,
+      seq,
+      submittedSeq,
+    );
   });
   return rowToComment(getRow(d, id)!);
 }
@@ -213,18 +246,31 @@ export function mirrorGithubComment(req: {
   const d = must();
   return transaction(d, () => {
     const existing = d
-      .prepare("SELECT id, parent_id, body, resolved_at FROM comments WHERE dir = ? AND github_id = ?")
+      .prepare(
+        "SELECT id, parent_id, body, resolved_at FROM comments WHERE dir = ? AND github_id = ?",
+      )
       .get(req.dir, req.githubId) as
-      | { id: string; parent_id: string | null; body: string; resolved_at: number | null }
+      | {
+          id: string;
+          parent_id: string | null;
+          body: string;
+          resolved_at: number | null;
+        }
       | undefined;
     if (existing) {
       if (existing.body !== req.body) {
-        d.prepare("UPDATE comments SET body = ? WHERE id = ?").run(req.body, existing.id);
+        d.prepare("UPDATE comments SET body = ? WHERE id = ?").run(
+          req.body,
+          existing.id,
+        );
       }
       if (req.resolved !== undefined && existing.parent_id === null) {
-        const want = req.resolved ? existing.resolved_at ?? Date.now() : null;
+        const want = req.resolved ? (existing.resolved_at ?? Date.now()) : null;
         if (want !== existing.resolved_at) {
-          d.prepare("UPDATE comments SET resolved_at = ? WHERE id = ?").run(want, existing.id);
+          d.prepare("UPDATE comments SET resolved_at = ? WHERE id = ?").run(
+            want,
+            existing.id,
+          );
         }
       }
       return false;
@@ -235,12 +281,20 @@ export function mirrorGithubComment(req: {
     let parentId: string | null = null;
     if (req.parentGithubId !== undefined) {
       const parent = d
-        .prepare("SELECT id, parent_id FROM comments WHERE dir = ? AND github_id = ?")
-        .get(req.dir, req.parentGithubId) as { id: string; parent_id: string | null } | undefined;
+        .prepare(
+          "SELECT id, parent_id FROM comments WHERE dir = ? AND github_id = ?",
+        )
+        .get(req.dir, req.parentGithubId) as
+        | { id: string; parent_id: string | null }
+        | undefined;
       if (!parent) return false; // root not mirrored (yet); the next sync retries
       parentId = parent.parent_id ?? parent.id;
     }
-    const seq = (d.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS s FROM comments").get() as { s: number }).s;
+    const seq = (
+      d
+        .prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS s FROM comments")
+        .get() as { s: number }
+    ).s;
     d.prepare(
       `INSERT INTO comments (id, dir, base, anchor, parent_id, author, body, created_at, resolved_at, seq, submitted_seq, github_id)
        VALUES (?, ?, ?, ?, ?, 'reviewer', ?, ?, ?, ?, ?, ?)`,
@@ -272,21 +326,31 @@ export function rootGithubId(id: string): string | null {
 
 /** Stamp a local comment as existing on GitHub (after forwarding it there). */
 export function stampGithubId(id: string, githubId: string): void {
-  must().prepare("UPDATE comments SET github_id = ? WHERE id = ?").run(githubId, id);
+  must()
+    .prepare("UPDATE comments SET github_id = ? WHERE id = ?")
+    .run(githubId, id);
 }
 
 /**
  * Assign submitted_seq to every pending comment under dir, in creation order.
  * Returns the number submitted and the dir's post-submit cursor.
  */
-export function submitPending(dir: string): { submitted: number; cursor: number } {
+export function submitPending(dir: string): {
+  submitted: number;
+  cursor: number;
+} {
   const d = must();
   return transaction(d, () => {
     const rows = d
-      .prepare("SELECT id FROM comments WHERE dir = ? AND submitted_seq IS NULL ORDER BY seq ASC")
+      .prepare(
+        "SELECT id FROM comments WHERE dir = ? AND submitted_seq IS NULL ORDER BY seq ASC",
+      )
       .all(dir) as unknown as Array<{ id: string }>;
     for (const r of rows) {
-      d.prepare("UPDATE comments SET submitted_seq = ? WHERE id = ?").run(nextSubmittedSeq(d), r.id);
+      d.prepare("UPDATE comments SET submitted_seq = ? WHERE id = ?").run(
+        nextSubmittedSeq(d),
+        r.id,
+      );
     }
     return { submitted: rows.length, cursor: submittedCursor(d, dir) };
   });
@@ -304,7 +368,10 @@ export function ackPickedUp(dir: string, upTo: number): number {
 }
 
 /** Patch body and/or resolved flag (resolve applies to thread roots). Throws on unknown id. */
-export function patchComment(id: string, patch: { body?: string; resolved?: boolean }): Comment {
+export function patchComment(
+  id: string,
+  patch: { body?: string; resolved?: boolean },
+): Comment {
   const d = must();
   const row = getRow(d, id);
   if (!row) throw new DbError(`unknown comment: ${id}`);
@@ -324,7 +391,9 @@ export function patchComment(id: string, patch: { body?: string; resolved?: bool
 function submittedCursor(d: DatabaseSync, dir: string): number {
   return (
     d
-      .prepare("SELECT COALESCE(MAX(submitted_seq), 0) AS c FROM comments WHERE dir = ?")
+      .prepare(
+        "SELECT COALESCE(MAX(submitted_seq), 0) AS c FROM comments WHERE dir = ?",
+      )
       .get(dir) as { c: number }
   ).c;
 }
@@ -365,7 +434,11 @@ export function listComments(
   const cursor = submittedOnly
     ? submittedCursor(d, dir)
     : (
-        d.prepare("SELECT COALESCE(MAX(seq), 0) AS c FROM comments WHERE dir = ?").get(dir) as {
+        d
+          .prepare(
+            "SELECT COALESCE(MAX(seq), 0) AS c FROM comments WHERE dir = ?",
+          )
+          .get(dir) as {
           c: number;
         }
       ).c;
@@ -376,13 +449,21 @@ export function listComments(
 export function openCommentCounts(): Map<string, number> {
   const d = must();
   const rows = d
-    .prepare("SELECT dir, COUNT(*) AS n FROM comments WHERE parent_id IS NULL AND resolved_at IS NULL GROUP BY dir")
+    .prepare(
+      "SELECT dir, COUNT(*) AS n FROM comments WHERE parent_id IS NULL AND resolved_at IS NULL GROUP BY dir",
+    )
     .all() as unknown as Array<{ dir: string; n: number }>;
   return new Map(rows.map((r) => [r.dir, r.n]));
 }
 
 /** Record/clear seen-state for (dir, base, path) at a contentHash. */
-export function setSeen(dir: string, base: string, path: string, contentHash: string, seen: boolean): void {
+export function setSeen(
+  dir: string,
+  base: string,
+  path: string,
+  contentHash: string,
+  seen: boolean,
+): void {
   const d = must();
   if (seen) {
     d.prepare(
@@ -390,7 +471,11 @@ export function setSeen(dir: string, base: string, path: string, contentHash: st
        ON CONFLICT (dir, base, path) DO UPDATE SET content_hash = excluded.content_hash`,
     ).run(dir, base, path, contentHash);
   } else {
-    d.prepare("DELETE FROM seen WHERE dir = ? AND base = ? AND path = ?").run(dir, base, path);
+    d.prepare("DELETE FROM seen WHERE dir = ? AND base = ? AND path = ?").run(
+      dir,
+      base,
+      path,
+    );
   }
 }
 
@@ -417,8 +502,16 @@ export function putSeenSnapshot(
     .run(dir, base, path, contentHash, content, Date.now());
 }
 
-export function deleteSeenSnapshot(dir: string, base: string, path: string): void {
-  must().prepare("DELETE FROM seen_snapshots WHERE dir = ? AND base = ? AND path = ?").run(dir, base, path);
+export function deleteSeenSnapshot(
+  dir: string,
+  base: string,
+  path: string,
+): void {
+  must()
+    .prepare(
+      "DELETE FROM seen_snapshots WHERE dir = ? AND base = ? AND path = ?",
+    )
+    .run(dir, base, path);
 }
 
 export function getSeenSnapshot(
@@ -427,8 +520,12 @@ export function getSeenSnapshot(
   path: string,
 ): { contentHash: string; content: string } | null {
   const row = must()
-    .prepare("SELECT content_hash, content FROM seen_snapshots WHERE dir = ? AND base = ? AND path = ?")
-    .get(dir, base, path) as { content_hash: string; content: string } | undefined;
+    .prepare(
+      "SELECT content_hash, content FROM seen_snapshots WHERE dir = ? AND base = ? AND path = ?",
+    )
+    .get(dir, base, path) as
+    | { content_hash: string; content: string }
+    | undefined;
   return row ? { contentHash: row.content_hash, content: row.content } : null;
 }
 

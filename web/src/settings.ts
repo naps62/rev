@@ -23,7 +23,12 @@ export function patchUiSettings(patch: Partial<UiSettings>): void {
 }
 
 // rev.theme stays: it doubles as the pre-paint cache read by index.html.
-const LEGACY_KEYS = ["rev.features", "rev.diffMode", "rev.viewMode", "rev.crosshair"];
+const LEGACY_KEYS = [
+  "rev.features",
+  "rev.diffMode",
+  "rev.viewMode",
+  "rev.crosshair",
+];
 
 function legacySettings(): UiSettings {
   const out: UiSettings = {};
@@ -44,7 +49,8 @@ function legacySettings(): UiSettings {
     };
   }
   const mode = localStorage.getItem("rev.diffMode");
-  if (mode === "unified" || mode === "split" || mode === "mixed") out.diffMode = mode;
+  if (mode === "unified" || mode === "split" || mode === "mixed")
+    out.diffMode = mode;
   const theme = localStorage.getItem("rev.theme");
   if (theme === "light" || theme === "dark") out.theme = theme;
   return out;

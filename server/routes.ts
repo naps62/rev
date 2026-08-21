@@ -9,11 +9,13 @@
  * for systemd liveness checks and the web dev proxy.
  */
 
-import { Hono } from "hono";
 import { existsSync, realpathSync } from "node:fs";
 import { readFile as readFileBytes, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, resolve, sep } from "node:path";
+import { Hono } from "hono";
+import { TUNING } from "#shared/tuning";
 import type {
+  Comment,
   CommentCreateRequest,
   CommentListResponse,
   CommentPatchRequest,
@@ -29,26 +31,7 @@ import type {
   UiSettings,
   WorktreeCreateRequest,
 } from "#shared/types";
-import { TUNING } from "#shared/tuning";
-import {
-  ackPickedUp,
-  createComment,
-  DbError,
-  deleteSeenSnapshot,
-  getSeenSnapshot,
-  getSetting,
-  setSetting,
-  listComments,
-  patchComment,
-  putSeenSnapshot,
-  seenHashes,
-  setSeen,
-  submitPending,
-} from "./db.ts";
 import { resolveComments } from "./anchor.ts";
-import { presence } from "./presence.ts";
-import { computeSemanticDiff } from "./semantic.ts";
-import { computeStack } from "./stack.ts";
 import {
   CommandError,
   runWorktreeCommand,
@@ -56,19 +39,30 @@ import {
   validBranch,
   worktreeCommand,
 } from "./commands.ts";
-import { invalidateRepoList, isKnownRepo, listRepos, rescan } from "./discovery.ts";
-import { listOpenPrs } from "./forge.ts";
-import {
-  forwardAgentReply,
-  GhError,
-  githubComment,
-  githubConvos,
-  githubReply,
-  githubResolve,
-  onGithubMirrored,
-} from "./github.ts";
 import { config } from "./config.ts";
-import { rootGithubId } from "./db.ts";
+import {
+  ackPickedUp,
+  createComment,
+  DbError,
+  deleteSeenSnapshot,
+  getSeenSnapshot,
+  getSetting,
+  listComments,
+  patchComment,
+  putSeenSnapshot,
+  rootGithubId,
+  seenHashes,
+  setSeen,
+  setSetting,
+  submitPending,
+} from "./db.ts";
+import {
+  invalidateRepoList,
+  isKnownRepo,
+  listRepos,
+  rescan,
+} from "./discovery.ts";
+import { listOpenPrs } from "./forge.ts";
 import {
   baseBehind,
   computeDiff,
@@ -83,6 +77,18 @@ import {
   readFile,
   readRawFile,
 } from "./git.ts";
+import {
+  forwardAgentReply,
+  GhError,
+  githubComment,
+  githubConvos,
+  githubReply,
+  githubResolve,
+  onGithubMirrored,
+} from "./github.ts";
+import { presence } from "./presence.ts";
+import { computeSemanticDiff } from "./semantic.ts";
+import { computeStack } from "./stack.ts";
 
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
   ".apng": "image/apng",
@@ -124,7 +130,8 @@ function sanitizeUiSettings(b: unknown): UiSettings | null {
   if (DIFF_MODES.includes(src.diffMode as never)) {
     out.diffMode = src.diffMode as UiSettings["diffMode"];
   }
-  if (THEMES.includes(src.theme as never)) out.theme = src.theme as UiSettings["theme"];
+  if (THEMES.includes(src.theme as never))
+    out.theme = src.theme as UiSettings["theme"];
   return out;
 }
 
@@ -155,7 +162,8 @@ export function resolveInRepo(dir: string, rel: string): string | null {
   } catch {
     return null;
   }
-  if (realProbe !== realDir && !realProbe.startsWith(realDir + sep)) return null;
+  if (realProbe !== realDir && !realProbe.startsWith(realDir + sep))
+    return null;
   return target;
 }
 
@@ -235,40 +243,52 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   app.get("/prs", async (c) => {
     const dir = c.req.query("dir");
     if (!dir) return c.json({ error: "dir is required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
     const repos = await listRepos();
     const me = repos.find((r) => r.dir === dir);
     const mainDir = me?.mainDir ?? dir;
-    const remote = repos.find((r) => r.dir === mainDir)?.remoteUrl ?? me?.remoteUrl ?? null;
+    const remote =
+      repos.find((r) => r.dir === mainDir)?.remoteUrl ?? me?.remoteUrl ?? null;
     if (remote === null) return c.json({ dir, prs: null });
     const prs = await listOpenPrs(remote);
     if (prs === null) return c.json({ dir, prs: null });
     const checkouts = new Map<string, string>();
     for (const r of repos) {
-      if (r.mainDir === mainDir && r.branch !== null) checkouts.set(r.branch, r.dir);
+      if (r.mainDir === mainDir && r.branch !== null)
+        checkouts.set(r.branch, r.dir);
     }
     return c.json({
       dir,
-      prs: prs.map((p) => ({ ...p, checkoutDir: checkouts.get(p.branch) ?? null })),
+      prs: prs.map((p) => ({
+        ...p,
+        checkoutDir: checkouts.get(p.branch) ?? null,
+      })),
     });
   });
 
   app.post("/worktrees", async (c) => {
-    const b = (await c.req.json().catch(() => null)) as WorktreeCreateRequest | null;
+    const b = (await c.req
+      .json()
+      .catch(() => null)) as WorktreeCreateRequest | null;
     if (!b || typeof b.dir !== "string" || typeof b.branch !== "string") {
       return c.json({ error: "dir and branch are required" }, 400);
     }
-    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
-    if (!validBranch(b.branch)) return c.json({ error: `invalid branch name: ${b.branch}` }, 400);
+    if (!(await isKnownRepo(b.dir)))
+      return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    if (!validBranch(b.branch))
+      return c.json({ error: `invalid branch name: ${b.branch}` }, 400);
     const repos = await listRepos();
     const me = repos.find((r) => r.dir === b.dir);
     const mainDir = me?.mainDir ?? b.dir;
-    const remote = repos.find((r) => r.dir === mainDir)?.remoteUrl ?? me?.remoteUrl ?? null;
-    let created;
+    const remote =
+      repos.find((r) => r.dir === mainDir)?.remoteUrl ?? me?.remoteUrl ?? null;
+    let created: { dir: string | null };
     try {
       created = await runWorktreeCommand(mainDir, b.branch, remote);
     } catch (err) {
-      if (err instanceof CommandError) return c.json({ error: err.message }, 400);
+      if (err instanceof CommandError)
+        return c.json({ error: err.message }, 400);
       throw err;
     }
     await rescan(true);
@@ -279,14 +299,17 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   app.get("/commands", (c) => c.json({ worktreeCreate: worktreeCommand() }));
 
   app.put("/commands", async (c) => {
-    const b = (await c.req.json().catch(() => null)) as { worktreeCreate?: unknown } | null;
+    const b = (await c.req.json().catch(() => null)) as {
+      worktreeCreate?: unknown;
+    } | null;
     if (!b || typeof b.worktreeCreate !== "string") {
       return c.json({ error: "worktreeCreate is required" }, 400);
     }
     try {
       setWorktreeCommand(b.worktreeCreate);
     } catch (err) {
-      if (err instanceof CommandError) return c.json({ error: err.message }, 400);
+      if (err instanceof CommandError)
+        return c.json({ error: err.message }, 400);
       throw err;
     }
     return c.json({ worktreeCreate: worktreeCommand() });
@@ -297,7 +320,8 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   app.put("/settings", async (c) => {
     const b = (await c.req.json().catch(() => null)) as unknown;
     const clean = sanitizeUiSettings(b);
-    if (clean === null) return c.json({ error: "settings object required" }, 400);
+    if (clean === null)
+      return c.json({ error: "settings object required" }, 400);
     setSetting(UI_SETTINGS_KEY, JSON.stringify(clean));
     return c.json(clean);
   });
@@ -305,8 +329,10 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   app.get("/diff", async (c) => {
     const dir = c.req.query("dir");
     const base = c.req.query("base");
-    if (!dir || !base) return c.json({ error: "dir and base are required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (!dir || !base)
+      return c.json({ error: "dir and base are required" }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
     const diff = await computeDiff(dir, base);
     const seen = seenHashes(dir, base);
     for (const f of diff.files) {
@@ -321,8 +347,10 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   app.get("/diff/summary", async (c) => {
     const dir = c.req.query("dir");
     const base = c.req.query("base");
-    if (!dir || !base) return c.json({ error: "dir and base are required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (!dir || !base)
+      return c.json({ error: "dir and base are required" }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
     const summary = await computeDiffSummary(dir, base);
     const seen = seenHashes(dir, base);
     for (const f of summary.files) {
@@ -339,9 +367,12 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     const base = c.req.query("base");
     const path = c.req.query("path");
     const oldPath = c.req.query("oldPath") || undefined;
-    if (!dir || !base || !path) return c.json({ error: "dir, base and path are required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
-    if (resolveInRepo(dir, path) === null) return c.json({ error: `path escapes repo: ${path}` }, 400);
+    if (!dir || !base || !path)
+      return c.json({ error: "dir, base and path are required" }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (resolveInRepo(dir, path) === null)
+      return c.json({ error: `path escapes repo: ${path}` }, 400);
     if (oldPath !== undefined && resolveInRepo(dir, oldPath) === null) {
       return c.json({ error: `path escapes repo: ${oldPath}` }, 400);
     }
@@ -359,14 +390,20 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     const dir = c.req.query("dir");
     const base = c.req.query("base");
     const path = c.req.query("path");
-    if (!dir || !base || !path) return c.json({ error: "dir, base and path are required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (!dir || !base || !path)
+      return c.json({ error: "dir, base and path are required" }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
     const target = resolveInRepo(dir, path);
-    if (target === null) return c.json({ error: `path escapes repo: ${path}` }, 400);
+    if (target === null)
+      return c.json({ error: `path escapes repo: ${path}` }, 400);
     const snap = getSeenSnapshot(dir, base, path);
-    if (snap === null) return c.json({ error: `no seen snapshot for ${path}` }, 404);
+    if (snap === null)
+      return c.json({ error: `no seen snapshot for ${path}` }, 404);
     const delta = await diffBlobVsWorkingFile(dir, path, snap.content);
-    const contentHash = existsSync(target) ? hashContent(await readFileBytes(target)) : "";
+    const contentHash = existsSync(target)
+      ? hashContent(await readFileBytes(target))
+      : "";
     const file = {
       path,
       status: "modified" as const,
@@ -384,37 +421,44 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   app.get("/semantic", async (c) => {
     const dir = c.req.query("dir");
     const base = c.req.query("base");
-    if (!dir || !base) return c.json({ error: "dir and base are required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (!dir || !base)
+      return c.json({ error: "dir and base are required" }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
     return c.json(await computeSemanticDiff(dir, base));
   });
 
   app.get("/refs", async (c) => {
     const dir = c.req.query("dir");
     if (!dir) return c.json({ error: "dir is required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
     return c.json({ dir, refs: await listRefs(dir) });
   });
 
   app.get("/presence", async (c) => {
     const dir = c.req.query("dir");
     if (!dir) return c.json({ error: "dir is required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
     return c.json({ dir, ...presence(dir) } satisfies PresenceResponse);
   });
 
   app.get("/stack", async (c) => {
     const dir = c.req.query("dir");
     const base = c.req.query("base");
-    if (!dir || !base) return c.json({ error: "dir and base are required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (!dir || !base)
+      return c.json({ error: "dir and base are required" }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
     // branch → checkout across this repo's worktrees, so stack segments can
     // link to the checkout that reviews them.
     const repos = await listRepos();
     const mainDir = repos.find((r) => r.dir === dir)?.mainDir;
     const checkouts = new Map<string, string>();
     for (const r of repos) {
-      if (r.mainDir === mainDir && r.branch !== null) checkouts.set(r.branch, r.dir);
+      if (r.mainDir === mainDir && r.branch !== null)
+        checkouts.set(r.branch, r.dir);
     }
     return c.json(await computeStack(dir, base, checkouts));
   });
@@ -423,9 +467,12 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     const dir = c.req.query("dir");
     const path = c.req.query("path");
     const rev = c.req.query("rev") ?? null;
-    if (!dir || !path) return c.json({ error: "dir and path are required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
-    if (resolveInRepo(dir, path) === null) return c.json({ error: `path escapes repo: ${path}` }, 400);
+    if (!dir || !path)
+      return c.json({ error: "dir and path are required" }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (resolveInRepo(dir, path) === null)
+      return c.json({ error: `path escapes repo: ${path}` }, 400);
     return c.json(await readFile(dir, path, rev));
   });
 
@@ -433,11 +480,16 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     const dir = c.req.query("dir");
     const path = c.req.query("path");
     const rev = c.req.query("rev") ?? null;
-    if (!dir || !path) return c.json({ error: "dir and path are required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
-    if (resolveInRepo(dir, path) === null) return c.json({ error: `path escapes repo: ${path}` }, 400);
+    if (!dir || !path)
+      return c.json({ error: "dir and path are required" }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (resolveInRepo(dir, path) === null)
+      return c.json({ error: `path escapes repo: ${path}` }, 400);
     const bytes = await readRawFile(dir, path, rev);
-    const contentType = IMAGE_CONTENT_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream";
+    const contentType =
+      IMAGE_CONTENT_TYPES[extname(path).toLowerCase()] ??
+      "application/octet-stream";
     return c.body(Uint8Array.from(bytes), 200, {
       "Cache-Control": "no-store",
       "Content-Security-Policy": "default-src 'none'; sandbox",
@@ -447,7 +499,9 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   });
 
   app.put("/file", async (c) => {
-    const body = (await c.req.json().catch(() => null)) as FileWriteRequest | null;
+    const body = (await c.req
+      .json()
+      .catch(() => null)) as FileWriteRequest | null;
     if (
       !body ||
       typeof body.dir !== "string" ||
@@ -455,11 +509,16 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       typeof body.content !== "string" ||
       typeof body.baseHash !== "string"
     ) {
-      return c.json({ error: "dir, path, content, baseHash are required" }, 400);
+      return c.json(
+        { error: "dir, path, content, baseHash are required" },
+        400,
+      );
     }
-    if (!(await isKnownRepo(body.dir))) return c.json({ error: `not a known repo: ${body.dir}` }, 400);
+    if (!(await isKnownRepo(body.dir)))
+      return c.json({ error: `not a known repo: ${body.dir}` }, 400);
     const target = resolveInRepo(body.dir, body.path);
-    if (target === null) return c.json({ error: `path escapes repo: ${body.path}` }, 400);
+    if (target === null)
+      return c.json({ error: `path escapes repo: ${body.path}` }, 400);
     let currentHash = "";
     try {
       currentHash = hashContent(await readFileBytes(target));
@@ -467,7 +526,12 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       // missing file: baseHash "" means "create"
     }
     if (currentHash !== body.baseHash) {
-      return c.json({ error: `baseHash mismatch: file is at ${currentHash || "(missing)"}` }, 409);
+      return c.json(
+        {
+          error: `baseHash mismatch: file is at ${currentHash || "(missing)"}`,
+        },
+        409,
+      );
     }
     await writeFile(target, body.content);
     return c.json({
@@ -482,22 +546,31 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   app.get("/comments", async (c) => {
     const dir = c.req.query("dir");
     if (!dir) return c.json({ error: "dir is required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
     const base = c.req.query("base") || undefined;
     const sinceRaw = c.req.query("since");
     const since = sinceRaw === undefined ? undefined : Number(sinceRaw);
-    if (since !== undefined && !Number.isFinite(since)) return c.json({ error: "bad since" }, 400);
+    if (since !== undefined && !Number.isFinite(since))
+      return c.json({ error: "bad since" }, 400);
     const submittedOnly = c.req.query("submitted") === "1";
     let res = listComments(dir, base, since, submittedOnly);
     if (c.req.query("wait") === "1" && res.comments.length === 0) {
-      res = await waitForComments(dir, base, since ?? res.cursor, submittedOnly);
+      res = await waitForComments(
+        dir,
+        base,
+        since ?? res.cursor,
+        submittedOnly,
+      );
     }
     await resolveComments(dir, res.comments);
     return c.json(res);
   });
 
   app.post("/comments", async (c) => {
-    const b = (await c.req.json().catch(() => null)) as CommentCreateRequest | null;
+    const b = (await c.req
+      .json()
+      .catch(() => null)) as CommentCreateRequest | null;
     if (
       !b ||
       typeof b.dir !== "string" ||
@@ -506,7 +579,13 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       b.body.trim() === "" ||
       (b.author !== "user" && b.author !== "agent" && b.author !== "reviewer")
     ) {
-      return c.json({ error: "dir, base, author (user|agent|reviewer), non-empty body are required" }, 400);
+      return c.json(
+        {
+          error:
+            "dir, base, author (user|agent|reviewer), non-empty body are required",
+        },
+        400,
+      );
     }
     if (b.parentId !== undefined && typeof b.parentId !== "string") {
       return c.json({ error: "parentId must be a string" }, 400);
@@ -525,16 +604,24 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     ) {
       return c.json({ error: "malformed anchor" }, 400);
     }
-    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    if (!(await isKnownRepo(b.dir)))
+      return c.json({ error: `not a known repo: ${b.dir}` }, 400);
     const comment = createComment(b);
     // Agent replies on mirrored GitHub threads go back to GitHub too, so the
     // conversation stays whole on both sides. Fire-and-forget: the local copy
     // is already saved either way.
-    if (config.githubToAgent && comment.author === "agent" && comment.parentId != null) {
+    if (
+      config.githubToAgent &&
+      comment.author === "agent" &&
+      comment.parentId != null
+    ) {
       const gid = rootGithubId(comment.parentId);
       if (gid != null) {
-        forwardAgentReply(comment.dir, comment.id, gid, comment.body).catch((err) =>
-          console.error(`github forward failed for ${comment.id}: ${(err as Error).message}`),
+        forwardAgentReply(comment.dir, comment.id, gid, comment.body).catch(
+          (err) =>
+            console.error(
+              `github forward failed for ${comment.id}: ${(err as Error).message}`,
+            ),
         );
       }
     }
@@ -544,9 +631,13 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   });
 
   app.post("/comments/submit", async (c) => {
-    const b = (await c.req.json().catch(() => null)) as CommentsSubmitRequest | null;
-    if (!b || typeof b.dir !== "string") return c.json({ error: "dir is required" }, 400);
-    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    const b = (await c.req
+      .json()
+      .catch(() => null)) as CommentsSubmitRequest | null;
+    if (!b || typeof b.dir !== "string")
+      return c.json({ error: "dir is required" }, 400);
+    if (!(await isKnownRepo(b.dir)))
+      return c.json({ error: `not a known repo: ${b.dir}` }, 400);
     const res = submitPending(b.dir);
     if (res.submitted > 0) {
       broadcast({ type: "comments-changed", dir: b.dir, seq: res.cursor });
@@ -556,29 +647,43 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   });
 
   app.post("/comments/ack", async (c) => {
-    const b = (await c.req.json().catch(() => null)) as CommentsAckRequest | null;
-    if (!b || typeof b.dir !== "string" || typeof b.upTo !== "number" || !Number.isFinite(b.upTo)) {
+    const b = (await c.req
+      .json()
+      .catch(() => null)) as CommentsAckRequest | null;
+    if (
+      !b ||
+      typeof b.dir !== "string" ||
+      typeof b.upTo !== "number" ||
+      !Number.isFinite(b.upTo)
+    ) {
       return c.json({ error: "dir and numeric upTo are required" }, 400);
     }
-    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    if (!(await isKnownRepo(b.dir)))
+      return c.json({ error: `not a known repo: ${b.dir}` }, 400);
     const acked = ackPickedUp(b.dir, b.upTo);
-    if (acked > 0) broadcast({ type: "comments-changed", dir: b.dir, seq: b.upTo });
+    if (acked > 0)
+      broadcast({ type: "comments-changed", dir: b.dir, seq: b.upTo });
     return c.json({ acked });
   });
 
   app.patch("/comments/:id", async (c) => {
     const id = c.req.param("id");
-    const b = (await c.req.json().catch(() => null)) as CommentPatchRequest | null;
+    const b = (await c.req
+      .json()
+      .catch(() => null)) as CommentPatchRequest | null;
     if (!b || (b.resolved === undefined && b.body === undefined)) {
       return c.json({ error: "resolved and/or body required" }, 400);
     }
     if (b.resolved !== undefined && typeof b.resolved !== "boolean") {
       return c.json({ error: "resolved must be boolean" }, 400);
     }
-    if (b.body !== undefined && (typeof b.body !== "string" || b.body.trim() === "")) {
+    if (
+      b.body !== undefined &&
+      (typeof b.body !== "string" || b.body.trim() === "")
+    ) {
       return c.json({ error: "body must be a non-empty string" }, 400);
     }
-    let comment;
+    let comment: Comment;
     try {
       comment = patchComment(id, { body: b.body, resolved: b.resolved });
     } catch (err) {
@@ -593,26 +698,42 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   app.get("/github", async (c) => {
     const dir = c.req.query("dir");
     if (!dir) return c.json({ error: "dir is required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
     return c.json(await githubConvos(dir, c.req.query("refresh") === "1"));
   });
 
   app.post("/github/reply", async (c) => {
-    const b = (await c.req.json().catch(() => null)) as GithubReplyRequest | null;
-    if (!b || typeof b.dir !== "string" || typeof b.body !== "string" || b.body.trim() === "") {
+    const b = (await c.req
+      .json()
+      .catch(() => null)) as GithubReplyRequest | null;
+    if (
+      !b ||
+      typeof b.dir !== "string" ||
+      typeof b.body !== "string" ||
+      b.body.trim() === ""
+    ) {
       return c.json({ error: "dir and non-empty body are required" }, 400);
     }
     if (b.rootId !== undefined && !Number.isInteger(b.rootId)) {
       return c.json({ error: "rootId must be an integer" }, 400);
     }
-    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    if (!(await isKnownRepo(b.dir)))
+      return c.json({ error: `not a known repo: ${b.dir}` }, 400);
     await githubReply(b.dir, b.rootId, b.body);
     return c.json({ ok: true });
   });
 
   app.post("/github/comment", async (c) => {
-    const b = (await c.req.json().catch(() => null)) as GithubCommentRequest | null;
-    if (!b || typeof b.dir !== "string" || typeof b.body !== "string" || b.body.trim() === "") {
+    const b = (await c.req
+      .json()
+      .catch(() => null)) as GithubCommentRequest | null;
+    if (
+      !b ||
+      typeof b.dir !== "string" ||
+      typeof b.body !== "string" ||
+      b.body.trim() === ""
+    ) {
       return c.json({ error: "dir and non-empty body are required" }, 400);
     }
     if (
@@ -625,8 +746,12 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     ) {
       return c.json({ error: "malformed anchor" }, 400);
     }
-    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
-    if (b.anchor !== undefined && resolveInRepo(b.dir, b.anchor.file) === null) {
+    if (!(await isKnownRepo(b.dir)))
+      return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    if (
+      b.anchor !== undefined &&
+      resolveInRepo(b.dir, b.anchor.file) === null
+    ) {
       return c.json({ error: `path escapes repo: ${b.anchor.file}` }, 400);
     }
     await githubComment(b.dir, b.anchor, b.body);
@@ -634,7 +759,9 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   });
 
   app.post("/github/resolve", async (c) => {
-    const b = (await c.req.json().catch(() => null)) as GithubResolveRequest | null;
+    const b = (await c.req
+      .json()
+      .catch(() => null)) as GithubResolveRequest | null;
     if (
       !b ||
       typeof b.dir !== "string" ||
@@ -643,17 +770,22 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     ) {
       return c.json({ error: "dir, threadId, resolved are required" }, 400);
     }
-    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    if (!(await isKnownRepo(b.dir)))
+      return c.json({ error: `not a known repo: ${b.dir}` }, 400);
     await githubResolve(b.dir, b.threadId, b.resolved);
     return c.json({ ok: true });
   });
 
   app.post("/fetch", async (c) => {
-    const b = (await c.req.json().catch(() => null)) as { dir?: unknown; base?: unknown } | null;
+    const b = (await c.req.json().catch(() => null)) as {
+      dir?: unknown;
+      base?: unknown;
+    } | null;
     if (!b || typeof b.dir !== "string" || typeof b.base !== "string") {
       return c.json({ error: "dir and base are required" }, 400);
     }
-    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    if (!(await isKnownRepo(b.dir)))
+      return c.json({ error: `not a known repo: ${b.dir}` }, 400);
     await fetchBase(b.dir, b.base);
     return c.json({ ok: true, baseBehind: await baseBehind(b.dir, b.base) });
   });
@@ -668,11 +800,16 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       typeof b.contentHash !== "string" ||
       typeof b.seen !== "boolean"
     ) {
-      return c.json({ error: "dir, base, path, contentHash, seen are required" }, 400);
+      return c.json(
+        { error: "dir, base, path, contentHash, seen are required" },
+        400,
+      );
     }
-    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    if (!(await isKnownRepo(b.dir)))
+      return c.json({ error: `not a known repo: ${b.dir}` }, 400);
     const target = resolveInRepo(b.dir, b.path);
-    if (target === null) return c.json({ error: `path escapes repo: ${b.path}` }, 400);
+    if (target === null)
+      return c.json({ error: `path escapes repo: ${b.path}` }, 400);
     setSeen(b.dir, b.base, b.path, b.contentHash, b.seen);
     // Snapshot the reviewed content as the future interdiff baseline. Only
     // when the on-disk content still matches what the client marked seen —

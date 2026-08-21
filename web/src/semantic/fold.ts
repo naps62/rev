@@ -82,7 +82,9 @@ function continuationHead(texts: string[], lang: Lang): number {
   const closer =
     lang === "rust" ? /^\s*\};\s*$/ : /^\s*\}\s*from\s+["'][^"']+["'];?\s*$/;
   const specifier =
-    lang === "rust" ? /^\s*[\w:{}*]+\s*,?\s*$/ : /^\s*(type\s+)?[\w$]+(\s+as\s+[\w$]+)?\s*,?\s*$/;
+    lang === "rust"
+      ? /^\s*[\w:{}*]+\s*,?\s*$/
+      : /^\s*(type\s+)?[\w$]+(\s+as\s+[\w$]+)?\s*,?\s*$/;
   for (let i = 0; i < Math.min(texts.length, 12); i++) {
     const t = texts[i]!;
     if (closer.test(t)) return i + 1;
@@ -149,7 +151,6 @@ function runsFromMask(
         matched++;
         end = j + 1;
       } else if (glues(j)) {
-        continue; // glue lines join runs; trailing ones fall outside [i, end)
       } else {
         break;
       }
@@ -173,7 +174,10 @@ function runsFromMask(
  * lines (`// external` group headers) glue like blanks do.
  */
 export function importFolds(lines: DiffLine[], lang: Lang): FoldRun[] {
-  const mask = importMask(lines.map((l) => l.text), lang);
+  const mask = importMask(
+    lines.map((l) => l.text),
+    lang,
+  );
   const comment = COMMENT[lang];
   return runsFromMask(lines, mask, MIN_IMPORT_LINES, "import lines", (t) =>
     comment.test(t),
@@ -205,7 +209,7 @@ const STRUCTURE: Record<Lang, RegExp[]> = {
   python: [/^\s*(async\s+)?def\s+/, /^\s*class\s+/, /^\s*@\w/],
 };
 
-export const COMMENT: Record<Lang, RegExp> = {
+const COMMENT: Record<Lang, RegExp> = {
   ts: /^\s*(\/\/|\/\*|\*)/,
   rust: /^\s*(\/\/|\/\*|\*)/,
   solidity: /^\s*(\/\/|\/\*|\*)/,

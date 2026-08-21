@@ -5,7 +5,9 @@
  * review flow is exercisable offline.
  */
 
+import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
 import type {
+  CommandsResponse,
   Comment,
   CommentCreateRequest,
   CommentPatchRequest,
@@ -15,25 +17,23 @@ import type {
   FileContentResponse,
   FileDiff,
   FileDiffResponse,
-  GithubCommentRequest,
+  FileWriteRequest,
   GithubComment,
+  GithubCommentRequest,
   GithubConvosResponse,
   GithubReplyRequest,
   GithubResolveRequest,
   GithubThread,
   InterdiffResponse,
-  FileWriteRequest,
+  PrListResponse,
   RepoInfo,
   SeenRequest,
-  CommandsResponse,
-  PrListResponse,
   SemanticDiffResponse,
   StackResponse,
   UiSettings,
   WorktreeCreateRequest,
   WorktreeCreateResponse,
 } from "#shared/types";
-import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
 
 const now = Date.now();
 const min = 60_000;
@@ -211,7 +211,7 @@ export const fixtureRepos: RepoInfo[] = [
 // Diff
 // ---------------------------------------------------------------------------
 
-let ln = 0;
+const ln = 0;
 const ctx = (oldLine: number, newLine: number, text: string): DiffLine => ({
   kind: "context",
   oldLine,
@@ -245,14 +245,17 @@ const routesFile: FileDiff = {
       oldLines: 9,
       newStart: 12,
       newLines: 14,
-      header: "app.get(\"/api/diff\")",
+      header: 'app.get("/api/diff")',
       lines: [
-        ctx(12, 12, "app.get(\"/api/diff\", async (c) => {"),
-        ctx(13, 13, "  const dir = c.req.query(\"dir\");"),
-        ctx(14, 14, "  const base = c.req.query(\"base\");"),
-        del(15, "  if (!dir) return c.json({ error: \"dir required\" }, 400);"),
+        ctx(12, 12, 'app.get("/api/diff", async (c) => {'),
+        ctx(13, 13, '  const dir = c.req.query("dir");'),
+        ctx(14, 14, '  const base = c.req.query("base");'),
+        del(15, '  if (!dir) return c.json({ error: "dir required" }, 400);'),
         add(15, "  if (!dir || !base) {"),
-        add(16, "    return c.json({ error: \"dir and base are required\" }, 400);"),
+        add(
+          16,
+          '    return c.json({ error: "dir and base are required" }, 400);',
+        ),
         add(17, "  }"),
         add(18, "  if (!(await isRepo(dir))) {"),
         add(19, "    return c.json({ error: `not a git repo: ${dir}` }, 404);"),
@@ -267,15 +270,21 @@ const routesFile: FileDiff = {
       oldLines: 10,
       newStart: 46,
       newLines: 14,
-      header: "app.put(\"/api/file\")",
+      header: 'app.put("/api/file")',
       lines: [
-        ctx(41, 46, "app.put(\"/api/file\", async (c) => {"),
+        ctx(41, 46, 'app.put("/api/file", async (c) => {'),
         ctx(42, 47, "  const body = (await c.req.json()) as FileWriteRequest;"),
         del(43, "  await Bun.write(join(body.dir, body.path), body.content);"),
         del(44, "  return c.json({ ok: true });"),
-        add(48, "  const current = await hashWorkingTree(body.dir, body.path);"),
+        add(
+          48,
+          "  const current = await hashWorkingTree(body.dir, body.path);",
+        ),
         add(49, "  if (current !== body.baseHash) {"),
-        add(50, "    return c.json({ error: \"file changed underneath you\" }, 409);"),
+        add(
+          50,
+          '    return c.json({ error: "file changed underneath you" }, 409);',
+        ),
         add(51, "  }"),
         add(52, "  await Bun.write(join(body.dir, body.path), body.content);"),
         add(53, "  return c.json(await readFileContent(body.dir, body.path));"),
@@ -287,13 +296,19 @@ const routesFile: FileDiff = {
       oldLines: 6,
       newStart: 97,
       newLines: 7,
-      header: "app.put(\"/api/seen\")",
+      header: 'app.put("/api/seen")',
       lines: [
-        ctx(88, 97, "app.put(\"/api/seen\", async (c) => {"),
+        ctx(88, 97, 'app.put("/api/seen", async (c) => {'),
         ctx(89, 98, "  const body = (await c.req.json()) as SeenRequest;"),
         del(90, "  db.markSeen(body.dir, body.path, body.contentHash);"),
-        add(99, "  db.markSeen(body.dir, body.base, body.path, body.contentHash, body.seen);"),
-        add(100, "  broadcast({ type: \"comments-changed\", dir: body.dir, seq: db.seq() });"),
+        add(
+          99,
+          "  db.markSeen(body.dir, body.base, body.path, body.contentHash, body.seen);",
+        ),
+        add(
+          100,
+          '  broadcast({ type: "comments-changed", dir: body.dir, seq: db.seq() });',
+        ),
         ctx(91, 101, "  return c.json({ ok: true });"),
         ctx(92, 102, "});"),
       ],
@@ -318,20 +333,26 @@ const watcherFile: FileDiff = {
       newLines: 24,
       header: "",
       lines: [
-        add(1, "import { watch, type FSWatcher } from \"chokidar\";"),
-        add(2, "import { TUNING } from \"#shared/tuning\";"),
+        add(1, 'import { watch, type FSWatcher } from "chokidar";'),
+        add(2, 'import { TUNING } from "#shared/tuning";'),
         add(3, ""),
         add(4, "const watchers = new Map<string, FSWatcher>();"),
-        add(5, "const timers = new Map<string, ReturnType<typeof setTimeout>>();"),
+        add(
+          5,
+          "const timers = new Map<string, ReturnType<typeof setTimeout>>();",
+        ),
         add(6, ""),
-        add(7, "export function ensureWatch(dir: string, onInvalidate: (paths: string[]) => void) {"),
+        add(
+          7,
+          "export function ensureWatch(dir: string, onInvalidate: (paths: string[]) => void) {",
+        ),
         add(8, "  if (watchers.has(dir)) return;"),
         add(9, "  const pending = new Set<string>();"),
         add(10, "  const w = watch(dir, {"),
         add(11, "    ignored: TUNING.WATCH_IGNORE.map((d) => `**/${d}/**`),"),
         add(12, "    ignoreInitial: true,"),
         add(13, "  });"),
-        add(14, "  w.on(\"all\", (_event, path) => {"),
+        add(14, '  w.on("all", (_event, path) => {'),
         add(15, "    pending.add(path);"),
         add(16, "    clearTimeout(timers.get(dir));"),
         add(17, "    timers.set(dir, setTimeout(() => {"),
@@ -430,8 +451,14 @@ const deletedFile: FileDiff = {
       newLines: 0,
       header: "",
       lines: [
-        del(1, "/** Replaced by the chokidar watcher; polling burned CPU for nothing. */"),
-        del(2, "export function startPolling(dir: string, intervalMs: number) {"),
+        del(
+          1,
+          "/** Replaced by the chokidar watcher; polling burned CPU for nothing. */",
+        ),
+        del(
+          2,
+          "export function startPolling(dir: string, intervalMs: number) {",
+        ),
         del(3, "  const timer = setInterval(async () => {"),
         del(4, "    const head = await gitHead(dir);"),
         del(5, "    if (head !== lastHead.get(dir)) {"),
@@ -466,16 +493,22 @@ const untrackedFile: FileDiff = {
       lines: [
         add(1, "#!/usr/bin/env bun"),
         add(2, "/** Seeds a throwaway comments DB for local UI work. */"),
-        add(3, "import { Database } from \"bun:sqlite\";"),
+        add(3, 'import { Database } from "bun:sqlite";'),
         add(4, ""),
-        add(5, "const db = new Database(process.env.REV_DB ?? \"/tmp/rev-seed.db\");"),
+        add(
+          5,
+          'const db = new Database(process.env.REV_DB ?? "/tmp/rev-seed.db");',
+        ),
         add(6, "db.run(`CREATE TABLE IF NOT EXISTS comments ("),
         add(7, "  id TEXT PRIMARY KEY, dir TEXT, base TEXT, body TEXT,"),
         add(8, "  author TEXT, created_at INTEGER, resolved_at INTEGER"),
         add(9, ")`);"),
         add(10, ""),
         add(11, "for (let i = 0; i < 20; i++) {"),
-        add(12, "  db.run(\"INSERT INTO comments VALUES (?, ?, ?, ?, ?, ?, NULL)\", [crypto.randomUUID(), \"/tmp/repo\", \"main\", `note ${i}`, i % 2 ? \"agent\" : \"user\", Date.now()]);"),
+        add(
+          12,
+          '  db.run("INSERT INTO comments VALUES (?, ?, ?, ?, ?, ?, NULL)", [crypto.randomUUID(), "/tmp/repo", "main", `note ${i}`, i % 2 ? "agent" : "user", Date.now()]);',
+        ),
         add(13, "}"),
       ],
     },
@@ -506,7 +539,7 @@ const viteConfigFile: FileDiff = {
         del(6, "  plugins: [react()],"),
         del(7, "  server: { port: 5173 },"),
         add(6, "  plugins: [react(), tailwindcss()],"),
-        add(7, "  server: { port: 5173, host: \"0.0.0.0\" },"),
+        add(7, '  server: { port: 5173, host: "0.0.0.0" },'),
         ctx(8, 8, "});"),
       ],
     },
@@ -530,7 +563,11 @@ const hooksFile: FileDiff = {
       newLines: 6,
       header: "export function useDebounced",
       lines: [
-        ctx(10, 10, "export function useDebounced<T>(value: T, ms: number): T {"),
+        ctx(
+          10,
+          10,
+          "export function useDebounced<T>(value: T, ms: number): T {",
+        ),
         ctx(11, 11, "  const [debounced, setDebounced] = useState(value);"),
         ctx(12, 12, "  useEffect(() => {"),
         del(13, "    const t = setTimeout(() => setDebounced(value), ms);"),
@@ -572,7 +609,11 @@ const seenFile: FileDiff = {
       newLines: 3,
       header: "export const TUNING",
       lines: [
-        ctx(27, 27, "  /** Files above this many changed lines render collapsed by default. */"),
+        ctx(
+          27,
+          27,
+          "  /** Files above this many changed lines render collapsed by default. */",
+        ),
         del(28, "  COLLAPSE_THRESHOLD_LINES: 200,"),
         add(28, "  COLLAPSE_THRESHOLD_LINES: 400,"),
         ctx(29, 29, ""),
@@ -584,20 +625,37 @@ const seenFile: FileDiff = {
 /** A large generated file (hundreds of changed lines). */
 function makeGeneratedFile(): FileDiff {
   const lines: DiffLine[] = [];
-  lines.push(ctx(1, 1, "/* AUTO-GENERATED by scripts/gen-schema.ts — do not edit. */"));
-  lines.push(ctx(2, 2, "import { z } from \"zod\";"));
+  lines.push(
+    ctx(1, 1, "/* AUTO-GENERATED by scripts/gen-schema.ts — do not edit. */"),
+  );
+  lines.push(ctx(2, 2, 'import { z } from "zod";'));
   lines.push(ctx(3, 3, ""));
   for (let i = 0; i < 12; i++) {
-    lines.push(del(4 + i, `export const LegacyRow${i} = z.object({ id: z.string() });`));
+    lines.push(
+      del(4 + i, `export const LegacyRow${i} = z.object({ id: z.string() });`),
+    );
   }
   let n = 4;
-  const entities = ["Repo", "Diff", "Hunk", "Line", "Comment", "Anchor", "Seen", "Session", "Event", "Cursor"];
+  const entities = [
+    "Repo",
+    "Diff",
+    "Hunk",
+    "Line",
+    "Comment",
+    "Anchor",
+    "Seen",
+    "Session",
+    "Event",
+    "Cursor",
+  ];
   for (let e = 0; e < entities.length; e++) {
     for (let f = 0; f < 42; f++) {
       const name = `${entities[e]}Field${f}`;
       lines.push(add(n++, `export const ${name} = z.object({`));
       lines.push(add(n++, `  id: z.string().uuid(),`));
-      lines.push(add(n++, `  value: z.number().int().min(0).max(${(f + 1) * 100}),`));
+      lines.push(
+        add(n++, `  value: z.number().int().min(0).max(${(f + 1) * 100}),`),
+      );
       lines.push(add(n++, `});`));
     }
   }
@@ -657,7 +715,10 @@ const state = {
 // ---------------------------------------------------------------------------
 
 function seedComment(
-  c: Omit<Comment, "id" | "seq" | "dir" | "base" | "status" | "submittedSeq"> & {
+  c: Omit<
+    Comment,
+    "id" | "seq" | "dir" | "base" | "status" | "submittedSeq"
+  > & {
     id?: string;
     base?: string;
     status?: Comment["status"];
@@ -689,7 +750,7 @@ const t1 = seedComment({
     file: "server/routes.ts",
     side: "new",
     line: 50,
-    snippet: "return c.json({ error: \"file changed underneath you\" }, 409);",
+    snippet: 'return c.json({ error: "file changed underneath you" }, 409);',
   },
   parentId: null,
   author: "user",
@@ -736,7 +797,7 @@ seedComment({
     file: "server/routes.ts",
     side: "new",
     line: 95,
-    snippet: "app.put(\"/api/seen\", async (c) => {",
+    snippet: 'app.put("/api/seen", async (c) => {',
   },
   parentId: null,
   author: "user",
@@ -815,7 +876,7 @@ seedComment({
 // Fixture "API"
 // ---------------------------------------------------------------------------
 
-const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
 export function fxGetRepos(): RepoInfo[] {
   return clone(fixtureRepos);
@@ -825,7 +886,9 @@ export function fxGetPrs(dir: string): PrListResponse {
   const repo = fixtureRepos.find((r) => r.dir === dir);
   if (!repo || repo.remoteUrl === null) return { dir, prs: null };
   const checkouts = new Map(
-    fixtureRepos.filter((r) => r.mainDir === repo.mainDir && r.branch).map((r) => [r.branch!, r.dir]),
+    fixtureRepos
+      .filter((r) => r.mainDir === repo.mainDir && r.branch)
+      .map((r) => [r.branch!, r.dir]),
   );
   const prs = [
     {
@@ -845,10 +908,18 @@ export function fxGetPrs(dir: string): PrListResponse {
       draft: true,
     },
   ];
-  return { dir, prs: prs.map((p) => ({ ...p, checkoutDir: checkouts.get(p.branch) ?? null })) };
+  return {
+    dir,
+    prs: prs.map((p) => ({
+      ...p,
+      checkoutDir: checkouts.get(p.branch) ?? null,
+    })),
+  };
 }
 
-export function fxCreateWorktree(req: WorktreeCreateRequest): WorktreeCreateResponse {
+export function fxCreateWorktree(
+  req: WorktreeCreateRequest,
+): WorktreeCreateResponse {
   return { dir: `${req.dir}/worktrees/${req.branch}`, branch: req.branch };
 }
 
@@ -884,15 +955,26 @@ export function fxGetDiff(dir: string, base: string): DiffResponse {
   return clone(state.diff);
 }
 
-export function fxGetDiffSummary(dir: string, base: string): DiffSummaryResponse {
+export function fxGetDiffSummary(
+  dir: string,
+  base: string,
+): DiffSummaryResponse {
   const full = fxGetDiff(dir, base);
-  return { ...full, files: full.files.map(({ hunks: _hunks, ...summary }) => summary) };
+  return {
+    ...full,
+    files: full.files.map(({ hunks: _hunks, ...summary }) => summary),
+  };
 }
 
-export function fxGetFileDiff(dir: string, base: string, path: string): FileDiffResponse {
+export function fxGetFileDiff(
+  dir: string,
+  base: string,
+  path: string,
+): FileDiffResponse {
   const full = fxGetDiff(dir, base);
   const file = full.files.find((f) => f.path === path);
-  if (!file) throw Object.assign(new Error(`no changes for ${path}`), { status: 404 });
+  if (!file)
+    throw Object.assign(new Error(`no changes for ${path}`), { status: 404 });
   return {
     dir,
     base,
@@ -901,7 +983,10 @@ export function fxGetFileDiff(dir: string, base: string, path: string): FileDiff
   };
 }
 
-export function fxGetSemanticDiff(dir: string, base: string): SemanticDiffResponse {
+export function fxGetSemanticDiff(
+  dir: string,
+  base: string,
+): SemanticDiffResponse {
   const full = fxGetDiff(dir, base); // validates dir/base like the server would
   return {
     dir: full.dir,
@@ -913,22 +998,76 @@ export function fxGetSemanticDiff(dir: string, base: string): SemanticDiffRespon
       {
         path: "server/routes.ts",
         entities: [
-          { entityType: "function", name: "diffRoute", change: "modified", startLine: 12, endLine: 23, oldStartLine: 12, oldEndLine: 18, oldName: null },
-          { entityType: "function", name: "putFile", change: "modified", startLine: 46, endLine: 54, oldStartLine: 41, oldEndLine: 45, oldName: null },
-          { entityType: "function", name: "putSeen", change: "renamed", startLine: 97, endLine: 102, oldStartLine: 88, oldEndLine: 92, oldName: "markSeen" },
+          {
+            entityType: "function",
+            name: "diffRoute",
+            change: "modified",
+            startLine: 12,
+            endLine: 23,
+            oldStartLine: 12,
+            oldEndLine: 18,
+            oldName: null,
+          },
+          {
+            entityType: "function",
+            name: "putFile",
+            change: "modified",
+            startLine: 46,
+            endLine: 54,
+            oldStartLine: 41,
+            oldEndLine: 45,
+            oldName: null,
+          },
+          {
+            entityType: "function",
+            name: "putSeen",
+            change: "renamed",
+            startLine: 97,
+            endLine: 102,
+            oldStartLine: 88,
+            oldEndLine: 92,
+            oldName: "markSeen",
+          },
         ],
       },
       {
         path: "server/watcher.ts",
         entities: [
-          { entityType: "function", name: "startWatcher", change: "added", startLine: 1, endLine: 18, oldStartLine: null, oldEndLine: null, oldName: null },
-          { entityType: "function", name: "stopWatcher", change: "added", startLine: 20, endLine: 24, oldStartLine: null, oldEndLine: null, oldName: null },
+          {
+            entityType: "function",
+            name: "startWatcher",
+            change: "added",
+            startLine: 1,
+            endLine: 18,
+            oldStartLine: null,
+            oldEndLine: null,
+            oldName: null,
+          },
+          {
+            entityType: "function",
+            name: "stopWatcher",
+            change: "added",
+            startLine: 20,
+            endLine: 24,
+            oldStartLine: null,
+            oldEndLine: null,
+            oldName: null,
+          },
         ],
       },
       {
         path: "server/poller.ts",
         entities: [
-          { entityType: "function", name: "poll", change: "deleted", startLine: null, endLine: null, oldStartLine: 3, oldEndLine: 31, oldName: null },
+          {
+            entityType: "function",
+            name: "poll",
+            change: "deleted",
+            startLine: null,
+            endLine: null,
+            oldStartLine: 3,
+            oldEndLine: 31,
+            oldName: null,
+          },
         ],
       },
     ],
@@ -936,7 +1075,16 @@ export function fxGetSemanticDiff(dir: string, base: string): SemanticDiffRespon
 }
 
 export function fxGetRefs(dir: string): { dir: string; refs: string[] } {
-  return { dir, refs: ["main", "develop", "origin/main", "origin/develop", "spike/always-on-review"] };
+  return {
+    dir,
+    refs: [
+      "main",
+      "develop",
+      "origin/main",
+      "origin/develop",
+      "spike/always-on-review",
+    ],
+  };
 }
 
 export function fxGetStack(dir: string, base: string): StackResponse {
@@ -944,19 +1092,43 @@ export function fxGetStack(dir: string, base: string): StackResponse {
     dir,
     base,
     segments: [
-      { branch: "spike/always-on-review", head: "9c2f41ab01de", commits: 4, checkoutDir: dir, parent: "spike/queue-rework" },
-      { branch: "spike/queue-rework", head: "b91c220f7742", commits: 2, checkoutDir: "/home/naps62/tea/maestro/old-spike", parent: "fix-auth" },
-      { branch: "fix-auth", head: "1b7d90233aa8", commits: 3, checkoutDir: null, parent: base },
+      {
+        branch: "spike/always-on-review",
+        head: "9c2f41ab01de",
+        commits: 4,
+        checkoutDir: dir,
+        parent: "spike/queue-rework",
+      },
+      {
+        branch: "spike/queue-rework",
+        head: "b91c220f7742",
+        commits: 2,
+        checkoutDir: "/home/naps62/tea/maestro/old-spike",
+        parent: "fix-auth",
+      },
+      {
+        branch: "fix-auth",
+        head: "1b7d90233aa8",
+        commits: 3,
+        checkoutDir: null,
+        parent: base,
+      },
     ],
     computedAt: now,
   };
 }
 
 /** Stale fixture file (server/db.ts) gets a small delta since seen. */
-export function fxGetInterdiff(dir: string, base: string, path: string): InterdiffResponse {
+export function fxGetInterdiff(
+  dir: string,
+  base: string,
+  path: string,
+): InterdiffResponse {
   const f = state.diff.files.find((x) => x.path === path);
-  if (!f || !f.stale) {
-    throw Object.assign(new Error(`no seen snapshot for ${path}`), { status: 404 });
+  if (!f?.stale) {
+    throw Object.assign(new Error(`no seen snapshot for ${path}`), {
+      status: 404,
+    });
   }
   return {
     dir,
@@ -988,7 +1160,10 @@ export function fxGetInterdiff(dir: string, base: string, path: string): Interdi
   };
 }
 
-export function fxGetComments(dir: string): { comments: Comment[]; cursor: number } {
+export function fxGetComments(dir: string): {
+  comments: Comment[];
+  cursor: number;
+} {
   void dir;
   return { comments: clone(state.comments), cursor: state.seq };
 }
@@ -1014,7 +1189,10 @@ export function fxPostComment(req: CommentCreateRequest): Comment {
   return clone(c);
 }
 
-export function fxSubmitComments(dir: string): { submitted: number; cursor: number } {
+export function fxSubmitComments(dir: string): {
+  submitted: number;
+  cursor: number;
+} {
   void dir;
   const pending = state.comments
     .filter((c) => c.status === "pending")
@@ -1026,20 +1204,25 @@ export function fxSubmitComments(dir: string): { submitted: number; cursor: numb
   return { submitted: pending.length, cursor: state.seq };
 }
 
-export function fxPostFetch(req: {
-  dir: string;
-  base: string;
-}): { ok: boolean; baseBehind: number | null } {
+export function fxPostFetch(req: { dir: string; base: string }): {
+  ok: boolean;
+  baseBehind: number | null;
+} {
   void req;
   state.diff.baseBehind = 0;
   return { ok: true, baseBehind: 0 };
 }
 
-export function fxPatchComment(id: string, patch: CommentPatchRequest): Comment {
+export function fxPatchComment(
+  id: string,
+  patch: CommentPatchRequest,
+): Comment {
   const c = state.comments.find((x) => x.id === id);
-  if (!c) throw Object.assign(new Error(`no such comment: ${id}`), { status: 404 });
+  if (!c)
+    throw Object.assign(new Error(`no such comment: ${id}`), { status: 404 });
   if (patch.body !== undefined) c.body = patch.body;
-  if (patch.resolved !== undefined) c.resolvedAt = patch.resolved ? Date.now() : null;
+  if (patch.resolved !== undefined)
+    c.resolvedAt = patch.resolved ? Date.now() : null;
   state.seq++;
   return clone(c);
 }
@@ -1059,9 +1242,19 @@ export function fxPutSeen(req: SeenRequest): { ok: true } {
 
 let ghId = 9000;
 
-function ghComment(login: string, body: string, createdAt: number): GithubComment {
+function ghComment(
+  login: string,
+  body: string,
+  createdAt: number,
+): GithubComment {
   const id = ++ghId;
-  return { id, login, body, createdAt, url: `https://github.com/naps62/rev/pull/42#discussion_r${id}` };
+  return {
+    id,
+    login,
+    body,
+    createdAt,
+    url: `https://github.com/naps62/rev/pull/42#discussion_r${id}`,
+  };
 }
 
 const ghState: GithubConvosResponse = {
@@ -1084,7 +1277,8 @@ const ghState: GithubConvosResponse = {
         file: "server/routes.ts",
         side: "new",
         line: 44,
-        snippet: "const body = await c.req.json<{ content: string; baseHash: string }>();",
+        snippet:
+          "const body = await c.req.json<{ content: string; baseHash: string }>();",
       },
       resolvedLine: 44,
       comments: [
@@ -1093,7 +1287,11 @@ const ghState: GithubConvosResponse = {
           "`c.req.json` throws on an empty body — wrap it or the route 500s on a bad client.",
           now - 3 * 60 * min,
         ),
-        ghComment("naps62", "Good point, will guard it like the other routes.", now - 2 * 60 * min),
+        ghComment(
+          "naps62",
+          "Good point, will guard it like the other routes.",
+          now - 2 * 60 * min,
+        ),
       ],
     },
     {
@@ -1104,11 +1302,15 @@ const ghState: GithubConvosResponse = {
         file: "server/watcher.ts",
         side: "new",
         line: 3,
-        snippet: "import chokidar from \"chokidar\";",
+        snippet: 'import chokidar from "chokidar";',
       },
       resolvedLine: null,
       comments: [
-        ghComment("octocat", "chokidar 4 dropped glob support — double-check the ignore patterns.", now - 5 * 60 * min),
+        ghComment(
+          "octocat",
+          "chokidar 4 dropped glob support — double-check the ignore patterns.",
+          now - 5 * 60 * min,
+        ),
       ],
     },
   ],
@@ -1131,7 +1333,10 @@ export function fxPostGithubReply(req: GithubReplyRequest): { ok: true } {
   const reply = ghComment("naps62", req.body, Date.now());
   if (req.rootId !== undefined) {
     const t = ghState.threads.find((x) => x.comments[0]?.id === req.rootId);
-    if (!t) throw Object.assign(new Error(`no such thread root: ${req.rootId}`), { status: 502 });
+    if (!t)
+      throw Object.assign(new Error(`no such thread root: ${req.rootId}`), {
+        status: 502,
+      });
     t.comments.push(reply);
   } else {
     ghState.discussion.push(reply);
@@ -1159,7 +1364,10 @@ export function fxPostGithubComment(req: GithubCommentRequest): { ok: true } {
 
 export function fxPostGithubResolve(req: GithubResolveRequest): { ok: true } {
   const t = ghState.threads.find((x) => x.id === req.threadId);
-  if (!t) throw Object.assign(new Error(`no such thread: ${req.threadId}`), { status: 502 });
+  if (!t)
+    throw Object.assign(new Error(`no such thread: ${req.threadId}`), {
+      status: 502,
+    });
   t.isResolved = req.resolved;
   return { ok: true };
 }
@@ -1176,7 +1384,9 @@ export function fxGetFile(dir: string, path: string): FileContentResponse {
   const content =
     fileContents.get(path) ??
     f?.hunks
-      .flatMap((h) => h.lines.filter((l) => l.kind !== "del").map((l) => l.text))
+      .flatMap((h) =>
+        h.lines.filter((l) => l.kind !== "del").map((l) => l.text),
+      )
       .join("\n") ??
     `// ${path}\n`;
   return {
@@ -1191,7 +1401,9 @@ export function fxGetFile(dir: string, path: string): FileContentResponse {
 export function fxPutFile(req: FileWriteRequest): FileContentResponse {
   const f = state.diff.files.find((x) => x.path === req.path);
   if (f && f.contentHash !== req.baseHash) {
-    throw Object.assign(new Error("file changed underneath you"), { status: 409 });
+    throw Object.assign(new Error("file changed underneath you"), {
+      status: 409,
+    });
   }
   fileContents.set(req.path, req.content);
   const newHash = `wr${(state.seq++).toString(16).padStart(6, "0")}`;
@@ -1202,5 +1414,11 @@ export function fxPutFile(req: FileWriteRequest): FileContentResponse {
       f.stale = true;
     }
   }
-  return { dir: req.dir, path: req.path, rev: null, content: req.content, contentHash: newHash };
+  return {
+    dir: req.dir,
+    path: req.path,
+    rev: null,
+    content: req.content,
+    contentHash: newHash,
+  };
 }

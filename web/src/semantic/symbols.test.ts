@@ -48,13 +48,27 @@ describe("findOccurrences", () => {
           hunk([
             { kind: "add" as const, newLine: 1, text: "function compute() {}" },
             { kind: "del" as const, oldLine: 1, text: "const x = compute();" },
-            { kind: "context" as const, oldLine: 2, newLine: 2, text: "computeAll();" },
+            {
+              kind: "context" as const,
+              oldLine: 2,
+              newLine: 2,
+              text: "computeAll();",
+            },
           ]),
         ],
       },
       {
         path: "b.ts",
-        hunks: [hunk([{ kind: "context" as const, oldLine: 5, newLine: 5, text: "recompute(compute)" }])],
+        hunks: [
+          hunk([
+            {
+              kind: "context" as const,
+              oldLine: 5,
+              newLine: 5,
+              text: "recompute(compute)",
+            },
+          ]),
+        ],
       },
     ];
     const occ = findOccurrences("compute", files);
@@ -70,7 +84,12 @@ describe("findOccurrences", () => {
 
   it("escapes regex metacharacters in symbols", () => {
     const files = [
-      { path: "a.ts", hunks: [hunk([{ kind: "add" as const, newLine: 1, text: "use $state here" }])] },
+      {
+        path: "a.ts",
+        hunks: [
+          hunk([{ kind: "add" as const, newLine: 1, text: "use $state here" }]),
+        ],
+      },
     ];
     assert.equal(findOccurrences("$state", files).length, 1);
   });
