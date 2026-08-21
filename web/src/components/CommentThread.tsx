@@ -66,11 +66,34 @@ function StatusChip({ comment }: { comment: Comment }) {
   );
 }
 
-function CommentBlock({ comment, baseLabel }: { comment: Comment; baseLabel?: string }) {
+function CommentBlock({
+  comment,
+  baseLabel,
+  onHeaderClick,
+}: {
+  comment: Comment;
+  baseLabel?: string;
+  /** Makes the header row clickable (used to collapse an expanded resolved thread). */
+  onHeaderClick?: () => void;
+}) {
   const gh = comment.source === "github";
   return (
     <div>
-      <div className="flex items-baseline gap-2 bg-panel px-3 py-1">
+      <div
+        title={onHeaderClick ? "Collapse" : undefined}
+        onClick={
+          onHeaderClick
+            ? (e) => {
+                if ((e.target as HTMLElement).closest("a")) return;
+                onHeaderClick();
+              }
+            : undefined
+        }
+        className={cx(
+          "flex items-baseline gap-2 bg-panel px-3 py-1",
+          onHeaderClick && "cursor-pointer",
+        )}
+      >
         <AuthorChip author={comment.author} ghLogin={gh ? comment.ghLogin ?? "github" : undefined} />
         {gh && comment.ghUrl ? (
           <a
@@ -181,7 +204,11 @@ export function CommentThread({
         </div>
       )}
       <div className="divide-y divide-edge-soft">
-        <CommentBlock comment={root} baseLabel={baseLabel} />
+        <CommentBlock
+          comment={root}
+          baseLabel={baseLabel}
+          onHeaderClick={resolved ? () => setOverride(null) : undefined}
+        />
         {replies.map((r) => (
           <CommentBlock key={r.id} comment={r} />
         ))}
