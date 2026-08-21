@@ -31,6 +31,7 @@ import { DiffStat } from "../components/DiffStat";
 import { EntityPanel } from "../components/EntityPanel";
 import { FileNav } from "../components/FileNav";
 import { PendingSubmit } from "../components/PendingSubmit";
+import { RefCombobox } from "../components/RefCombobox";
 import { ReviewProgress } from "../components/ReviewProgress";
 import { StackStrip } from "../components/StackStrip";
 import { SymbolPanel } from "../components/SymbolPanel";
@@ -948,9 +949,6 @@ export function Review() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dir, base]);
 
-  const [baseInput, setBaseInput] = useState(base);
-  useEffect(() => setBaseInput(base), [base]);
-
   return (
     <div className="min-h-screen">
       <AppHeader
@@ -975,30 +973,11 @@ export function Review() {
                 : "review"}
           </span>
           <span className="text-faint max-sm:hidden">→</span>
-          <form
-            className="shrink-0"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const v = baseInput.trim();
-              if (v && v !== base)
-                navigate(api.href("/review", { dir, base: v }));
-            }}
-          >
-            <input
-              value={baseInput}
-              onChange={(e) => setBaseInput(e.target.value)}
-              spellCheck={false}
-              aria-label="Base ref"
-              title="Base ref — press Enter to re-diff"
-              list="base-refs"
-              className="w-24 rounded-sm border border-edge bg-bg px-1.5 py-0.5 font-mono text-[12px] text-fg focus:border-accent/60 focus:outline-none max-sm:w-16"
-            />
-            <datalist id="base-refs">
-              {(refsQ.data?.refs ?? []).map((r) => (
-                <option key={r} value={r} />
-              ))}
-            </datalist>
-          </form>
+          <RefCombobox
+            value={base}
+            refs={refsQ.data?.refs ?? []}
+            onPick={(v) => navigate(api.href("/review", { dir, base: v }))}
+          />
           {diffQ.data && (
             <span
               className="hidden whitespace-nowrap text-[11px] text-faint md:inline"
