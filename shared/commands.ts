@@ -43,20 +43,27 @@ export const SESSION_SPAWN_PLACEHOLDERS: Record<string, string> = {
   "{branch}": "the checkout's branch (empty when detached)",
 };
 
+/**
+ * Every preset hands the agent an initial prompt: a session that boots idle
+ * never takes a turn, so it never arms the comment watcher and the held
+ * batch would time out.
+ */
+export const SESSION_SPAWN_PROMPT = "Address the incoming rev review comments.";
+
 export const SESSION_SPAWN_PRESETS: CommandPreset[] = [
   {
     name: "aoe",
-    template: "aoe add {dir} --launch",
+    template: `aoe add {dir} --launch --extra-args "${SESSION_SPAWN_PROMPT}"`,
     blurb: "agent-of-empires session, launched immediately",
   },
   {
     name: "tmux",
-    template: "tmux new-session -d -c {dir} claude",
+    template: `tmux new-session -d -c {dir} claude "${SESSION_SPAWN_PROMPT}"`,
     blurb: "detached tmux session running claude",
   },
   {
     name: "kitty",
-    template: "kitty --detach --directory {dir} claude",
+    template: `kitty --detach --directory {dir} claude "${SESSION_SPAWN_PROMPT}"`,
     blurb: "new kitty OS window running claude",
   },
 ];
