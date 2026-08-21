@@ -1,6 +1,11 @@
-import { after as afterAll, before as beforeAll, describe, test } from "node:test";
-import { expect } from "expect";
 import { join } from "node:path";
+import {
+  after as afterAll,
+  before as beforeAll,
+  describe,
+  test,
+} from "node:test";
+import { expect } from "expect";
 import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
 import {
   CommandError,
@@ -35,10 +40,22 @@ describe("validBranch", () => {
 
 describe("splitTemplate / substitute", () => {
   test("splits on whitespace, quotes group whole tokens", () => {
-    expect(splitTemplate("git -C {dir} worktree add worktrees/{branch} {branch}")).toEqual([
-      "git", "-C", "{dir}", "worktree", "add", "worktrees/{branch}", "{branch}",
+    expect(
+      splitTemplate("git -C {dir} worktree add worktrees/{branch} {branch}"),
+    ).toEqual([
+      "git",
+      "-C",
+      "{dir}",
+      "worktree",
+      "add",
+      "worktrees/{branch}",
+      "{branch}",
     ]);
-    expect(splitTemplate(`sh -c 'echo hi there'`)).toEqual(["sh", "-c", "echo hi there"]);
+    expect(splitTemplate(`sh -c 'echo hi there'`)).toEqual([
+      "sh",
+      "-c",
+      "echo hi there",
+    ]);
     expect(splitTemplate(`x "a b" y`)).toEqual(["x", "a b", "y"]);
     expect(() => splitTemplate(`x "a b`)).toThrow(CommandError);
   });
@@ -48,7 +65,11 @@ describe("splitTemplate / substitute", () => {
       branch: "feat/x",
       dir: "/tmp/repo with space",
     });
-    expect(argv).toEqual(["worktrees/feat/x", "/tmp/repo with space", "{nope}"]);
+    expect(argv).toEqual([
+      "worktrees/feat/x",
+      "/tmp/repo with space",
+      "{nope}",
+    ]);
   });
 });
 
@@ -59,7 +80,9 @@ describe("worktreeCommand setting", () => {
     expect(worktreeCommand()).toBe("aoe add {dir} --worktree {branch}");
     expect(() => setWorktreeCommand("")).toThrow(CommandError);
     expect(() => setWorktreeCommand("echo no-branch")).toThrow(CommandError);
-    expect(() => setWorktreeCommand(`echo "oops {branch}`)).toThrow(CommandError);
+    expect(() => setWorktreeCommand(`echo "oops {branch}`)).toThrow(
+      CommandError,
+    );
     expect(worktreeCommand()).toBe("aoe add {dir} --worktree {branch}");
   });
 });

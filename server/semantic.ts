@@ -9,13 +9,13 @@
  */
 
 import { spawn } from "node:child_process";
+import { TUNING } from "#shared/tuning";
 import type {
   EntityChange,
   EntityChangeKind,
   SemanticDiffResponse,
   SemanticFileEntities,
 } from "#shared/types";
-import { TUNING } from "#shared/tuning";
 import { run } from "./git.ts";
 
 const SEM_BIN = process.env.REV_SEM_BIN || "sem";
@@ -51,9 +51,13 @@ let availability: Promise<boolean> | null = null;
 /** Whether the sem binary runs; probed once per process, logged when absent. */
 export function semAvailable(): Promise<boolean> {
   availability ??= new Promise((res) => {
-    const proc = spawn(SEM_BIN, ["--version"], { stdio: ["ignore", "pipe", "ignore"] });
+    const proc = spawn(SEM_BIN, ["--version"], {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
     let out = "";
-    proc.stdout.setEncoding("utf8").on("data", (chunk: string) => (out += chunk));
+    proc.stdout
+      .setEncoding("utf8")
+      .on("data", (chunk: string) => (out += chunk));
     proc.on("error", () => {
       console.log(`semantic entity data disabled: ${SEM_BIN} not found`);
       res(false);
@@ -63,7 +67,9 @@ export function semAvailable(): Promise<boolean> {
     proc.on("close", (code) => {
       if (code !== 0) return res(false);
       if (/^sem\s/.test(out)) return res(true);
-      console.log(`semantic entity data disabled: ${SEM_BIN} is not Ataraxy sem`);
+      console.log(
+        `semantic entity data disabled: ${SEM_BIN} is not Ataraxy sem`,
+      );
       res(false);
     });
   });
@@ -72,22 +78,30 @@ export function semAvailable(): Promise<boolean> {
 
 function runSem(dir: string, args: string[]): Promise<string> {
   return new Promise((res, rej) => {
-    const proc = spawn(SEM_BIN, args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn(SEM_BIN, args, {
+      cwd: dir,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let out = "";
     let err = "";
     const timer = setTimeout(() => {
       proc.kill("SIGKILL");
       rej(new Error(`sem timed out after ${TUNING.SEM_TIMEOUT_MS}ms`));
     }, TUNING.SEM_TIMEOUT_MS);
-    proc.stdout.setEncoding("utf8").on("data", (chunk: string) => (out += chunk));
-    proc.stderr.setEncoding("utf8").on("data", (chunk: string) => (err += chunk));
+    proc.stdout
+      .setEncoding("utf8")
+      .on("data", (chunk: string) => (out += chunk));
+    proc.stderr
+      .setEncoding("utf8")
+      .on("data", (chunk: string) => (err += chunk));
     proc.on("error", (e) => {
       clearTimeout(timer);
       rej(e);
     });
     proc.on("close", (code) => {
       clearTimeout(timer);
-      if (code !== 0) rej(new Error(err.trim() || `sem ${args[0]} failed (exit ${code})`));
+      if (code !== 0)
+        rej(new Error(err.trim() || `sem ${args[0]} failed (exit ${code})`));
       else res(out);
     });
   });
@@ -111,9 +125,13 @@ export function mapChanges(raw: unknown): SemanticFileEntities[] {
     ) {
       continue;
     }
-    if (SKIP_TYPES.has(c.entityType) || !CHANGE_KINDS.has(c.changeType)) continue;
+    if (SKIP_TYPES.has(c.entityType) || !CHANGE_KINDS.has(c.changeType))
+      continue;
     let list = byPath.get(c.filePath);
-    if (!list) byPath.set(c.filePath, (list = []));
+    if (!list) {
+      list = [];
+      byPath.set(c.filePath, list);
+    }
     list.push({
       entityType: c.entityType,
       name: c.entityName,
@@ -129,8 +147,14 @@ export function mapChanges(raw: unknown): SemanticFileEntities[] {
 }
 
 /** Entity-level diff of `dir`'s working tree vs merge-base(base, HEAD). */
-export async function computeSemanticDiff(dir: string, base: string): Promise<SemanticDiffResponse> {
-  const unavailable = (mergeBase: string, reason: string): SemanticDiffResponse => ({
+export async function computeSemanticDiff(
+  dir: string,
+  base: string,
+): Promise<SemanticDiffResponse> {
+  const unavailable = (
+    mergeBase: string,
+    reason: string,
+  ): SemanticDiffResponse => ({
     dir,
     base,
     mergeBase,

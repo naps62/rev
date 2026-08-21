@@ -21,13 +21,21 @@ describe("mapChanges", () => {
     const files = mapChanges({
       changes: [
         change(),
-        change({ entityName: "beta", changeType: "added", oldStartLine: null, oldEndLine: null }),
+        change({
+          entityName: "beta",
+          changeType: "added",
+          oldStartLine: null,
+          oldEndLine: null,
+        }),
         change({ filePath: "other.ts", entityName: "gamma" }),
       ],
     });
     assert.equal(files.length, 2);
     const lib = files.find((f) => f.path === "lib.ts")!;
-    assert.deepEqual(lib.entities.map((e) => e.name), ["alpha", "beta"]);
+    assert.deepEqual(
+      lib.entities.map((e) => e.name),
+      ["alpha", "beta"],
+    );
     assert.deepEqual(lib.entities[0], {
       entityType: "function",
       name: "alpha",
@@ -75,7 +83,13 @@ describe("mapChanges", () => {
 
   it("carries the old name through renames", () => {
     const files = mapChanges({
-      changes: [change({ changeType: "renamed", entityName: "after", oldEntityName: "before" })],
+      changes: [
+        change({
+          changeType: "renamed",
+          entityName: "after",
+          oldEntityName: "before",
+        }),
+      ],
     });
     assert.equal(files[0]!.entities[0]!.oldName, "before");
   });
@@ -84,13 +98,19 @@ describe("mapChanges", () => {
 // Reuses the server's own probe so REV_SEM_BIN and the identity check apply.
 const semHere = await semAvailable();
 
-describe("computeSemanticDiff", { skip: !semHere && "sem binary not installed" }, () => {
+describe("computeSemanticDiff", {
+  skip: !semHere && "sem binary not installed",
+}, () => {
   it("sees committed and uncommitted entity changes vs merge-base", async () => {
     const dir = makeRepo("semantic", {
       "lib.ts": "export function alpha(a: number) {\n  return a + 1;\n}\n",
     });
     git(dir, "checkout", "-b", "feat");
-    write(dir, "lib.ts", "export function alpha(a: number) {\n  return a + 2;\n}\n");
+    write(
+      dir,
+      "lib.ts",
+      "export function alpha(a: number) {\n  return a + 2;\n}\n",
+    );
     git(dir, "commit", "-am", "tweak alpha");
     write(
       dir,

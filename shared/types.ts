@@ -346,14 +346,14 @@ export interface FileWriteRequest {
 // Comments
 // ---------------------------------------------------------------------------
 
-export type Author = "user" | "agent" | "reviewer";
+type Author = "user" | "agent" | "reviewer";
 
 /**
  * Delivery lifecycle toward the agent: "pending" = invisible to agent polling
  * until submitted; "submitted" = visible, not yet delivered; "picked_up" = a
  * watcher acked delivery.
  */
-export type CommentStatus = "pending" | "submitted" | "picked_up";
+type CommentStatus = "pending" | "submitted" | "picked_up";
 
 export interface CommentAnchor {
   /** Repo-relative path the comment is attached to. */
@@ -504,7 +504,11 @@ export interface GithubThread {
   comments: GithubComment[];
 }
 
-export type GithubUnavailableReason = "gh-missing" | "not-github" | "no-pr" | "gh-failed";
+export type GithubUnavailableReason =
+  | "gh-missing"
+  | "not-github"
+  | "no-pr"
+  | "gh-failed";
 
 /**
  * GitHub conversations for dir's checked-out branch. `available: false` —

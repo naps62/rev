@@ -6,8 +6,8 @@
  * checkout (checkoutDir), never synthesized here.
  */
 
-import type { StackResponse, StackSegment } from "#shared/types";
 import { TUNING } from "#shared/tuning";
+import type { StackResponse, StackSegment } from "#shared/types";
 import { headInfo, run } from "./git.ts";
 
 /**
@@ -46,7 +46,11 @@ export async function computeStack(
   // Tips of every other local branch; several branches on one commit keep
   // the checked-out one (a stack segment you can open), else first by name.
   const tips = new Map<string, string[]>();
-  const refs = await run(dir, ["for-each-ref", "--format=%(objectname)%09%(refname:short)", "refs/heads"]);
+  const refs = await run(dir, [
+    "for-each-ref",
+    "--format=%(objectname)%09%(refname:short)",
+    "refs/heads",
+  ]);
   for (const line of refs.split("\n")) {
     const [sha, name] = line.split("\t");
     if (!sha || !name || name === branch) continue;

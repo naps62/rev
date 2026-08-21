@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The server tests shell out to git in throwaway repos.
+      - run: |
+          git config --global user.email ci@example.com
+          git config --global user.name ci
+
+      - run: pnpm run lint
+      - run: pnpm run knip
+      - run: pnpm run typecheck
+      - run: pnpm test

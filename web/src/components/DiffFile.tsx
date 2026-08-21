@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  type MouseEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type MouseEvent,
-  type ReactNode,
 } from "react";
+import { TUNING } from "#shared/tuning";
 import type {
   Comment,
   CommentAnchor,
@@ -15,27 +16,35 @@ import type {
   DiffLine,
   FileSummary,
 } from "#shared/types";
-import { TUNING } from "#shared/tuning";
 import * as api from "../api";
-import { DiffStat } from "./DiffStat";
+import type { DiffMode } from "../features";
 import { highlightLines, type TokenLine } from "../highlight";
 import { intralineSpans, type Span } from "../intraline";
 import type { FileClass } from "../semantic/classify.ts";
-import { importFolds, langOf, testFolds, type FoldRun } from "../semantic/fold.ts";
+import {
+  type FoldRun,
+  importFolds,
+  langOf,
+  testFolds,
+} from "../semantic/fold.ts";
 import { loadFoldState, saveFoldState } from "../semantic/foldStore.ts";
 import { isSymbol, tokenAt } from "../semantic/symbols.ts";
 import { useScheme } from "../theme";
 import { cx, lineKey, type Thread } from "../util";
-import { AuthorChip, CommentThread, threadShell } from "./CommentThread";
 import { Checkbox } from "./Checkbox";
+import { AuthorChip, CommentThread, threadShell } from "./CommentThread";
 import { Composer } from "./Composer";
-import { Reveal } from "./Reveal";
+import { DiffStat } from "./DiffStat";
 import { ImageDiff } from "./ImageDiff";
-import type { DiffMode } from "../features";
+import { Reveal } from "./Reveal";
+
 export type { DiffMode };
 
 // "M" stays neutral so amber only ever means attention (stale, open, current).
-const STATUS_GLYPH: Record<FileSummary["status"], { glyph: string; cls: string; label: string }> = {
+const STATUS_GLYPH: Record<
+  FileSummary["status"],
+  { glyph: string; cls: string; label: string }
+> = {
   modified: { glyph: "M", cls: "text-mute", label: "modified" },
   added: { glyph: "A", cls: "text-add", label: "added" },
   deleted: { glyph: "D", cls: "text-del", label: "deleted" },
@@ -74,8 +83,11 @@ interface DiffFileProps {
   /** Click on an identifier — open/retarget the symbol panel. */
   onSymbolClick?: (symbol: string) => void;
   /** May return a promise (GitHub destination): the composer stays open until it settles. */
-  onCreateComment: (anchor: CommentAnchor, body: string) => void | Promise<unknown>;
-  onReply: (root: Comment, body: string) => void | Promise<unknown>;
+  onCreateComment: (
+    anchor: CommentAnchor,
+    body: string,
+  ) => undefined | Promise<unknown>;
+  onReply: (root: Comment, body: string) => undefined | Promise<unknown>;
   onResolve: (root: Comment, resolved: boolean) => void;
   /** Composer destination toggle (rendered only when both are set — a PR exists). */
   commentDest?: "local" | "github";
@@ -112,7 +124,10 @@ export function DiffFile({
   const changed = file.additions + file.deletions;
   const [flash, setFlash] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [composerAt, setComposerAt] = useState<{ key: string; anchor: CommentAnchor } | null>(null);
+  const [composerAt, setComposerAt] = useState<{
+    key: string;
+    anchor: CommentAnchor;
+  } | null>(null);
   // True while the composer slides shut; it unmounts when Reveal exits.
   const [composerClosing, setComposerClosing] = useState(false);
   const prevStale = useRef(file.stale);
@@ -238,7 +253,9 @@ export function DiffFile({
   const [expandedFolds, setExpandedFolds] = useState<Set<string>>(
     () => new Set(persistedFolds?.folds ?? []),
   );
-  const [showBodies, setShowBodies] = useState(persistedFolds?.showBodies ?? false);
+  const [showBodies, setShowBodies] = useState(
+    persistedFolds?.showBodies ?? false,
+  );
   const [collapsedHunks, setCollapsedHunks] = useState<Set<number>>(
     () => new Set(persistedFolds?.hunks ?? []),
   );
@@ -253,7 +270,14 @@ export function DiffFile({
       showBodies,
       hunks: [...collapsedHunks],
     });
-  }, [dir, file.path, file.contentHash, expandedFolds, showBodies, collapsedHunks]);
+  }, [
+    dir,
+    file.path,
+    file.contentHash,
+    expandedFolds,
+    showBodies,
+    collapsedHunks,
+  ]);
   const toggleHunk = useCallback((hi: number) => {
     setCollapsedHunks((prev) => {
       const next = new Set(prev);
@@ -283,7 +307,9 @@ export function DiffFile({
     if (!lang || (!foldBodies && !foldImports)) return null;
     const m = new Map<number, FoldRun[]>();
     hunks.forEach((h, hi) => {
-      const runs = foldBodies ? testFolds(h.lines, lang) : importFolds(h.lines, lang);
+      const runs = foldBodies
+        ? testFolds(h.lines, lang)
+        : importFolds(h.lines, lang);
       if (runs.length > 0) m.set(hi, runs);
     });
     return m.size > 0 ? m : null;
@@ -318,7 +344,8 @@ export function DiffFile({
       const keys: string[] = [];
       if (lang && foldImports) {
         hunks.forEach((h, hi) => {
-          for (const r of importFolds(h.lines, lang)) keys.push(foldKey(hi, r, false));
+          for (const r of importFolds(h.lines, lang))
+            keys.push(foldKey(hi, r, false));
         });
       }
       setExpandedFolds(new Set(keys));
@@ -372,7 +399,8 @@ export function DiffFile({
   const { threadsByLine, detached } = useMemo(() => {
     const byLine = new Map<string, Thread[]>();
     const rest: Thread[] = [];
-    if (threads.length === 0 || activeFile == null) return { threadsByLine: byLine, detached: rest };
+    if (threads.length === 0 || activeFile == null)
+      return { threadsByLine: byLine, detached: rest };
     const lines = new Set<string>();
     for (const h of hunks) {
       for (const l of h.lines) {
@@ -403,15 +431,19 @@ export function DiffFile({
     ? "image"
     : file.binary
       ? "binary"
-    : file.status === "deleted"
-      ? `deleted · ${file.deletions} lines`
-      : file.seen
-        ? "seen"
-        : "collapsed";
+      : file.status === "deleted"
+        ? `deleted · ${file.deletions} lines`
+        : file.seen
+          ? "seen"
+          : "collapsed";
 
   const closeComposer = () => setComposerClosing(true);
 
-  const toggleComposer = (side: "old" | "new", line: DiffLine, hunk: DiffHunk) => {
+  const toggleComposer = (
+    side: "old" | "new",
+    line: DiffLine,
+    hunk: DiffHunk,
+  ) => {
     const num = (side === "old" ? line.oldLine : line.newLine) ?? 0;
     const key = lineKey(side, num);
     if (composerAt?.key === key) {
@@ -456,7 +488,8 @@ export function DiffFile({
             onDestination={onCommentDest}
             onSubmit={(body) => {
               const r = onCreateComment(composerAt.anchor, body);
-              if (r instanceof Promise) return r.then(() => setComposerAt(null));
+              if (r instanceof Promise)
+                return r.then(() => setComposerAt(null));
               setComposerAt(null);
             }}
             onCancel={closeComposer}
@@ -472,7 +505,9 @@ export function DiffFile({
           <CommentThread
             key={thread.root.id}
             thread={thread}
-            baseLabel={thread.root.base !== currentBase ? thread.root.base : undefined}
+            baseLabel={
+              thread.root.base !== currentBase ? thread.root.base : undefined
+            }
             onReply={(body) => onReply(thread.root, body)}
             onResolve={(resolved) => onResolve(thread.root, resolved)}
           />
@@ -498,8 +533,12 @@ export function DiffFile({
         ? hunk.lines.reduce(
             (n, l) =>
               n +
-              (l.oldLine != null ? (threadsByLine.get(lineKey("old", l.oldLine))?.length ?? 0) : 0) +
-              (l.newLine != null ? (threadsByLine.get(lineKey("new", l.newLine))?.length ?? 0) : 0),
+              (l.oldLine != null
+                ? (threadsByLine.get(lineKey("old", l.oldLine))?.length ?? 0)
+                : 0) +
+              (l.newLine != null
+                ? (threadsByLine.get(lineKey("new", l.newLine))?.length ?? 0)
+                : 0),
             0,
           )
         : 0;
@@ -530,7 +569,8 @@ export function DiffFile({
             l.newLine != null ? lineKey("new", l.newLine) : null,
           ];
           for (const k of keys) {
-            if (k != null && (threadsByLine.has(k) || composerAt?.key === k)) return true;
+            if (k != null && (threadsByLine.has(k) || composerAt?.key === k))
+              return true;
           }
         }
         return false;
@@ -551,7 +591,11 @@ export function DiffFile({
         const r = runs.find((x) => li >= x.start && li < x.end);
         return r && !runHasWidget(r) ? r : null;
       };
-      const railProps = (run: FoldRun, fk: string, first: boolean): FoldRail => ({
+      const railProps = (
+        run: FoldRun,
+        fk: string,
+        first: boolean,
+      ): FoldRail => ({
         hot: hotFold === fk,
         first,
         label: `Fold ${run.end - run.start} ${run.label}`,
@@ -566,7 +610,8 @@ export function DiffFile({
         let adds: Slot[] = [];
         const flush = () => {
           const n = Math.max(dels.length, adds.length);
-          for (let i = 0; i < n; i++) pairs.push({ l: dels[i] ?? null, r: adds[i] ?? null });
+          for (let i = 0; i < n; i++)
+            pairs.push({ l: dels[i] ?? null, r: adds[i] ?? null });
           dels = [];
           adds = [];
         };
@@ -583,7 +628,10 @@ export function DiffFile({
 
         // A pair folds only when every populated slot sits in the same run;
         // consecutive such pairs collapse into one strip.
-        const pairRun = (p: { l: Slot | null; r: Slot | null }): FoldRun | null => {
+        const pairRun = (p: {
+          l: Slot | null;
+          r: Slot | null;
+        }): FoldRun | null => {
           const slots = [p.l, p.r].filter(Boolean) as Slot[];
           if (slots.length === 0) return null;
           const rs = slots.map((s) => runAt(s.li));
@@ -607,12 +655,15 @@ export function DiffFile({
                   run={run}
                   split
                   stripRef={
-                    run.start > 0 ? (el) => hunkRef?.(`${hi}.${run.start}`, el) : undefined
+                    run.start > 0
+                      ? (el) => hunkRef?.(`${hi}.${run.start}`, el)
+                      : undefined
                   }
                   onExpand={() => toggleFold(fk)}
                 />,
               );
-              while (pi + 1 < pairs.length && pairRun(pairs[pi + 1]!) === run) pi++;
+              while (pi + 1 < pairs.length && pairRun(pairs[pi + 1]!) === run)
+                pi++;
               continue;
             }
             fold = railProps(run, fk, !railed.has(run));
@@ -626,13 +677,19 @@ export function DiffFile({
               tokens={tokens}
               spans={spans}
               fold={fold}
-              onCommentLeft={p.l ? () => toggleComposer("old", p.l!.line, hunk) : undefined}
-              onCommentRight={p.r ? () => toggleComposer("new", p.r!.line, hunk) : undefined}
+              onCommentLeft={
+                p.l ? () => toggleComposer("old", p.l!.line, hunk) : undefined
+              }
+              onCommentRight={
+                p.r ? () => toggleComposer("new", p.r!.line, hunk) : undefined
+              }
               onSym={symbolHandlers}
             />,
           );
-          const leftKey = p.l?.line.oldLine != null ? lineKey("old", p.l.line.oldLine) : null;
-          const rightKey = p.r?.line.newLine != null ? lineKey("new", p.r.line.newLine) : null;
+          const leftKey =
+            p.l?.line.oldLine != null ? lineKey("old", p.l.line.oldLine) : null;
+          const rightKey =
+            p.r?.line.newLine != null ? lineKey("new", p.r.line.newLine) : null;
           const leftNodes = [
             ...threadNodes(leftKey),
             leftKey != null ? composerNode(leftKey) : null,
@@ -644,7 +701,10 @@ export function DiffFile({
           if (leftNodes.length > 0 || rightNodes.length > 0) {
             rows.push(
               <tr key={`x${hi}.${pi}`}>
-                <td colSpan={2} className="border-r border-edge-soft p-0 align-top">
+                <td
+                  colSpan={2}
+                  className="border-r border-edge-soft p-0 align-top"
+                >
                   {leftNodes}
                 </td>
                 <td colSpan={2} className="p-0 align-top">
@@ -657,7 +717,11 @@ export function DiffFile({
       } else {
         for (let li = 0; li < hunk.lines.length; li++) {
           const run = runs.find((r) => r.start === li);
-          if (run && !runHasWidget(run) && !expandedFolds.has(foldKey(hi, run))) {
+          if (
+            run &&
+            !runHasWidget(run) &&
+            !expandedFolds.has(foldKey(hi, run))
+          ) {
             const fk = foldKey(hi, run);
             rows.push(
               <FoldStrip
@@ -665,7 +729,9 @@ export function DiffFile({
                 run={run}
                 // Strips right under the @@ header would double n/p stops.
                 stripRef={
-                  run.start > 0 ? (el) => hunkRef?.(`${hi}.${run.start}`, el) : undefined
+                  run.start > 0
+                    ? (el) => hunkRef?.(`${hi}.${run.start}`, el)
+                    : undefined
                 }
                 onExpand={() => toggleFold(fk)}
               />,
@@ -742,7 +808,9 @@ export function DiffFile({
         onClick={() => !editing && toggleOpen()}
         className={cx(
           "sticky top-12 z-10 flex min-w-0 items-center gap-2.5 rounded-t-[5px] bg-raise px-2 py-1.5 max-sm:rounded-none",
-          showBody ? "border-b border-edge-soft" : "rounded-b-[5px] max-sm:rounded-none",
+          showBody
+            ? "border-b border-edge-soft"
+            : "rounded-b-[5px] max-sm:rounded-none",
           !editing && "cursor-pointer",
         )}
       >
@@ -755,7 +823,9 @@ export function DiffFile({
           }}
           disabled={!canExpand}
           aria-expanded={canExpand ? expanded : undefined}
-          aria-label={expanded ? "Mark seen and collapse" : "Mark unseen and expand"}
+          aria-label={
+            expanded ? "Mark seen and collapse" : "Mark unseen and expand"
+          }
           className="grid size-5 shrink-0 place-items-center rounded-sm text-mute transition-colors duration-150 hover:bg-panel hover:text-fg disabled:cursor-default disabled:text-faint"
         >
           <svg
@@ -764,14 +834,26 @@ export function DiffFile({
             viewBox="0 0 16 16"
             fill="none"
             aria-hidden
-            className={cx("transition-transform duration-150", expanded && "rotate-90")}
+            className={cx(
+              "transition-transform duration-150",
+              expanded && "rotate-90",
+            )}
           >
-            <path d="M5.5 3 11 8l-5.5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M5.5 3 11 8l-5.5 5"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         </button>
         <span
           title={status.label}
-          className={cx("w-3 shrink-0 text-center font-mono text-[12px] font-bold", status.cls)}
+          className={cx(
+            "w-3 shrink-0 text-center font-mono text-[12px] font-bold",
+            status.cls,
+          )}
         >
           {status.glyph}
         </span>
@@ -785,7 +867,9 @@ export function DiffFile({
           {file.path}
         </span>
         {!open && (
-          <span className="shrink-0 font-mono text-[11px] text-faint">{collapsedNote}</span>
+          <span className="shrink-0 font-mono text-[11px] text-faint">
+            {collapsedNote}
+          </span>
         )}
         {!file.binary && file.additions + file.deletions > 0 && (
           <span className="shrink-0 font-mono text-[11.5px] tabular-nums">
@@ -810,7 +894,11 @@ export function DiffFile({
                 e.stopPropagation();
                 setShowBodies((b) => !b);
               }}
-              title={showBodies ? "Fold test bodies back to names" : "Show full test bodies"}
+              title={
+                showBodies
+                  ? "Fold test bodies back to names"
+                  : "Show full test bodies"
+              }
               data-hint
               className="rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-mute transition-colors duration-150 hover:bg-panel hover:text-fg"
             >
@@ -845,80 +933,100 @@ export function DiffFile({
       </header>
 
       <div className="file-body" data-open={open || undefined}>
-      <div className="min-h-0 overflow-hidden rounded-b-[5px] max-sm:rounded-none">
-      {editing ? (
-        <QuickEditPanel dir={dir} path={file.path} onClose={() => setEditing(false)} />
-      ) : showBody && image ? (
-        <ImageDiff
-          status={file.status}
-          oldSrc={
-            file.status === "added" || file.status === "untracked"
-              ? undefined
-              : api.rawFileUrl(dir, file.oldPath ?? file.path, mergeBase, mergeBase)
-          }
-          newSrc={
-            file.status === "deleted"
-              ? undefined
-              : api.rawFileUrl(dir, file.path, undefined, file.contentHash)
-          }
-        />
-      ) : !showBody ? null : activeFile == null ? (
-        activeError ? (
-          <div className="flex items-center gap-3 px-4 py-3">
-            <p className="font-mono text-[12px] text-del">{activeError.message}</p>
-            <button
-              type="button"
-              onClick={() => activeRetry()}
-              className="text-[12px] text-mute hover:text-fg"
-            >
-              Retry
-            </button>
-          </div>
-        ) : (
-          <HunkSkeleton changed={changed} />
-        )
-      ) : (
-        <table className={cx("w-full border-collapse", split && "table-fixed")}>
-          {split ? (
-            <colgroup>
-              <col className="w-11" />
-              <col />
-              <col className="w-11" />
-              <col />
-            </colgroup>
-          ) : (
-            <colgroup>
-              <col className="w-11" />
-              <col className="w-11" />
-              <col />
-            </colgroup>
-          )}
-          <tbody>{rows}</tbody>
-        </table>
-      )}
-
-      {(expanded || lingering) && !editing && activeFile != null && detached.length > 0 && (
-        <div className="border-t border-edge-soft">
-          <p className="px-3 pt-2 text-[11px] text-faint">
-            Couldn't re-anchor — the commented lines no longer exist:
-          </p>
-          {detached.map((thread) => (
-            <CommentThread
-              key={thread.root.id}
-              thread={thread}
-              baseLabel={thread.root.base !== currentBase ? thread.root.base : undefined}
-              anchorNote={
-                thread.root.anchor
-                  ? `${thread.root.anchor.side}:${thread.root.anchor.line}  ${thread.root.anchor.snippet}`
-                  : undefined
-              }
-              onReply={(body) => onReply(thread.root, body)}
-              onResolve={(resolved) => onResolve(thread.root, resolved)}
+        <div className="min-h-0 overflow-hidden rounded-b-[5px] max-sm:rounded-none">
+          {editing ? (
+            <QuickEditPanel
+              dir={dir}
+              path={file.path}
+              onClose={() => setEditing(false)}
             />
-          ))}
+          ) : showBody && image ? (
+            <ImageDiff
+              status={file.status}
+              oldSrc={
+                file.status === "added" || file.status === "untracked"
+                  ? undefined
+                  : api.rawFileUrl(
+                      dir,
+                      file.oldPath ?? file.path,
+                      mergeBase,
+                      mergeBase,
+                    )
+              }
+              newSrc={
+                file.status === "deleted"
+                  ? undefined
+                  : api.rawFileUrl(dir, file.path, undefined, file.contentHash)
+              }
+            />
+          ) : !showBody ? null : activeFile == null ? (
+            activeError ? (
+              <div className="flex items-center gap-3 px-4 py-3">
+                <p className="font-mono text-[12px] text-del">
+                  {activeError.message}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => activeRetry()}
+                  className="text-[12px] text-mute hover:text-fg"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <HunkSkeleton changed={changed} />
+            )
+          ) : (
+            <table
+              className={cx("w-full border-collapse", split && "table-fixed")}
+            >
+              {split ? (
+                <colgroup>
+                  <col className="w-11" />
+                  <col />
+                  <col className="w-11" />
+                  <col />
+                </colgroup>
+              ) : (
+                <colgroup>
+                  <col className="w-11" />
+                  <col className="w-11" />
+                  <col />
+                </colgroup>
+              )}
+              <tbody>{rows}</tbody>
+            </table>
+          )}
+
+          {(expanded || lingering) &&
+            !editing &&
+            activeFile != null &&
+            detached.length > 0 && (
+              <div className="border-t border-edge-soft">
+                <p className="px-3 pt-2 text-[11px] text-faint">
+                  Couldn't re-anchor — the commented lines no longer exist:
+                </p>
+                {detached.map((thread) => (
+                  <CommentThread
+                    key={thread.root.id}
+                    thread={thread}
+                    baseLabel={
+                      thread.root.base !== currentBase
+                        ? thread.root.base
+                        : undefined
+                    }
+                    anchorNote={
+                      thread.root.anchor
+                        ? `${thread.root.anchor.side}:${thread.root.anchor.line}  ${thread.root.anchor.snippet}`
+                        : undefined
+                    }
+                    onReply={(body) => onReply(thread.root, body)}
+                    onResolve={(resolved) => onResolve(thread.root, resolved)}
+                  />
+                ))}
+              </div>
+            )}
         </div>
-      )}
-      </div>
       </div>
     </section>
   );
@@ -956,7 +1064,10 @@ function HunkHeader({
   return (
     <tr ref={rowRef} data-hunk-header>
       {!split && (
-        <td colSpan={2} className="select-none border-r border-edge-soft bg-raise/50" />
+        <td
+          colSpan={2}
+          className="select-none border-r border-edge-soft bg-raise/50"
+        />
       )}
       <td colSpan={split ? 4 : 1} className="bg-raise/50 p-0">
         <button
@@ -973,7 +1084,10 @@ function HunkHeader({
             viewBox="0 0 16 16"
             fill="none"
             aria-hidden
-            className={cx("shrink-0 transition-transform duration-150", !collapsed && "rotate-90")}
+            className={cx(
+              "shrink-0 transition-transform duration-150",
+              !collapsed && "rotate-90",
+            )}
           >
             <path
               d="M5.5 3 11 8l-5.5 5"
@@ -984,8 +1098,11 @@ function HunkHeader({
             />
           </svg>
           <span className="min-w-0 truncate">
-            @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
-            {hunk.header ? <span className="text-mute"> {hunk.header}</span> : null}
+            @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines}{" "}
+            @@
+            {hunk.header ? (
+              <span className="text-mute"> {hunk.header}</span>
+            ) : null}
           </span>
           {collapsed && (
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -1019,7 +1136,10 @@ function FoldStrip({
   return (
     <tr ref={stripRef}>
       {!split && (
-        <td colSpan={2} className="select-none border-r border-edge-soft bg-raise/30" />
+        <td
+          colSpan={2}
+          className="select-none border-r border-edge-soft bg-raise/30"
+        />
       )}
       <td colSpan={split ? 4 : 1} className="p-0">
         <button
@@ -1145,7 +1265,10 @@ function renderContent(
         ))
       : line.text || " ";
   }
-  const hiCls = cx("rounded-[2px]", line.kind === "add" ? "bg-add-hi" : "bg-del-hi");
+  const hiCls = cx(
+    "rounded-[2px]",
+    line.kind === "add" ? "bg-add-hi" : "bg-del-hi",
+  );
   if (!tokens) {
     return (
       <>
@@ -1282,11 +1405,25 @@ function SplitRow({
         {fold && <FoldRailSeg fold={fold} />}
         {left?.line.oldLine ?? ""}
       </td>
-      <SplitCell slot={left} isLeft tokens={tokens} spans={spans} onComment={onCommentLeft} onSym={onSym} />
+      <SplitCell
+        slot={left}
+        isLeft
+        tokens={tokens}
+        spans={spans}
+        onComment={onCommentLeft}
+        onSym={onSym}
+      />
       <td className="select-none border-r border-edge-soft px-1.5 text-right align-top font-mono text-[11px] leading-[1.7] text-faint tabular-nums max-sm:px-1">
         {right?.line.newLine ?? ""}
       </td>
-      <SplitCell slot={right} isLeft={false} tokens={tokens} spans={spans} onComment={onCommentRight} onSym={onSym} />
+      <SplitCell
+        slot={right}
+        isLeft={false}
+        tokens={tokens}
+        spans={spans}
+        onComment={onCommentRight}
+        onSym={onSym}
+      />
     </tr>
   );
 }
@@ -1308,7 +1445,11 @@ function SplitCell({
 }) {
   if (!slot) {
     // Padding cell keeping the panes aligned when one side has no counterpart.
-    return <td className={cx("bg-raise/30", isLeft && "border-r border-edge-soft")} />;
+    return (
+      <td
+        className={cx("bg-raise/30", isLeft && "border-r border-edge-soft")}
+      />
+    );
   }
   const { line, idx } = slot;
   const toks = tokens?.[idx] ?? null;
@@ -1346,7 +1487,10 @@ function SplitCell({
  * Offset accumulation skips the absolute-positioned overlays inside the cell
  * (comment button, +/− marker) so it lines up with the DiffLine text.
  */
-function tokenFromPoint(e: MouseEvent<HTMLElement>, lineText: string): string | null {
+function tokenFromPoint(
+  e: MouseEvent<HTMLElement>,
+  lineText: string,
+): string | null {
   interface CaretPos {
     offsetNode: Node;
     offset: number;
@@ -1387,7 +1531,8 @@ function tokenFromPoint(e: MouseEvent<HTMLElement>, lineText: string): string | 
     }
     if (n.nodeType === Node.ELEMENT_NODE) {
       const el = n as HTMLElement;
-      if (el.tagName === "BUTTON" || el.hasAttribute("aria-hidden")) return false;
+      if (el.tagName === "BUTTON" || el.hasAttribute("aria-hidden"))
+        return false;
       for (const c of Array.from(n.childNodes)) if (walk(c)) return true;
     }
     return false;
@@ -1447,7 +1592,12 @@ function QuickEditPanel({
     if (state.phase !== "ready" || state.saving) return;
     setState({ ...state, saving: true, error: null });
     try {
-      const res = await api.putFile({ dir, path, content: state.text, baseHash: state.baseHash });
+      const res = await api.putFile({
+        dir,
+        path,
+        content: state.text,
+        baseHash: state.baseHash,
+      });
       setState({
         phase: "ready",
         baseHash: res.contentHash,
@@ -1470,16 +1620,28 @@ function QuickEditPanel({
   };
 
   if (state.phase === "loading") {
-    return <p className="px-4 py-3 font-mono text-[12px] text-faint">loading {path}…</p>;
+    return (
+      <p className="px-4 py-3 font-mono text-[12px] text-faint">
+        loading {path}…
+      </p>
+    );
   }
   if (state.phase === "load-error") {
     return (
       <div className="flex items-center gap-3 px-4 py-3">
         <p className="font-mono text-[12px] text-del">{state.message}</p>
-        <button type="button" onClick={load} className="text-[12px] text-mute hover:text-fg">
+        <button
+          type="button"
+          onClick={load}
+          className="text-[12px] text-mute hover:text-fg"
+        >
           Retry
         </button>
-        <button type="button" onClick={onClose} className="text-[12px] text-mute hover:text-fg">
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-[12px] text-mute hover:text-fg"
+        >
           Close
         </button>
       </div>
@@ -1491,7 +1653,8 @@ function QuickEditPanel({
       {state.conflict && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-accent/40 bg-accent-soft px-3 py-2">
           <p className="text-[12.5px] font-medium text-accent">
-            File changed underneath you — saving would clobber the newer version.
+            File changed underneath you — saving would clobber the newer
+            version.
           </p>
           <button
             type="button"
@@ -1517,7 +1680,9 @@ function QuickEditPanel({
       <textarea
         value={state.text}
         spellCheck={false}
-        onChange={(e) => setState({ ...state, text: e.target.value, dirty: true })}
+        onChange={(e) =>
+          setState({ ...state, text: e.target.value, dirty: true })
+        }
         onKeyDown={(e) => {
           if (e.key === "Tab") {
             e.preventDefault();

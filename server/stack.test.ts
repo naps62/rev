@@ -17,7 +17,11 @@ test("plain branch yields a single segment", async () => {
   const stack = await computeStack(dir, "main", new Map());
   assert.equal(stack.segments.length, 1);
   assert.deepEqual(
-    stack.segments.map((s) => ({ branch: s.branch, commits: s.commits, parent: s.parent })),
+    stack.segments.map((s) => ({
+      branch: s.branch,
+      commits: s.commits,
+      parent: s.parent,
+    })),
     [{ branch: "feat", commits: 2, parent: "main" }],
   );
 });
@@ -46,7 +50,12 @@ test("chained branches split into ordered segments", async () => {
     [
       { branch: "feat-c", commits: 3, parent: "feat-b", checkoutDir: null },
       { branch: "feat-b", commits: 1, parent: "feat-a", checkoutDir: null },
-      { branch: "feat-a", commits: 2, parent: "main", checkoutDir: "/elsewhere/feat-a" },
+      {
+        branch: "feat-a",
+        commits: 2,
+        parent: "main",
+        checkoutDir: "/elsewhere/feat-a",
+      },
     ],
   );
 });

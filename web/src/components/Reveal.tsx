@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 /** 0fr↔1fr grid slide, same curve as .file-body / .side-panel. Mounts closed
  * and opens a frame later; when `open` flips false the content slides shut and

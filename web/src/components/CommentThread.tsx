@@ -6,13 +6,24 @@ import { Composer } from "./Composer";
 
 export function GithubMark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden className={className}>
+    <svg
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden
+      className={className}
+    >
       <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
     </svg>
   );
 }
 
-export function AuthorChip({ author, ghLogin }: { author: Comment["author"]; ghLogin?: string }) {
+export function AuthorChip({
+  author,
+  ghLogin,
+}: {
+  author: Comment["author"];
+  ghLogin?: string;
+}) {
   if (ghLogin != null) {
     return (
       <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-fg">
@@ -60,7 +71,10 @@ function StatusChip({ comment }: { comment: Comment }) {
       pending
     </span>
   ) : (
-    <span title="Sent — waiting for the agent to pick it up" className="text-[10.5px] text-faint">
+    <span
+      title="Sent — waiting for the agent to pick it up"
+      className="text-[10.5px] text-faint"
+    >
       sent
     </span>
   );
@@ -94,7 +108,10 @@ function CommentBlock({
           onHeaderClick && "cursor-pointer",
         )}
       >
-        <AuthorChip author={comment.author} ghLogin={gh ? comment.ghLogin ?? "github" : undefined} />
+        <AuthorChip
+          author={comment.author}
+          ghLogin={gh ? (comment.ghLogin ?? "github") : undefined}
+        />
         {gh && comment.ghUrl ? (
           <a
             href={comment.ghUrl}
@@ -134,7 +151,7 @@ interface CommentThreadProps {
   /** Set when the thread was written against a different base than the review. */
   baseLabel?: string;
   /** A returned promise keeps the reply composer open (and its draft) until it settles. */
-  onReply: (body: string) => void | Promise<unknown>;
+  onReply: (body: string) => undefined | Promise<unknown>;
   onResolve: (resolved: boolean) => void;
   busy?: boolean;
 }
@@ -186,9 +203,12 @@ export function CommentThread({
           </svg>
           <span className="font-medium">Resolved</span>
           {gh && <GithubMark className="size-[11px] shrink-0 text-reviewer" />}
-          <span className="min-w-0 flex-1 truncate text-faint">{root.body}</span>
+          <span className="min-w-0 flex-1 truncate text-faint">
+            {root.body}
+          </span>
           <span className="shrink-0 text-faint">
-            {replies.length > 0 && `${replies.length} repl${replies.length === 1 ? "y" : "ies"} · `}
+            {replies.length > 0 &&
+              `${replies.length} repl${replies.length === 1 ? "y" : "ies"} · `}
             expand
           </span>
         </button>
@@ -225,7 +245,10 @@ export function CommentThread({
           </button>
         )}
         {gh && (
-          <span className="ml-auto inline-flex items-center gap-1 text-[10.5px] text-faint" title="Synced from the GitHub PR — replies post to GitHub">
+          <span
+            className="ml-auto inline-flex items-center gap-1 text-[10.5px] text-faint"
+            title="Synced from the GitHub PR — replies post to GitHub"
+          >
             <GithubMark className="size-[10px] shrink-0" />
             GitHub
           </span>

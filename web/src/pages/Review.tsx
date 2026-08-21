@@ -1,10 +1,14 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link, useLocation, useSearch } from "wouter";
+import { TUNING } from "#shared/tuning";
 import type {
   Comment,
   CommentAnchor,
@@ -18,29 +22,19 @@ import type {
 } from "#shared/types";
 import * as api from "../api";
 import { AppHeader, HEADER_PX } from "../components/AppHeader";
+import { Checkbox } from "../components/Checkbox";
 import { CommentsPanel } from "../components/CommentsPanel";
 import { CommentThread, GithubMark } from "../components/CommentThread";
 import { Composer } from "../components/Composer";
-import { PendingSubmit } from "../components/PendingSubmit";
-import { DiffStat } from "../components/DiffStat";
 import { DiffFile, type DiffMode } from "../components/DiffFile";
-import { FileNav } from "../components/FileNav";
-import { ReviewProgress } from "../components/ReviewProgress";
-import { Checkbox } from "../components/Checkbox";
+import { DiffStat } from "../components/DiffStat";
 import { EntityPanel } from "../components/EntityPanel";
+import { FileNav } from "../components/FileNav";
+import { PendingSubmit } from "../components/PendingSubmit";
+import { ReviewProgress } from "../components/ReviewProgress";
 import { StackStrip } from "../components/StackStrip";
 import { SymbolPanel } from "../components/SymbolPanel";
-import {
-  buildClassSections,
-  CLASS_LABEL,
-  classifyFile,
-  type ClassSection,
-  type FileClass,
-} from "../semantic/classify.ts";
-import { entityAnchor } from "../semantic/entities.ts";
-import { findOccurrences, type Occurrence } from "../semantic/symbols.ts";
 import { attachCrosshair } from "../crosshair";
-import { startHints } from "../hints";
 import {
   type FeatureFlags,
   loadDiffMode,
@@ -48,9 +42,25 @@ import {
   saveDiffMode,
   saveFeatures,
 } from "../features";
-import { TUNING } from "#shared/tuning";
+import { startHints } from "../hints";
+import {
+  buildClassSections,
+  CLASS_LABEL,
+  type ClassSection,
+  classifyFile,
+  type FileClass,
+} from "../semantic/classify.ts";
+import { entityAnchor } from "../semantic/entities.ts";
+import { findOccurrences, type Occurrence } from "../semantic/symbols.ts";
 import { buildFileTree, flattenTree } from "../tree";
-import { basename, buildThreads, cx, githubToComments, shortSha, type Thread } from "../util";
+import {
+  basename,
+  buildThreads,
+  cx,
+  githubToComments,
+  shortSha,
+  type Thread,
+} from "../util";
 import { useRevSocket } from "../ws";
 
 const DEST_KEY = "rev.commentDest";
@@ -113,7 +123,8 @@ export function Review() {
       qc.invalidateQueries({ queryKey: ["semantic", dir] });
       qc.invalidateQueries({ queryKey: ["stack", dir] });
       if (msg.paths.length > 0) {
-        for (const p of msg.paths) qc.invalidateQueries({ queryKey: ["diff-file", dir, base, p] });
+        for (const p of msg.paths)
+          qc.invalidateQueries({ queryKey: ["diff-file", dir, base, p] });
       } else {
         qc.invalidateQueries({ queryKey: ["diff-file", dir] });
       }
@@ -125,19 +136,24 @@ export function Review() {
   const seenMut = useMutation({
     mutationFn: api.putSeen,
     onMutate: (req) => {
-      qc.setQueryData<DiffSummaryResponse>(["diff-summary", dir, base], (old) =>
-        old
-          ? {
-              ...old,
-              files: old.files.map((f) =>
-                f.path === req.path ? { ...f, seen: req.seen, stale: false } : f,
-              ),
-            }
-          : old,
+      qc.setQueryData<DiffSummaryResponse>(
+        ["diff-summary", dir, base],
+        (old) =>
+          old
+            ? {
+                ...old,
+                files: old.files.map((f) =>
+                  f.path === req.path
+                    ? { ...f, seen: req.seen, stale: false }
+                    : f,
+                ),
+              }
+            : old,
       );
       refocusUnderPointer();
     },
-    onError: () => qc.invalidateQueries({ queryKey: ["diff-summary", dir, base] }),
+    onError: () =>
+      qc.invalidateQueries({ queryKey: ["diff-summary", dir, base] }),
   });
   const createMut = useMutation({
     mutationFn: api.postComment,
@@ -213,7 +229,13 @@ export function Review() {
   useEffect(() => fetchMut.reset(), [dir, base]);
 
   const toggleSeen = (file: FileSummary, seen: boolean) =>
-    seenMut.mutate({ dir, base, path: file.path, contentHash: file.contentHash, seen });
+    seenMut.mutate({
+      dir,
+      base,
+      path: file.path,
+      contentHash: file.contentHash,
+      seen,
+    });
   // New-comment destination; only effective while an open PR exists.
   const [destState, setDestState] = useState<"local" | "github">(() =>
     localStorage.getItem(DEST_KEY) === "github" ? "github" : "local",
@@ -226,21 +248,43 @@ export function Review() {
   // User comments start pending; PendingSubmit ships the batch to the agent.
   // GitHub-destined ones post immediately (returned promise keeps the draft
   // in the composer on failure — e.g. 422 for a line outside the PR diff).
-  const createComment = (anchor: CommentAnchor | null, body: string): void | Promise<unknown> => {
+  const createComment = (
+    anchor: CommentAnchor | null,
+    body: string,
+  ): undefined | Promise<unknown> => {
     if (dest === "github") {
-      return ghCommentMut.mutateAsync({ dir, anchor: anchor ?? undefined, body });
+      return ghCommentMut.mutateAsync({
+        dir,
+        anchor: anchor ?? undefined,
+        body,
+      });
     }
-    createMut.mutate({ dir, base, anchor: anchor ?? undefined, author: "user", body, pending: true });
+    createMut.mutate({
+      dir,
+      base,
+      anchor: anchor ?? undefined,
+      author: "user",
+      body,
+      pending: true,
+    });
   };
-  const reply = (root: Comment, body: string): void | Promise<unknown> => {
+  const reply = (root: Comment, body: string): undefined | Promise<unknown> => {
     if (root.source === "github") {
       return ghReplyMut.mutateAsync({ dir, rootId: root.ghRootId, body });
     }
-    createMut.mutate({ dir, base, parentId: root.id, author: "user", body, pending: true });
+    createMut.mutate({
+      dir,
+      base,
+      parentId: root.id,
+      author: "user",
+      body,
+      pending: true,
+    });
   };
   const resolve = (root: Comment, resolved: boolean) => {
     if (root.source === "github") {
-      if (root.ghThreadId != null) ghResolveMut.mutate({ dir, threadId: root.ghThreadId, resolved });
+      if (root.ghThreadId != null)
+        ghResolveMut.mutate({ dir, threadId: root.ghThreadId, resolved });
       return;
     }
     patchMut.mutate({ id: root.id, patch: { resolved } });
@@ -251,7 +295,9 @@ export function Review() {
     setModeState(m);
     saveDiffMode(m);
   };
-  const [features, setFeaturesState] = useState<FeatureFlags>(() => loadFeatures(params));
+  const [features, setFeaturesState] = useState<FeatureFlags>(() =>
+    loadFeatures(params),
+  );
   const setFeatures = (
     f: FeatureFlags | ((prev: FeatureFlags) => FeatureFlags),
   ) => {
@@ -281,7 +327,8 @@ export function Review() {
   // and j/k all agree on it. With grouping on the order is class sections
   // first, tree order within each.
   const sections = useMemo(
-    () => (features.grouping ? buildClassSections(diffQ.data?.files ?? []) : null),
+    () =>
+      features.grouping ? buildClassSections(diffQ.data?.files ?? []) : null,
     [features.grouping, diffQ.data],
   );
   const tree = useMemo(
@@ -301,14 +348,20 @@ export function Review() {
   >({});
   const commandSection = (cls: FileClass, expand: boolean) => {
     cmdSeq.current += 1;
-    setSectionCmds((prev) => ({ ...prev, [cls]: { seq: cmdSeq.current, expand } }));
+    setSectionCmds((prev) => ({
+      ...prev,
+      [cls]: { seq: cmdSeq.current, expand },
+    }));
   };
   const [fileCmds, setFileCmds] = useState<
     Record<string, { seq: number; expand: boolean }>
   >({});
   const commandFile = (path: string, expand: boolean) => {
     cmdSeq.current += 1;
-    setFileCmds((prev) => ({ ...prev, [path]: { seq: cmdSeq.current, expand } }));
+    setFileCmds((prev) => ({
+      ...prev,
+      [path]: { seq: cmdSeq.current, expand },
+    }));
   };
   // Keyboard toggles routed to one file: e (open/close) and E (all folds).
   const [keyCmds, setKeyCmds] = useState<
@@ -354,7 +407,8 @@ export function Review() {
     for (const [, data] of entries) {
       if (!data) continue;
       const cur = byPath.get(data.file.path);
-      if (!cur || data.computedAt > cur.computedAt) byPath.set(data.file.path, data);
+      if (!cur || data.computedAt > cur.computedAt)
+        byPath.set(data.file.path, data);
     }
     const loaded = files
       .filter((f) => byPath.has(f.path))
@@ -456,7 +510,8 @@ export function Review() {
     const onScroll = () => {
       // A scroll we didn't drive (wheel, scrollbar, smooth d/u tail) means
       // the n/p cursor no longer matches what the eyes track.
-      if (performance.now() - autoScrollAt.current > 150) hunkCursor.current = null;
+      if (performance.now() - autoScrollAt.current > 150)
+        hunkCursor.current = null;
       if (glidingRef.current) return;
       // Same threshold as the jump landings: the file at eye level is
       // current, so a just-landed file can't spy-flip to its predecessor.
@@ -464,7 +519,8 @@ export function Review() {
       for (const f of files) {
         const el = sectionEls.current.get(f.path);
         if (!el) continue;
-        if (el.getBoundingClientRect().top <= eyeAnchorY() + 8) current = f.path;
+        if (el.getBoundingClientRect().top <= eyeAnchorY() + 8)
+          current = f.path;
         else break;
       }
       setCurrentPath(current);
@@ -480,7 +536,10 @@ export function Review() {
 
   const targetTop = (el: HTMLElement, offset: number) => {
     const top = el.getBoundingClientRect().top + window.scrollY - offset;
-    const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    const max = Math.max(
+      0,
+      document.documentElement.scrollHeight - window.innerHeight,
+    );
     return Math.min(Math.max(top, 0), max);
   };
 
@@ -511,8 +570,14 @@ export function Review() {
       return;
     }
     glidingRef.current = true;
-    window.addEventListener("wheel", cancelGlide, { once: true, passive: true });
-    window.addEventListener("touchstart", cancelGlide, { once: true, passive: true });
+    window.addEventListener("wheel", cancelGlide, {
+      once: true,
+      passive: true,
+    });
+    window.addEventListener("touchstart", cancelGlide, {
+      once: true,
+      passive: true,
+    });
     const TAU_MS = 55; // settles in ~4·TAU regardless of frame rate
     let last = performance.now();
     const step = (now: number) => {
@@ -618,7 +683,14 @@ export function Review() {
 
   const jumpToEntityIn = (path: string, e: EntityChange) => {
     const a = entityAnchor(e);
-    if (a) jumpToOccurrence({ path, side: a.side, line: a.line, kind: "context", text: "" });
+    if (a)
+      jumpToOccurrence({
+        path,
+        side: a.side,
+        line: a.line,
+        kind: "context",
+        text: "",
+      });
   };
 
   // Hovering a diff claims focus; ignored mid-glide so a rail click isn't
@@ -646,12 +718,14 @@ export function Review() {
     if (!main) return;
     const measure = () => {
       const el = currentPath ? sectionEls.current.get(currentPath) : undefined;
-      if (!el || !el.isConnected) {
+      if (!el?.isConnected) {
         setPanelTop(0);
         return;
       }
       const aside = panelRef.current;
-      const max = aside ? Math.max(0, main.offsetHeight - aside.offsetHeight) : 0;
+      const max = aside
+        ? Math.max(0, main.offsetHeight - aside.offsetHeight)
+        : 0;
       setPanelTop(Math.max(0, Math.min(el.offsetTop, max)));
     };
     measure();
@@ -701,7 +775,8 @@ export function Review() {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable)
+        return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key !== "g") lastG.current = 0;
       const fs = filesRef.current;
@@ -715,12 +790,17 @@ export function Review() {
         hunkCursor.current = null;
         const idx = fs.findIndex((f) => f.path === currentRef.current);
         const next =
-          fs[e.key === "J" ? Math.min(idx + 1, fs.length - 1) : Math.max(idx - 1, 0)];
+          fs[
+            e.key === "J"
+              ? Math.min(idx + 1, fs.length - 1)
+              : Math.max(idx - 1, 0)
+          ];
         const el = next && sectionEls.current.get(next.path);
         if (next && el) {
           autoScrollAt.current = performance.now();
           window.scrollTo({
-            top: el.getBoundingClientRect().top + window.scrollY - fileOffset(el),
+            top:
+              el.getBoundingClientRect().top + window.scrollY - fileOffset(el),
           });
           setCurrentPath(next.path);
         }
@@ -728,13 +808,18 @@ export function Review() {
         if (fs.length === 0) return;
         e.preventDefault();
         // -1 (no current file) behaves like being on the first file
-        const idx = Math.max(0, fs.findIndex((f) => f.path === currentRef.current));
+        const idx = Math.max(
+          0,
+          fs.findIndex((f) => f.path === currentRef.current),
+        );
         const wants = (f: (typeof fs)[number]) => !f.seen || f.stale;
         const order: typeof fs = [];
         if (e.key === "j") {
-          for (let i = 1; i <= fs.length; i++) order.push(fs[(idx + i + fs.length) % fs.length]!);
+          for (let i = 1; i <= fs.length; i++)
+            order.push(fs[(idx + i + fs.length) % fs.length]!);
         } else {
-          for (let i = 1; i <= fs.length; i++) order.push(fs[(idx - i + 2 * fs.length) % fs.length]!);
+          for (let i = 1; i <= fs.length; i++)
+            order.push(fs[(idx - i + 2 * fs.length) % fs.length]!);
         }
         const next = order.find(wants);
         if (next) jumpToRef.current(next.path);
@@ -766,7 +851,8 @@ export function Review() {
       } else if (e.key === "d" || e.key === "u") {
         e.preventDefault();
         hunkCursor.current = null;
-        const dy = ((window.innerHeight - HEADER_PX) / 2) * (e.key === "d" ? 1 : -1);
+        const dy =
+          ((window.innerHeight - HEADER_PX) / 2) * (e.key === "d" ? 1 : -1);
         window.scrollBy({ top: dy, behavior: smooth() });
       } else if (e.key === "g") {
         const now = performance.now();
@@ -793,14 +879,18 @@ export function Review() {
         // hunk under it (no glide — content must not move under the mouse);
         // otherwise the hunk at eye level, re-anchored so z-z round-trips.
         const p = pointer.current;
-        const hit = p ? (document.elementFromPoint(p.x, p.y) as HTMLElement | null) : null;
+        const hit = p
+          ? (document.elementFromPoint(p.x, p.y) as HTMLElement | null)
+          : null;
         const overDiff = hit?.closest("table")
           ? hit.closest<HTMLElement>("section[data-path]")
           : null;
         const anchor = overDiff && p ? p.y : eyeAnchorY();
         const tol = overDiff ? 0 : TUNING.HUNK_NAV_TOLERANCE_PX;
         const headers = [
-          ...(overDiff ?? document).querySelectorAll<HTMLElement>("tr[data-hunk-header]"),
+          ...(overDiff ?? document).querySelectorAll<HTMLElement>(
+            "tr[data-hunk-header]",
+          ),
         ]
           .map((el) => ({ el, top: el.getBoundingClientRect().top }))
           .sort((x, y) => y.top - x.top);
@@ -838,8 +928,11 @@ export function Review() {
         if (!row) return;
         // Off the code cells (gutter, row edge) the new side is the default.
         const cells = row.querySelectorAll<HTMLElement>("td[data-code]");
-        const cell = hit?.closest<HTMLElement>("td[data-code]") ?? cells[cells.length - 1];
-        const btn = cell?.querySelector<HTMLButtonElement>("button[data-comment-btn]");
+        const cell =
+          hit?.closest<HTMLElement>("td[data-code]") ?? cells[cells.length - 1];
+        const btn = cell?.querySelector<HTMLButtonElement>(
+          "button[data-comment-btn]",
+        );
         if (!btn) return;
         e.preventDefault();
         btn.click();
@@ -870,13 +963,13 @@ export function Review() {
         }}
       >
         <div className="flex min-w-0 flex-1 basis-0 items-center gap-3 md:min-w-fit">
-        <span className="text-faint max-sm:hidden">/</span>
+          <span className="text-faint max-sm:hidden">/</span>
           <span
             className="max-w-56 shrink-0 truncate text-[13px] font-medium text-fg max-sm:max-w-24"
             title={dir}
           >
             {diffQ.data
-              ? diffQ.data.branch ?? `detached @ ${shortSha(diffQ.data.head)}`
+              ? (diffQ.data.branch ?? `detached @ ${shortSha(diffQ.data.head)}`)
               : dir
                 ? basename(dir)
                 : "review"}
@@ -887,7 +980,8 @@ export function Review() {
             onSubmit={(e) => {
               e.preventDefault();
               const v = baseInput.trim();
-              if (v && v !== base) navigate(api.href("/review", { dir, base: v }));
+              if (v && v !== base)
+                navigate(api.href("/review", { dir, base: v }));
             }}
           >
             <input
@@ -921,8 +1015,7 @@ export function Review() {
               title={`${ghPr.title} — open on GitHub`}
               className="hidden shrink-0 items-center gap-1.5 rounded-sm border border-edge px-1.5 py-px font-mono text-[11px] text-mute transition-colors duration-150 hover:border-reviewer/50 hover:text-fg sm:inline-flex"
             >
-              <GithubMark className="size-[11px] shrink-0" />
-              #{ghPr.number}
+              <GithubMark className="size-[11px] shrink-0" />#{ghPr.number}
               {ghPr.isDraft && <span className="text-faint">draft</span>}
             </a>
           )}
@@ -975,7 +1068,11 @@ export function Review() {
           )}
         </div>
         {files.length > 0 && (
-          <ReviewProgress files={files} currentPath={currentPath} onJump={jumpTo} />
+          <ReviewProgress
+            files={files}
+            currentPath={currentPath}
+            onJump={jumpTo}
+          />
         )}
         <div className="flex min-w-0 flex-1 basis-0 items-center justify-end">
           {files.length > 0 && allThreads.length > 0 && (
@@ -1009,7 +1106,9 @@ export function Review() {
         </div>
       </AppHeader>
 
-      {dir && <PendingSubmit dir={dir} comments={commentsQ.data?.comments ?? []} />}
+      {dir && (
+        <PendingSubmit dir={dir} comments={commentsQ.data?.comments ?? []} />
+      )}
 
       {!dir || !base ? (
         <CenterPanel>
@@ -1033,7 +1132,8 @@ export function Review() {
           </p>
           <p className="mt-2 text-[12px] text-faint">
             Check that the directory exists and that{" "}
-            <span className="font-mono text-mute">{base}</span> resolves to a ref in it.
+            <span className="font-mono text-mute">{base}</span> resolves to a
+            ref in it.
           </p>
           <div className="mt-3 flex justify-center gap-3">
             <button
@@ -1064,7 +1164,9 @@ export function Review() {
         </div>
       ) : files.length === 0 ? (
         <CenterPanel>
-          <p className="font-mono text-[13px] text-add">working tree clean vs {base}</p>
+          <p className="font-mono text-[13px] text-add">
+            working tree clean vs {base}
+          </p>
           <p className="mt-1 text-[12px] text-faint">
             Nothing to review — commits and working tree match the merge-base.
           </p>
@@ -1073,7 +1175,10 @@ export function Review() {
         <div className="flex w-full items-start gap-2 py-2">
           <aside
             className="sticky hidden w-72 shrink-0 overflow-y-auto rounded-md border border-edge bg-panel md:block"
-            style={{ top: HEADER_PX + 8, maxHeight: `calc(100vh - ${HEADER_PX + 16}px)` }}
+            style={{
+              top: HEADER_PX + 8,
+              maxHeight: `calc(100vh - ${HEADER_PX + 16}px)`,
+            }}
           >
             <FileNav
               tree={tree}
@@ -1086,12 +1191,17 @@ export function Review() {
             />
           </aside>
 
-          <main ref={mainRef} className="relative flex min-w-0 flex-1 flex-col gap-3">
+          <main
+            ref={mainRef}
+            className="relative flex min-w-0 flex-1 flex-col gap-3"
+          >
             {stackQ.data != null && stackQ.data.segments.length >= 2 && (
               <StackStrip
                 stack={stackQ.data}
                 currentBase={base}
-                onBase={(ref) => navigate(api.href("/review", { dir, base: ref }))}
+                onBase={(ref) =>
+                  navigate(api.href("/review", { dir, base: ref }))
+                }
               />
             )}
             {(sections ?? [null]).map((s) => (
@@ -1107,53 +1217,55 @@ export function Review() {
                 )}
                 {(s?.files ?? files).map((f) => {
                   const cls = features.classDefaults
-                    ? s?.cls ?? classifyFile(f.path)
+                    ? (s?.cls ?? classifyFile(f.path))
                     : undefined;
                   return (
-              <DiffFile
-                key={f.path}
-                dir={dir}
-                currentBase={base}
-                mergeBase={diffQ.data.mergeBase}
-                file={f}
-                mode={mode}
-                threads={threadsByFile.get(f.path) ?? []}
-                isCurrent={currentPath === f.path}
-                foldImports={features.importFolds}
-                fileClass={cls}
-                defaultCollapsed={cls === "generated"}
-                collapseCmd={(() => {
-                  const a = fileCmds[f.path];
-                  const b = s ? sectionCmds[s.cls] : undefined;
-                  return a && b ? (a.seq > b.seq ? a : b) : a ?? b;
-                })()}
-                keyCmd={keyCmds[f.path]}
-                onSymbolClick={
-                  features.symbols
-                    ? (s) => {
-                        setSymbol(s);
-                        // Symbol click reclaims the side-panel slot from comments.
-                        setCommentsOpen(false);
+                    <DiffFile
+                      key={f.path}
+                      dir={dir}
+                      currentBase={base}
+                      mergeBase={diffQ.data.mergeBase}
+                      file={f}
+                      mode={mode}
+                      threads={threadsByFile.get(f.path) ?? []}
+                      isCurrent={currentPath === f.path}
+                      foldImports={features.importFolds}
+                      fileClass={cls}
+                      defaultCollapsed={cls === "generated"}
+                      collapseCmd={(() => {
+                        const a = fileCmds[f.path];
+                        const b = s ? sectionCmds[s.cls] : undefined;
+                        return a && b ? (a.seq > b.seq ? a : b) : (a ?? b);
+                      })()}
+                      keyCmd={keyCmds[f.path]}
+                      onSymbolClick={
+                        features.symbols
+                          ? (s) => {
+                              setSymbol(s);
+                              // Symbol click reclaims the side-panel slot from comments.
+                              setCommentsOpen(false);
+                            }
+                          : undefined
                       }
-                    : undefined
-                }
-                onHover={() => hoverFocus(f.path)}
-                onToggleSeen={toggleSeen}
-                onCreateComment={(anchor, body) => createComment(anchor, body)}
-                onReply={reply}
-                onResolve={resolve}
-                commentDest={ghPr ? dest : undefined}
-                onCommentDest={ghPr ? setDest : undefined}
-                sectionRef={(el) => {
-                  if (el) sectionEls.current.set(f.path, el);
-                  else sectionEls.current.delete(f.path);
-                }}
-                hunkRef={(hi, el) => {
-                  const k = `${f.path} ${hi}`;
-                  if (el) hunkEls.current.set(k, el);
-                  else hunkEls.current.delete(k);
-                }}
-              />
+                      onHover={() => hoverFocus(f.path)}
+                      onToggleSeen={toggleSeen}
+                      onCreateComment={(anchor, body) =>
+                        createComment(anchor, body)
+                      }
+                      onReply={reply}
+                      onResolve={resolve}
+                      commentDest={ghPr ? dest : undefined}
+                      onCommentDest={ghPr ? setDest : undefined}
+                      sectionRef={(el) => {
+                        if (el) sectionEls.current.set(f.path, el);
+                        else sectionEls.current.delete(f.path);
+                      }}
+                      hunkRef={(hi, el) => {
+                        const k = `${f.path} ${hi}`;
+                        if (el) hunkEls.current.set(k, el);
+                        else hunkEls.current.delete(k);
+                      }}
+                    />
                   );
                 })}
               </Fragment>
@@ -1189,8 +1301,9 @@ export function Review() {
             </section>
 
             <p className="pb-4 text-center font-mono text-[11px] text-faint">
-              j/k unseen · J/K files · n/p hunks · d/u scroll · gg/G ends · e/E expand ·
-              f hints · . seen · c comment · a send · x crosshair · ? shortcuts
+              j/k unseen · J/K files · n/p hunks · d/u scroll · gg/G ends · e/E
+              expand · f hints · . seen · c comment · a send · x crosshair · ?
+              shortcuts
             </p>
           </main>
 
@@ -1208,29 +1321,30 @@ export function Review() {
                 onClose={() => setCommentsOpen(false)}
               />
             ) : symbol != null && symbolData ? (
-                <SymbolPanel
-                  symbol={symbol}
-                  occurrences={symbolData.occurrences}
-                  fileOrder={files.map((f) => f.path)}
-                  currentPath={currentPath}
-                  notLoaded={symbolData.notLoaded}
-                  onLoadAll={loadAllHunks}
-                  onJump={jumpToOccurrence}
-                  onClose={() => setSymbol(null)}
-                />
-              ) : features.entities && semQ.data?.available && currentPath ? (
-                <EntityPanel
-                  path={currentPath}
-                  entities={currentEntities ?? []}
-                  onJump={jumpToEntityIn}
-                />
-              ) : null;
+              <SymbolPanel
+                symbol={symbol}
+                occurrences={symbolData.occurrences}
+                fileOrder={files.map((f) => f.path)}
+                currentPath={currentPath}
+                notLoaded={symbolData.notLoaded}
+                onLoadAll={loadAllHunks}
+                onJump={jumpToOccurrence}
+                onClose={() => setSymbol(null)}
+              />
+            ) : features.entities && semQ.data?.available && currentPath ? (
+              <EntityPanel
+                path={currentPath}
+                entities={currentEntities ?? []}
+                onJump={jumpToEntityIn}
+              />
+            ) : null;
             if (live) {
               heldPanel.current = live;
               heldWide.current = commentsOpen;
               // Only the current-file entity panel tracks the file's start;
               // symbol search and comments span the full visible height.
-              heldAlign.current = !commentsOpen && !(symbol != null && symbolData);
+              heldAlign.current =
+                !commentsOpen && !(symbol != null && symbolData);
             }
             const full = `calc(100vh - ${HEADER_PX + 16}px)`;
             return (

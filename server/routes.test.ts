@@ -1,8 +1,9 @@
-import { before as beforeAll, describe, test } from "node:test";
-import { expect } from "expect";
 import { symlinkSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { before as beforeAll, describe, test } from "node:test";
+import { expect } from "expect";
+import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
 import type {
   Comment,
   CommentListResponse,
@@ -12,7 +13,6 @@ import type {
   PresenceResponse,
   ServerMessage,
 } from "#shared/types";
-import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
 import { config } from "./config.ts";
 import { closeDb, openDb } from "./db.ts";
 import { hashContent } from "./git.ts";
@@ -44,7 +44,9 @@ describe("resolveInRepo", () => {
   test("rejects traversal, absolute paths, symlink escapes", () => {
     const dir = makeRepo("safe");
     expect(resolveInRepo(dir, "a.txt")).toBe(join(dir, "a.txt"));
-    expect(resolveInRepo(dir, "sub/new-file.txt")).toBe(join(dir, "sub/new-file.txt"));
+    expect(resolveInRepo(dir, "sub/new-file.txt")).toBe(
+      join(dir, "sub/new-file.txt"),
+    );
     expect(resolveInRepo(dir, "../outside.txt")).toBeNull();
     expect(resolveInRepo(dir, "sub/../../outside.txt")).toBeNull();
     expect(resolveInRepo(dir, "/etc/passwd")).toBeNull();
@@ -57,7 +59,9 @@ describe("resolveInRepo", () => {
 describe("github routes", () => {
   test("GET /github validates dir and soft-fails on non-github repos", async () => {
     expect((await app.request("/github")).status).toBe(400);
-    expect((await app.request(`/github?dir=${encodeURIComponent("/etc")}`)).status).toBe(400);
+    expect(
+      (await app.request(`/github?dir=${encodeURIComponent("/etc")}`)).status,
+    ).toBe(400);
     const dir = makeRepo("gh-route");
     const res = await app.request(`/github?dir=${encodeURIComponent(dir)}`);
     expect(res.status).toBe(200);
@@ -67,13 +71,30 @@ describe("github routes", () => {
   });
 
   test("POST /github/reply|comment|resolve validate their bodies", async () => {
-    expect((await json("POST", "/github/reply", { dir: "x" })).status).toBe(400);
-    expect((await json("POST", "/github/reply", { dir: "x", body: "hi", rootId: "nope" })).status).toBe(400);
-    expect((await json("POST", "/github/comment", { dir: "x", body: " " })).status).toBe(400);
-    expect((await json("POST", "/github/resolve", { dir: "x", threadId: "t" })).status).toBe(400);
+    expect((await json("POST", "/github/reply", { dir: "x" })).status).toBe(
+      400,
+    );
+    expect(
+      (
+        await json("POST", "/github/reply", {
+          dir: "x",
+          body: "hi",
+          rootId: "nope",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await json("POST", "/github/comment", { dir: "x", body: " " })).status,
+    ).toBe(400);
+    expect(
+      (await json("POST", "/github/resolve", { dir: "x", threadId: "t" }))
+        .status,
+    ).toBe(400);
     // known repo without a PR: upstream failure surfaces as 502, not a crash
     const dir = makeRepo("gh-route-mut");
-    expect((await json("POST", "/github/reply", { dir, body: "hi" })).status).toBe(502);
+    expect(
+      (await json("POST", "/github/reply", { dir, body: "hi" })).status,
+    ).toBe(502);
   });
 });
 
@@ -85,9 +106,13 @@ describe("routes", () => {
   });
 
   test("unknown dir is rejected everywhere", async () => {
-    const res = await app.request(`/diff?dir=${encodeURIComponent("/etc")}&base=main`);
+    const res = await app.request(
+      `/diff?dir=${encodeURIComponent("/etc")}&base=main`,
+    );
     expect(res.status).toBe(400);
-    const res2 = await app.request(`/diff?dir=${encodeURIComponent(tmpdir("notrepo"))}&base=main`);
+    const res2 = await app.request(
+      `/diff?dir=${encodeURIComponent(tmpdir("notrepo"))}&base=main`,
+    );
     expect(res2.status).toBe(400);
   });
 
@@ -97,9 +122,13 @@ describe("routes", () => {
     write(dir, "a.txt", "edited\n");
     const q = `dir=${encodeURIComponent(dir)}&base=main`;
 
-    const bad = await app.request(`/diff?dir=${encodeURIComponent(dir)}&base=nope`);
+    const bad = await app.request(
+      `/diff?dir=${encodeURIComponent(dir)}&base=nope`,
+    );
     expect(bad.status).toBe(400);
-    expect(typeof ((await bad.json()) as { error: string }).error).toBe("string");
+    expect(typeof ((await bad.json()) as { error: string }).error).toBe(
+      "string",
+    );
 
     const res = await app.request(`/diff?${q}`);
     expect(res.status).toBe(200);
@@ -117,12 +146,16 @@ describe("routes", () => {
       seen: true,
     });
     expect(await seenRes.json()).toEqual({ ok: true });
-    const diff2 = (await (await app.request(`/diff?${q}`)).json()) as DiffResponse;
+    const diff2 = (await (
+      await app.request(`/diff?${q}`)
+    ).json()) as DiffResponse;
     expect(diff2.files.find((f) => f.path === "a.txt")!.seen).toBe(true);
 
     // file changes → stale: true
     write(dir, "a.txt", "edited more\n");
-    const diff3 = (await (await app.request(`/diff?${q}`)).json()) as DiffResponse;
+    const diff3 = (await (
+      await app.request(`/diff?${q}`)
+    ).json()) as DiffResponse;
     const f3 = diff3.files.find((f) => f.path === "a.txt")!;
     expect(f3.seen).toBe(false);
     expect(f3.stale).toBe(true);
@@ -136,17 +169,36 @@ describe("routes", () => {
     const body = (await got.json()) as { content: string; contentHash: string };
     expect(body.content).toBe("v1\n");
 
-    const conflict = await json("PUT", "/file", { dir, path: "a.txt", content: "v2\n", baseHash: "wrong" });
+    const conflict = await json("PUT", "/file", {
+      dir,
+      path: "a.txt",
+      content: "v2\n",
+      baseHash: "wrong",
+    });
     expect(conflict.status).toBe(409);
 
-    const ok = await json("PUT", "/file", { dir, path: "a.txt", content: "v2\n", baseHash: body.contentHash });
+    const ok = await json("PUT", "/file", {
+      dir,
+      path: "a.txt",
+      content: "v2\n",
+      baseHash: body.contentHash,
+    });
     expect(ok.status).toBe(200);
-    expect(((await ok.json()) as { contentHash: string }).contentHash).toBe(hashContent("v2\n"));
+    expect(((await ok.json()) as { contentHash: string }).contentHash).toBe(
+      hashContent("v2\n"),
+    );
     expect(await readFile(join(dir, "a.txt"), "utf8")).toBe("v2\n");
 
-    const esc = await json("PUT", "/file", { dir, path: "../esc.txt", content: "x", baseHash: "" });
+    const esc = await json("PUT", "/file", {
+      dir,
+      path: "../esc.txt",
+      content: "x",
+      baseHash: "",
+    });
     expect(esc.status).toBe(400);
-    const escRead = await app.request(`/file?dir=${encodeURIComponent(dir)}&path=..%2Fesc.txt`);
+    const escRead = await app.request(
+      `/file?dir=${encodeURIComponent(dir)}&path=..%2Fesc.txt`,
+    );
     expect(escRead.status).toBe(400);
   });
 
@@ -169,7 +221,9 @@ describe("routes", () => {
     const newRes = await app.request(`/file/raw?${q}`);
     expect(new Uint8Array(await newRes.arrayBuffer())).toEqual(newImage);
 
-    const escaped = await app.request(`/file/raw?dir=${encodeURIComponent(dir)}&path=..%2Fimage.png`);
+    const escaped = await app.request(
+      `/file/raw?dir=${encodeURIComponent(dir)}&path=..%2Fimage.png`,
+    );
     expect(escaped.status).toBe(400);
   });
 
@@ -186,22 +240,47 @@ describe("routes", () => {
     });
     expect(created.status).toBe(201);
     const root = (await created.json()) as Comment;
-    expect(sent).toContainEqual({ type: "comments-changed", dir, seq: root.seq });
+    expect(sent).toContainEqual({
+      type: "comments-changed",
+      dir,
+      seq: root.seq,
+    });
 
-    const badAuthor = await json("POST", "/comments", { dir, base: "main", author: "bot", body: "x" });
+    const badAuthor = await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "bot",
+      body: "x",
+    });
     expect(badAuthor.status).toBe(400);
-    const badParent = await json("POST", "/comments", { dir, base: "main", author: "user", body: "x", parentId: "nope" });
+    const badParent = await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "user",
+      body: "x",
+      parentId: "nope",
+    });
     expect(badParent.status).toBe(400);
 
-    const replied = await json("POST", "/comments", { dir, base: "main", author: "agent", body: "done", parentId: root.id });
+    const replied = await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "agent",
+      body: "done",
+      parentId: root.id,
+    });
     const reply = (await replied.json()) as Comment;
     expect(reply.parentId).toBe(root.id);
     expect(reply.anchor).toBeNull();
 
-    const patched = await json("PATCH", `/comments/${root.id}`, { resolved: true });
+    const patched = await json("PATCH", `/comments/${root.id}`, {
+      resolved: true,
+    });
     expect(patched.status).toBe(200);
     expect(((await patched.json()) as Comment).resolvedAt).toBeGreaterThan(0);
-    const missing = await json("PATCH", "/comments/does-not-exist", { resolved: true });
+    const missing = await json("PATCH", "/comments/does-not-exist", {
+      resolved: true,
+    });
     expect(missing.status).toBe(404);
 
     const list = await app.request(`/comments?dir=${encodeURIComponent(dir)}`);
@@ -209,8 +288,12 @@ describe("routes", () => {
     expect(comments.map((c) => c.id)).toEqual([root.id, reply.id]);
     expect(cursor).toBe(reply.seq);
 
-    const since = await app.request(`/comments?dir=${encodeURIComponent(dir)}&since=${root.seq}`);
-    expect(((await since.json()) as CommentListResponse).comments.map((c) => c.id)).toEqual([reply.id]);
+    const since = await app.request(
+      `/comments?dir=${encodeURIComponent(dir)}&since=${root.seq}`,
+    );
+    expect(
+      ((await since.json()) as CommentListResponse).comments.map((c) => c.id),
+    ).toEqual([reply.id]);
   });
 
   test("pending: hidden from submitted channel until submit; ack flips picked_up", async () => {
@@ -218,11 +301,22 @@ describe("routes", () => {
     sent.length = 0;
 
     const immediate = (await (
-      await json("POST", "/comments", { dir, base: "main", author: "user", body: "now" })
+      await json("POST", "/comments", {
+        dir,
+        base: "main",
+        author: "user",
+        body: "now",
+      })
     ).json()) as Comment;
     expect(immediate.status).toBe("submitted");
     const draft = (await (
-      await json("POST", "/comments", { dir, base: "main", author: "user", body: "later", pending: true })
+      await json("POST", "/comments", {
+        dir,
+        base: "main",
+        author: "user",
+        body: "later",
+        pending: true,
+      })
     ).json()) as Comment;
     expect(draft.status).toBe("pending");
     expect(draft.submittedSeq).toBeNull();
@@ -235,9 +329,14 @@ describe("routes", () => {
     sent.length = 0;
     const submit = await json("POST", "/comments/submit", { dir });
     expect(submit.status).toBe(200);
-    const { submitted, cursor } = (await submit.json()) as { submitted: number; cursor: number };
+    const { submitted, cursor } = (await submit.json()) as {
+      submitted: number;
+      cursor: number;
+    };
     expect(submitted).toBe(1);
-    expect(sent.some((m) => m.type === "comments-changed" && m.dir === dir)).toBe(true);
+    expect(
+      sent.some((m) => m.type === "comments-changed" && m.dir === dir),
+    ).toBe(true);
 
     res = (await (await app.request(chan)).json()) as CommentListResponse;
     expect(res.comments.map((c) => c.body)).toEqual(["now", "later"]);
@@ -246,9 +345,18 @@ describe("routes", () => {
     const ack = await json("POST", "/comments/ack", { dir, upTo: cursor });
     expect((await ack.json()) as { acked: number }).toEqual({ acked: 2 });
     res = (await (await app.request(chan)).json()) as CommentListResponse;
-    expect(res.comments.map((c) => c.status)).toEqual(["picked_up", "picked_up"]);
+    expect(res.comments.map((c) => c.status)).toEqual([
+      "picked_up",
+      "picked_up",
+    ]);
 
-    const badPending = await json("POST", "/comments", { dir, base: "main", author: "user", body: "x", pending: "yes" });
+    const badPending = await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "user",
+      body: "x",
+      pending: "yes",
+    });
     expect(badPending.status).toBe(400);
     const badAck = await json("POST", "/comments/ack", { dir, upTo: "nope" });
     expect(badAck.status).toBe(400);
@@ -256,7 +364,13 @@ describe("routes", () => {
 
   test("submitted-channel long-poll resolves on submit, not on pending create", async () => {
     const dir = makeRepo("routes-poll-submitted");
-    await json("POST", "/comments", { dir, base: "main", author: "user", body: "draft", pending: true });
+    await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "user",
+      body: "draft",
+      pending: true,
+    });
     const t0 = Date.now();
     const waiting = app.request(
       `/comments?dir=${encodeURIComponent(dir)}&since=0&wait=1&submitted=1`,
@@ -271,9 +385,16 @@ describe("routes", () => {
   test("long-poll resolves early when a comment lands", async () => {
     const dir = makeRepo("routes-poll");
     const t0 = Date.now();
-    const pending = app.request(`/comments?dir=${encodeURIComponent(dir)}&since=0&wait=1`);
+    const pending = app.request(
+      `/comments?dir=${encodeURIComponent(dir)}&since=0&wait=1`,
+    );
     await new Promise((r) => setTimeout(r, 50));
-    await json("POST", "/comments", { dir, base: "main", author: "user", body: "wake up" });
+    await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "user",
+      body: "wake up",
+    });
     const res = (await (await pending).json()) as CommentListResponse;
     expect(res.comments.map((c) => c.body)).toEqual(["wake up"]);
     expect(Date.now() - t0).toBeLessThan(5_000); // resolved by notify, not the 25s cap
@@ -283,7 +404,12 @@ describe("routes", () => {
   // far more than the 5s default under a loaded machine.
   test("comments: reviewer author accepted", async () => {
     const dir = makeRepo("routes-reviewer");
-    const res = await json("POST", "/comments", { dir, base: "main", author: "reviewer", body: "nit" });
+    const res = await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "reviewer",
+      body: "nit",
+    });
     expect(res.status).toBe(201);
   });
 
@@ -304,7 +430,9 @@ describe("GET /diff/summary and /diff/file", () => {
     write(dir, "new.txt", "n1\n");
     const q = `dir=${encodeURIComponent(dir)}&base=main`;
 
-    const bad = await app.request(`/diff/summary?dir=${encodeURIComponent(dir)}&base=nope`);
+    const bad = await app.request(
+      `/diff/summary?dir=${encodeURIComponent(dir)}&base=nope`,
+    );
     expect(bad.status).toBe(400);
 
     const res = await app.request(`/diff/summary?${q}`);
@@ -314,7 +442,9 @@ describe("GET /diff/summary and /diff/file", () => {
     expect(a.status).toBe("modified");
     expect(a.contentHash).toBe(hashContent("edited\n"));
     expect("hunks" in a).toBe(false);
-    expect(summary.files.find((f) => f.path === "new.txt")!.status).toBe("untracked");
+    expect(summary.files.find((f) => f.path === "new.txt")!.status).toBe(
+      "untracked",
+    );
 
     await json("PUT", "/seen", {
       dir,
@@ -338,13 +468,17 @@ describe("GET /diff/summary and /diff/file", () => {
     const untrackedRes = await app.request(`/diff/file?${q}&path=new.txt`);
     const ufd = (await untrackedRes.json()) as FileDiffResponse;
     expect(ufd.file.status).toBe("untracked");
-    expect(ufd.file.hunks[0]!.lines).toEqual([{ kind: "add", newLine: 1, text: "n1" }]);
+    expect(ufd.file.hunks[0]!.lines).toEqual([
+      { kind: "add", newLine: 1, text: "n1" },
+    ]);
 
     const missing = await app.request(`/diff/file?${q}&path=unchanged.txt`);
     expect(missing.status).toBe(404);
 
-    const escape = await app.request(`/diff/file?${q}&path=${encodeURIComponent("../x")}`);
-    expect(escape.status).toBe(400);
+    const escaping = await app.request(
+      `/diff/file?${q}&path=${encodeURIComponent("../x")}`,
+    );
+    expect(escaping.status).toBe(400);
   });
 });
 
@@ -354,7 +488,12 @@ describe("GET /refs", () => {
     git(dir, "branch", "feat-x");
     const head = git(dir, "rev-parse", "HEAD").trim();
     git(dir, "update-ref", "refs/remotes/origin/main", head);
-    git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    git(
+      dir,
+      "symbolic-ref",
+      "refs/remotes/origin/HEAD",
+      "refs/remotes/origin/main",
+    );
 
     const res = await app.request(`/refs?dir=${encodeURIComponent(dir)}`);
     expect(res.status).toBe(200);
@@ -416,22 +555,39 @@ describe("PRs and worktree creation", () => {
   test("POST /worktrees validates body and branch name", async () => {
     const dir = makeRepo("wt-validate");
     expect((await json("POST", "/worktrees", { dir })).status).toBe(400);
-    expect((await json("POST", "/worktrees", { dir: "/nope", branch: "x" })).status).toBe(400);
-    expect((await json("POST", "/worktrees", { dir, branch: "--delete" })).status).toBe(400);
-    expect((await json("POST", "/worktrees", { dir, branch: "a..b" })).status).toBe(400);
+    expect(
+      (await json("POST", "/worktrees", { dir: "/nope", branch: "x" })).status,
+    ).toBe(400);
+    expect(
+      (await json("POST", "/worktrees", { dir, branch: "--delete" })).status,
+    ).toBe(400);
+    expect(
+      (await json("POST", "/worktrees", { dir, branch: "a..b" })).status,
+    ).toBe(400);
   });
 });
 
 describe("commands", () => {
   test("GET returns the default, PUT validates and persists", async () => {
-    const before = (await (await app.request("/commands")).json()) as { worktreeCreate: string };
+    const before = (await (await app.request("/commands")).json()) as {
+      worktreeCreate: string;
+    };
     expect(typeof before.worktreeCreate).toBe("string");
-    expect((await json("PUT", "/commands", { worktreeCreate: "echo no-branch" })).status).toBe(400);
+    expect(
+      (await json("PUT", "/commands", { worktreeCreate: "echo no-branch" }))
+        .status,
+    ).toBe(400);
     expect((await json("PUT", "/commands", {})).status).toBe(400);
-    const res = await json("PUT", "/commands", { worktreeCreate: "aoe add {dir} --worktree {branch}" });
+    const res = await json("PUT", "/commands", {
+      worktreeCreate: "aoe add {dir} --worktree {branch}",
+    });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ worktreeCreate: "aoe add {dir} --worktree {branch}" });
-    const after = (await (await app.request("/commands")).json()) as { worktreeCreate: string };
+    expect(await res.json()).toEqual({
+      worktreeCreate: "aoe add {dir} --worktree {branch}",
+    });
+    const after = (await (await app.request("/commands")).json()) as {
+      worktreeCreate: string;
+    };
     expect(after.worktreeCreate).toBe("aoe add {dir} --worktree {branch}");
   });
 });
@@ -448,7 +604,10 @@ describe("settings", () => {
       extra: 1,
     });
     expect(res.status).toBe(200);
-    const clean = { features: { grouping: true, symbols: false }, diffMode: "split" };
+    const clean = {
+      features: { grouping: true, symbols: false },
+      diffMode: "split",
+    };
     expect(await res.json()).toEqual(clean);
     expect(await (await app.request("/settings")).json()).toEqual(clean);
   });
@@ -467,12 +626,17 @@ describe("POST /worktrees end-to-end (default command)", () => {
     git(SCRATCH, "clone", origin, clone);
     git(clone, "branch", "-r"); // sanity: origin/feat-x exists remotely only
 
-    const res = await json("POST", "/worktrees", { dir: clone, branch: "feat-x" });
+    const res = await json("POST", "/worktrees", {
+      dir: clone,
+      branch: "feat-x",
+    });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { dir: string | null; branch: string };
     expect(body.branch).toBe("feat-x");
     expect(body.dir).toBe(join(clone, "worktrees", "feat-x"));
-    expect(git(body.dir!, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("feat-x");
+    expect(git(body.dir!, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(
+      "feat-x",
+    );
     expect(sent.some((m) => m.type === "repos-changed")).toBe(true);
   });
 });

@@ -14,14 +14,16 @@
  * Watching such trees once wedged the daemon with ~70k inotify fds.
  */
 
-import { watch, type FSWatcher } from "chokidar";
 import { join, relative, sep } from "node:path";
+import { type FSWatcher, watch } from "chokidar";
 import { TUNING } from "#shared/tuning";
 import { ignoredPrefixes, resolveGitDir, watchableFileCount } from "./git.ts";
 
 export type WatchCallback = (dir: string, paths: string[]) => void;
 
-const IGNORE_NAMES = new Set<string>(TUNING.WATCH_IGNORE.filter((n) => n !== ".git"));
+const IGNORE_NAMES = new Set<string>(
+  TUNING.WATCH_IGNORE.filter((n) => n !== ".git"),
+);
 const GIT_ALLOWED = new Set(["HEAD", "index", "refs", "packed-refs"]);
 
 interface Entry {
@@ -78,7 +80,12 @@ export function subscribe(dir: string): void {
     existing.refs++;
     return;
   }
-  const entry: Entry = { refs: 1, watchers: [], pending: new Set(), timer: null };
+  const entry: Entry = {
+    refs: 1,
+    watchers: [],
+    pending: new Set(),
+    timer: null,
+  };
   entries.set(dir, entry);
   void start(dir, entry);
 }
@@ -87,7 +94,8 @@ async function start(dir: string, entry: Entry): Promise<void> {
   const onEvent = (p: string) => {
     const rel = relative(dir, p);
     // git-internal churn invalidates the diff but is not a working-tree path
-    if (rel && !rel.startsWith("..") && !rel.split(sep).includes(".git")) entry.pending.add(rel);
+    if (rel && !rel.startsWith("..") && !rel.split(sep).includes(".git"))
+      entry.pending.add(rel);
     if (entry.timer) clearTimeout(entry.timer);
     entry.timer = setTimeout(() => {
       entry.timer = null;
@@ -126,19 +134,31 @@ async function start(dir: string, entry: Entry): Promise<void> {
 
   if (gitOnly) {
     const gitdir = resolveGitDir(dir) ?? join(dir, ".git");
-    const gw = watch(gitdir, { ignored: makeGitdirIgnored(gitdir), ignoreInitial: true });
+    const gw = watch(gitdir, {
+      ignored: makeGitdirIgnored(gitdir),
+      ignoreInitial: true,
+    });
     gw.on("all", (_event, p) => onEvent(p));
     adopt(gw);
     return;
   }
 
-  const main = watch(dir, { ignored: makeIgnored(dir, gitIgnored), ignoreInitial: true });
+  const main = watch(dir, {
+    ignored: makeIgnored(dir, gitIgnored),
+    ignoreInitial: true,
+  });
   main.on("all", (_event, p) => onEvent(p));
   if (!adopt(main)) return;
 
   const gitdir = resolveGitDir(dir);
-  if (gitdir && (relative(dir, gitdir).startsWith("..") || relative(dir, gitdir) === "")) {
-    const gw = watch(gitdir, { ignored: makeGitdirIgnored(gitdir), ignoreInitial: true });
+  if (
+    gitdir &&
+    (relative(dir, gitdir).startsWith("..") || relative(dir, gitdir) === "")
+  ) {
+    const gw = watch(gitdir, {
+      ignored: makeGitdirIgnored(gitdir),
+      ignoreInitial: true,
+    });
     gw.on("all", (_event, p) => onEvent(p));
     adopt(gw);
   }

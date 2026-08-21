@@ -24,7 +24,10 @@ export function EntityPanel({ path, entities, onJump }: EntityPanelProps) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-edge-soft px-3 py-2">
-        <span className="min-w-0 truncate font-mono text-[12.5px] font-medium text-fg" title={path}>
+        <span
+          className="min-w-0 truncate font-mono text-[12.5px] font-medium text-fg"
+          title={path}
+        >
           {path.split("/").at(-1)}
         </span>
         <span className="shrink-0 font-mono text-[11px] tabular-nums text-faint">
@@ -35,8 +38,8 @@ export function EntityPanel({ path, entities, onJump }: EntityPanelProps) {
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {entities.length === 0 && (
           <p className="px-3 py-2 text-[12px] text-faint">
-            No entity data for this file — sem skipped it (unsupported language or
-            binary-looking content).
+            No entity data for this file — sem skipped it (unsupported language
+            or binary-looking content).
           </p>
         )}
         {shown.map((e, i) => {
@@ -52,7 +55,12 @@ export function EntityPanel({ path, entities, onJump }: EntityPanelProps) {
               <span className="w-8 shrink-0 text-right font-mono text-[10.5px] tabular-nums text-faint">
                 {a == null ? "" : a.side === "old" ? `−${a.line}` : a.line}
               </span>
-              <span className={cx("w-3 shrink-0 text-center font-mono text-[11px] font-bold", CHANGE_CLS[e.change])}>
+              <span
+                className={cx(
+                  "w-3 shrink-0 text-center font-mono text-[11px] font-bold",
+                  CHANGE_CLS[e.change],
+                )}
+              >
                 {CHANGE_GLYPH[e.change]}
               </span>
               <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-mute">

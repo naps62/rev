@@ -11,7 +11,13 @@ interface CheckboxProps {
 // Flat seen-checkbox; visuals + oversized hit target come from .chk in CSS.
 // MUST stop click propagation — every call site sits inside a larger click
 // surface (row navigate, dir toggle) that would otherwise fire too.
-export function Checkbox({ checked, indeterminate = false, title, onChange, className }: CheckboxProps) {
+export function Checkbox({
+  checked,
+  indeterminate = false,
+  title,
+  onChange,
+  className,
+}: CheckboxProps) {
   return (
     <input
       type="checkbox"

@@ -99,7 +99,11 @@ describe("parseUnifiedDiff", () => {
     expect(f!.path).toBe("new/name.ts");
     expect(f!.oldPath).toBe("old/name.ts");
     expect(f!.additions).toBe(1);
-    expect(f!.hunks[0]!.lines[1]).toEqual({ kind: "add", newLine: 11, text: "added line" });
+    expect(f!.hunks[0]!.lines[1]).toEqual({
+      kind: "add",
+      newLine: 11,
+      text: "added line",
+    });
   });
 
   test("pure rename (no hunks)", () => {
@@ -199,8 +203,17 @@ describe("parseUnifiedDiff", () => {
     expect(f!.hunks).toHaveLength(2);
     const h2 = f!.hunks[1]!;
     expect(h2.header).toBe("chapter two");
-    expect(h2.lines[2]).toEqual({ kind: "add", newLine: 22, text: "twentyone-and-a-half" });
-    expect(h2.lines[3]).toEqual({ kind: "context", oldLine: 22, newLine: 23, text: "twentytwo" });
+    expect(h2.lines[2]).toEqual({
+      kind: "add",
+      newLine: 22,
+      text: "twentyone-and-a-half",
+    });
+    expect(h2.lines[3]).toEqual({
+      kind: "context",
+      oldLine: 22,
+      newLine: 23,
+      text: "twentytwo",
+    });
   });
 
   test("quoted paths with spaces", () => {

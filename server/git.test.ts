@@ -1,8 +1,8 @@
-import { describe, test } from "node:test";
-import { expect } from "expect";
 import { spawnSync } from "node:child_process";
 import { chmodSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { describe, test } from "node:test";
+import { expect } from "expect";
 import { TUNING } from "#shared/tuning";
 import {
   changedFileStats,
@@ -24,7 +24,10 @@ import {
 } from "./git.ts";
 import { git, makeRepo, tmpdir, write } from "./testutil.ts";
 
-function byPath<T extends { path: string }>(files: T[], path: string): T | undefined {
+function byPath<T extends { path: string }>(
+  files: T[],
+  path: string,
+): T | undefined {
   return files.find((f) => f.path === path);
 }
 
@@ -77,7 +80,9 @@ describe("headInfo / isDirty / defaultBase", () => {
 describe("computeDiff", () => {
   test("bad base ref throws GitError", async () => {
     const dir = makeRepo("badref");
-    await expect(computeDiff(dir, "no-such-branch")).rejects.toBeInstanceOf(GitError);
+    await expect(computeDiff(dir, "no-such-branch")).rejects.toBeInstanceOf(
+      GitError,
+    );
   });
 
   test("committed + uncommitted + untracked changes vs main", async () => {
@@ -152,14 +157,20 @@ describe("computeDiff", () => {
     write(dir, "a.txt", "edited\n");
     const d1 = await computeDiff(dir, "main");
     const d2 = await computeDiff(dir, "main");
-    expect(byPath(d1.files, "a.txt")!.contentHash).toBe(byPath(d2.files, "a.txt")!.contentHash);
+    expect(byPath(d1.files, "a.txt")!.contentHash).toBe(
+      byPath(d2.files, "a.txt")!.contentHash,
+    );
     write(dir, "a.txt", "edited again\n");
     const d3 = await computeDiff(dir, "main");
-    expect(byPath(d3.files, "a.txt")!.contentHash).not.toBe(byPath(d1.files, "a.txt")!.contentHash);
+    expect(byPath(d3.files, "a.txt")!.contentHash).not.toBe(
+      byPath(d1.files, "a.txt")!.contentHash,
+    );
   });
 
   test("rename detection", async () => {
-    const dir = makeRepo("rename", { "original.txt": "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n" });
+    const dir = makeRepo("rename", {
+      "original.txt": "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n",
+    });
     git(dir, "checkout", "-b", "f");
     git(dir, "mv", "original.txt", "renamed.txt");
     git(dir, "commit", "-m", "rename");
@@ -168,17 +179,23 @@ describe("computeDiff", () => {
     expect(f.status).toBe("renamed");
     expect(f.oldPath).toBe("original.txt");
     expect(f.hunks).toEqual([]);
-    expect(f.contentHash).toBe(hashContent("l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n"));
+    expect(f.contentHash).toBe(
+      hashContent("l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n"),
+    );
   });
 
   test("binary files: tracked change and untracked", async () => {
-    const bin = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x03]);
+    const bin = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x03,
+    ]);
     const dir = makeRepo("binary", { "a.txt": "x\n" });
     writeFileSync(join(dir, "img.bin"), bin);
     git(dir, "add", "-A");
     git(dir, "commit", "-m", "add binary");
     git(dir, "checkout", "-b", "f");
-    const bin2 = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe, 0xfd]);
+    const bin2 = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe, 0xfd,
+    ]);
     writeFileSync(join(dir, "img.bin"), bin2);
     writeFileSync(join(dir, "untracked.bin"), bin);
 
@@ -248,8 +265,12 @@ describe("readFile", () => {
     expect(wt.rev).toBeNull();
     const at = await readFile(dir, "a.txt", "main");
     expect(at.content).toBe("committed\n");
-    await expect(readFile(dir, "missing.txt", null)).rejects.toBeInstanceOf(GitError);
-    await expect(readFile(dir, "missing.txt", "main")).rejects.toBeInstanceOf(GitError);
+    await expect(readFile(dir, "missing.txt", null)).rejects.toBeInstanceOf(
+      GitError,
+    );
+    await expect(readFile(dir, "missing.txt", "main")).rejects.toBeInstanceOf(
+      GitError,
+    );
   });
 });
 
@@ -273,10 +294,17 @@ describe("listWorktrees / resolveGitDir / changedFileStats", () => {
     write(dir, "new2.txt", "u\nv\n");
     const stats = await changedFileStats(dir, "main");
     expect(stats).not.toBeNull();
-    expect(stats!.map((f) => f.path).sort()).toEqual(["a.txt", "new1.txt", "new2.txt"]);
+    expect(stats!.map((f) => f.path).sort()).toEqual([
+      "a.txt",
+      "new1.txt",
+      "new2.txt",
+    ]);
     const byPath = new Map(stats!.map((f) => [f.path, f]));
     expect(byPath.get("a.txt")).toMatchObject({ additions: 1, deletions: 1 });
-    expect(byPath.get("new2.txt")).toMatchObject({ additions: 2, deletions: 0 });
+    expect(byPath.get("new2.txt")).toMatchObject({
+      additions: 2,
+      deletions: 0,
+    });
     for (const f of stats!) expect(f.contentHash).toMatch(/^[0-9a-f]{16}$/);
     expect(await changedFileStats(dir, "nope")).toBeNull();
   });
@@ -402,7 +430,10 @@ describe("computeDiffSummary / computeFileDiff", () => {
       "gone.txt": "bye\n",
       "orig.txt": "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n",
     });
-    writeFileSync(join(dir, "img.bin"), new Uint8Array([0x89, 0x50, 0x00, 0x01]));
+    writeFileSync(
+      join(dir, "img.bin"),
+      new Uint8Array([0x89, 0x50, 0x00, 0x01]),
+    );
     git(dir, "add", "-A");
     git(dir, "commit", "-m", "binary");
     git(dir, "checkout", "-b", "feature");
@@ -412,7 +443,10 @@ describe("computeDiffSummary / computeFileDiff", () => {
     git(dir, "add", "-A");
     git(dir, "commit", "-m", "feature work");
     write(dir, "a.txt", "one\nTWO\nthree\nfour\n"); // uncommitted on top
-    writeFileSync(join(dir, "img.bin"), new Uint8Array([0x89, 0x50, 0xff, 0xfe]));
+    writeFileSync(
+      join(dir, "img.bin"),
+      new Uint8Array([0x89, 0x50, 0xff, 0xfe]),
+    );
     write(dir, "brand/new.txt", "n1\nn2\n");
     return dir;
   }
@@ -455,7 +489,10 @@ describe("computeDiffSummary / computeFileDiff", () => {
 
 describe("ignoredPrefixes / watchableFileCount", () => {
   test("ignored dirs come back as prefixes; counts skip them", async () => {
-    const dir = makeRepo("watchstats", { "a.txt": "x\n", ".gitignore": "vendor/\nsecret.env\n" });
+    const dir = makeRepo("watchstats", {
+      "a.txt": "x\n",
+      ".gitignore": "vendor/\nsecret.env\n",
+    });
     write(dir, "vendor/lib/dep.js", "dep\n");
     write(dir, "vendor/lib/deep/more.js", "more\n");
     write(dir, "secret.env", "k=v\n");

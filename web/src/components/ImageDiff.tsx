@@ -1,4 +1,9 @@
-import { useEffect, useState, type KeyboardEvent, type PointerEvent } from "react";
+import {
+  type KeyboardEvent,
+  type PointerEvent,
+  useEffect,
+  useState,
+} from "react";
 import type { FileStatus } from "#shared/types";
 
 interface ImageDiffProps {
@@ -12,8 +17,12 @@ type ImageSize = { width: number; height: number };
 
 export function ImageDiff({ oldSrc, newSrc, status }: ImageDiffProps) {
   const [split, setSplit] = useState(50);
-  const [oldState, setOldState] = useState<LoadState>(oldSrc ? "loading" : "loaded");
-  const [newState, setNewState] = useState<LoadState>(newSrc ? "loading" : "loaded");
+  const [oldState, setOldState] = useState<LoadState>(
+    oldSrc ? "loading" : "loaded",
+  );
+  const [newState, setNewState] = useState<LoadState>(
+    newSrc ? "loading" : "loaded",
+  );
   const [oldSize, setOldSize] = useState<ImageSize>();
   const [newSize, setNewSize] = useState<ImageSize>();
 
@@ -28,7 +37,12 @@ export function ImageDiff({ oldSrc, newSrc, status }: ImageDiffProps) {
 
   const updateFromPointer = (event: PointerEvent<HTMLDivElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
-    setSplit(Math.max(0, Math.min(100, ((event.clientX - bounds.left) / bounds.width) * 100)));
+    setSplit(
+      Math.max(
+        0,
+        Math.min(100, ((event.clientX - bounds.left) / bounds.width) * 100),
+      ),
+    );
   };
 
   const adjustWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -55,7 +69,7 @@ export function ImageDiff({ oldSrc, newSrc, status }: ImageDiffProps) {
       <div
         className="image-diff-stage"
         style={{
-          width: `min(100%, ${frameWidth}px, ${(72 * frameWidth / frameHeight).toFixed(4)}vh)`,
+          width: `min(100%, ${frameWidth}px, ${((72 * frameWidth) / frameHeight).toFixed(4)}vh)`,
           aspectRatio: `${frameWidth} / ${frameHeight}`,
         }}
         role="slider"
@@ -92,7 +106,11 @@ export function ImageDiff({ oldSrc, newSrc, status }: ImageDiffProps) {
             side="old"
             src={oldSrc}
             state={oldState}
-            absentLabel={status === "added" || status === "untracked" ? "Image added" : "No old image"}
+            absentLabel={
+              status === "added" || status === "untracked"
+                ? "Image added"
+                : "No old image"
+            }
             onLoad={(size) => {
               setOldSize(size);
               setOldState("loaded");
@@ -101,10 +119,25 @@ export function ImageDiff({ oldSrc, newSrc, status }: ImageDiffProps) {
           />
         </div>
 
-        <div className="pointer-events-none absolute inset-y-0 z-20 w-px bg-accent shadow-[0_0_0_1px_rgb(14_17_21/.65)]" style={{ left: `${split}%` }}>
+        <div
+          className="pointer-events-none absolute inset-y-0 z-20 w-px bg-accent shadow-[0_0_0_1px_rgb(14_17_21/.65)]"
+          style={{ left: `${split}%` }}
+        >
           <span className="image-diff-handle absolute left-1/2 top-1/2 grid h-9 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-accent/60 bg-raise shadow-pop">
-            <svg width="12" height="14" viewBox="0 0 12 14" fill="none" aria-hidden>
-              <path d="M4.5 3 1.5 7l3 4M7.5 3l3 4-3 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            <svg
+              width="12"
+              height="14"
+              viewBox="0 0 12 14"
+              fill="none"
+              aria-hidden
+            >
+              <path
+                d="M4.5 3 1.5 7l3 4M7.5 3l3 4-3 4"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
           </span>
         </div>
@@ -118,7 +151,9 @@ export function ImageDiff({ oldSrc, newSrc, status }: ImageDiffProps) {
       </div>
       <div className="mt-2 flex items-center justify-between gap-3 font-mono text-[10.5px] text-faint">
         <span>Move across the image · Arrow keys adjust</span>
-        <span className="shrink-0 tabular-nums">old {roundedSplit}% · new {100 - roundedSplit}%</span>
+        <span className="shrink-0 tabular-nums">
+          old {roundedSplit}% · new {100 - roundedSplit}%
+        </span>
       </div>
     </div>
   );
@@ -158,10 +193,14 @@ function ImageSide({
       )}
       {state !== "loaded" && (
         <span className="absolute font-mono text-[11px] text-faint">
-          {state === "loading" ? `Loading ${side} image…` : `${side === "old" ? "Old" : "New"} image couldn't load`}
+          {state === "loading"
+            ? `Loading ${side} image…`
+            : `${side === "old" ? "Old" : "New"} image couldn't load`}
         </span>
       )}
-      {!src && <span className="font-mono text-[11px] text-faint">{absentLabel}</span>}
+      {!src && (
+        <span className="font-mono text-[11px] text-faint">{absentLabel}</span>
+      )}
     </div>
   );
 }

@@ -13,11 +13,17 @@
  * sit directly in the user's home.
  */
 
-import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import {
+  type Dirent,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, sep } from "node:path";
-import type { RepoInfo } from "#shared/types";
 import { TUNING } from "#shared/tuning";
+import type { RepoInfo } from "#shared/types";
 import { config } from "./config.ts";
 import { openCommentCounts, seenHashes } from "./db.ts";
 import {
@@ -65,10 +71,14 @@ const validated = new Set<string>();
  * of home does not touch the macOS TCC-protected dirs. Pass "" to descend
  * everything — a root pointing inside one of them is an explicit opt-in.
  */
-export function scanForRepos(root: string, maxDepth: number, home: string): string[] {
+export function scanForRepos(
+  root: string,
+  maxDepth: number,
+  home: string,
+): string[] {
   const found: string[] = [];
   const walk = (dir: string, depth: number): void => {
-    let entries;
+    let entries: Dirent[];
     try {
       entries = readdirSync(dir, { withFileTypes: true });
     } catch {
@@ -107,7 +117,8 @@ function realOrSelf(p: string): string {
 async function discover(): Promise<Map<string, string>> {
   const home = realOrSelf(homedir());
   const scanned: string[] = [];
-  for (const root of config.roots) scanned.push(...scanForRepos(realOrSelf(root), config.depth, home));
+  for (const root of config.roots)
+    scanned.push(...scanForRepos(realOrSelf(root), config.depth, home));
   const map = new Map<string, string>();
   for (const repo of scanned) {
     if (map.has(repo)) continue;
@@ -137,9 +148,13 @@ function nameFor(dir: string, mainDir: string, isWorktree: boolean): string {
  * Host, owner and repo name from a git remote URL. Handles https (with
  * optional credentials) and scp-like ssh (git@host:owner/repo.git).
  */
-export function parseRemote(url: string): { host: string; owner: string; repo: string } | null {
-  const ssh = /^(?:ssh:\/\/)?(?:[\w.-]+@)?([\w.-]+)[:/]([^/:]+)\/([^/]+?)(?:\.git)?\/?$/;
-  const http = /^https?:\/\/(?:[^@/]+@)?([\w.-]+)(?::\d+)?\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/;
+export function parseRemote(
+  url: string,
+): { host: string; owner: string; repo: string } | null {
+  const ssh =
+    /^(?:ssh:\/\/)?(?:[\w.-]+@)?([\w.-]+)[:/]([^/:]+)\/([^/]+?)(?:\.git)?\/?$/;
+  const http =
+    /^https?:\/\/(?:[^@/]+@)?([\w.-]+)(?::\d+)?\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/;
   const m = http.exec(url) ?? ssh.exec(url);
   return m ? { host: m[1]!, owner: m[2]!, repo: m[3]! } : null;
 }
@@ -194,7 +209,11 @@ export function gitStateFingerprint(dir: string): string {
  * Sum of additions+deletions over files whose working content still matches
  * the hash they were marked seen at.
  */
-function seenLinesFor(dir: string, base: string | null, stats: ChangedFileStat[] | null): number | null {
+function seenLinesFor(
+  dir: string,
+  base: string | null,
+  stats: ChangedFileStat[] | null,
+): number | null {
   if (base === null || stats === null) return null;
   let seen: Map<string, string>;
   try {
@@ -249,8 +268,10 @@ async function enrich(
     defaultBase: base,
     dirty,
     changedFiles: stats === null ? null : stats.length,
-    additions: stats === null ? null : stats.reduce((n, f) => n + f.additions, 0),
-    deletions: stats === null ? null : stats.reduce((n, f) => n + f.deletions, 0),
+    additions:
+      stats === null ? null : stats.reduce((n, f) => n + f.additions, 0),
+    deletions:
+      stats === null ? null : stats.reduce((n, f) => n + f.deletions, 0),
     seenLines: seenLinesFor(dir, base, stats),
     openComments: openMap.get(dir) ?? 0,
     lastActivity: lastActivity === null ? null : Math.round(lastActivity),
@@ -262,15 +283,22 @@ async function enrich(
   return { info, stats };
 }
 
-async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (t: T) => Promise<R>,
+): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i]!);
-    }
-  });
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await fn(items[i]!);
+      }
+    },
+  );
   await Promise.all(workers);
   return out;
 }
@@ -284,33 +312,38 @@ async function doRescan(force: boolean): Promise<RepoInfo[]> {
     openMap = new Map(); // DB not opened (tests)
   }
   const now = Date.now();
-  const enriched = await mapLimit([...map.entries()], ENRICH_CONCURRENCY, async ([dir, main]) => {
-    const fp = gitStateFingerprint(dir);
-    const hit = enrichCache.get(dir);
-    if (
-      !force &&
-      hit &&
-      hit.fp === fp &&
-      fp !== "" &&
-      now - hit.at < TUNING.DISCOVERY_STATS_TTL_MS
-    ) {
-      return {
-        ...hit.info,
-        openComments: openMap.get(dir) ?? 0,
-        seenLines: seenLinesFor(dir, hit.info.defaultBase, hit.stats),
-      };
-    }
-    try {
-      const { info, stats } = await enrich(dir, main, openMap);
-      // pre-enrich fp: state moving DURING enrich must invalidate next scan
-      enrichCache.set(dir, { fp, at: now, info, stats });
-      return info;
-    } catch {
-      enrichCache.delete(dir);
-      return null; // broken checkout: drop from the list rather than failing all repos
-    }
-  });
-  for (const dir of enrichCache.keys()) if (!map.has(dir)) enrichCache.delete(dir);
+  const enriched = await mapLimit(
+    [...map.entries()],
+    ENRICH_CONCURRENCY,
+    async ([dir, main]) => {
+      const fp = gitStateFingerprint(dir);
+      const hit = enrichCache.get(dir);
+      if (
+        !force &&
+        hit &&
+        hit.fp === fp &&
+        fp !== "" &&
+        now - hit.at < TUNING.DISCOVERY_STATS_TTL_MS
+      ) {
+        return {
+          ...hit.info,
+          openComments: openMap.get(dir) ?? 0,
+          seenLines: seenLinesFor(dir, hit.info.defaultBase, hit.stats),
+        };
+      }
+      try {
+        const { info, stats } = await enrich(dir, main, openMap);
+        // pre-enrich fp: state moving DURING enrich must invalidate next scan
+        enrichCache.set(dir, { fp, at: now, info, stats });
+        return info;
+      } catch {
+        enrichCache.delete(dir);
+        return null; // broken checkout: drop from the list rather than failing all repos
+      }
+    },
+  );
+  for (const dir of enrichCache.keys())
+    if (!map.has(dir)) enrichCache.delete(dir);
   const repos = enriched.filter((r) => r !== null);
   repos.sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0));
   knownDirs.clear();
@@ -365,7 +398,8 @@ export async function isKnownRepo(dir: string): Promise<boolean> {
   }
   const allowed = [homedir(), ...config.roots].map(realOrSelf);
   if (!allowed.some((p) => within(real, p))) return false;
-  if (knownDirs.has(real) || knownDirs.has(dir) || validated.has(real)) return true;
+  if (knownDirs.has(real) || knownDirs.has(dir) || validated.has(real))
+    return true;
   try {
     const top = (await run(dir, ["rev-parse", "--show-toplevel"])).trim();
     if (realpathSync(top) === real) {
@@ -387,7 +421,9 @@ export function startDiscoveryTimer(onChange: () => void): void {
     } catch {
       return;
     }
-    const changed = before.size !== knownDirs.size || [...knownDirs].some((d) => !before.has(d));
+    const changed =
+      before.size !== knownDirs.size ||
+      [...knownDirs].some((d) => !before.has(d));
     if (changed) onChange();
   }, TUNING.DISCOVERY_INTERVAL_MS);
 }

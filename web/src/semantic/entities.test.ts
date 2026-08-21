@@ -20,19 +20,28 @@ describe("entityAnchor", () => {
     assert.deepEqual(entityAnchor(e({})), { side: "new", line: 10 });
   });
   it("falls back to the old side for deletes", () => {
-    assert.deepEqual(entityAnchor(e({ change: "deleted", startLine: null, endLine: null })), {
-      side: "old",
-      line: 8,
-    });
+    assert.deepEqual(
+      entityAnchor(e({ change: "deleted", startLine: null, endLine: null })),
+      {
+        side: "old",
+        line: 8,
+      },
+    );
   });
   it("returns null with no range at all", () => {
-    assert.equal(entityAnchor(e({ startLine: null, oldStartLine: null })), null);
+    assert.equal(
+      entityAnchor(e({ startLine: null, oldStartLine: null })),
+      null,
+    );
   });
 });
 
 describe("entityLabel", () => {
   it("shows renames as before → after", () => {
-    assert.equal(entityLabel(e({ change: "renamed", name: "b", oldName: "a" })), "a → b");
+    assert.equal(
+      entityLabel(e({ change: "renamed", name: "b", oldName: "a" })),
+      "a → b",
+    );
   });
   it("is just the name otherwise", () => {
     assert.equal(entityLabel(e({})), "alpha");
