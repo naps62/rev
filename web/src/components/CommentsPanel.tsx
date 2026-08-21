@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type MouseEvent, useMemo, useState } from "react";
 import type { Comment } from "#shared/types";
 import { basename, cx, type Thread } from "../util";
 import { CommentThread } from "./CommentThread";
@@ -129,7 +129,7 @@ export function CommentsPanel({
       </div>
 
       <p className="border-t border-edge-soft px-3 py-1.5 text-[11px] text-faint">
-        header jumps to the thread · reply/resolve inline
+        click a thread to jump to it · reply/resolve inline
       </p>
     </div>
   );
@@ -151,8 +151,16 @@ function ThreadRow({
 }) {
   const { root } = thread;
   const a = root.anchor;
+  // Whole row jumps; clicks on inner controls (reply, resolve, links, the
+  // composer) and text selections must not.
+  const jumpFromContainer = (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button, a, textarea, input, select, label")) return;
+    if (window.getSelection()?.toString()) return;
+    onJump(thread);
+  };
   return (
-    <div className="px-2 pb-2">
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the header button is the keyboard path
+    <div className="cursor-pointer px-2 pb-2" onClick={jumpFromContainer}>
       <button
         type="button"
         onClick={() => onJump(thread)}
