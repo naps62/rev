@@ -11,12 +11,8 @@
  * homepage doesn't hammer an unreachable forge.
  */
 
-
-import type { PrInfo, PrState } from "#shared/types";
-
-
 import { TUNING } from "#shared/tuning";
-import type { PrInfo } from "#shared/types";
+import type { PrInfo, PrState } from "#shared/types";
 import { config } from "./config.ts";
 
 export type ForgePr = Omit<PrInfo, "checkoutDir">;
@@ -96,14 +92,25 @@ async function fetchPrs(remoteUrl: string): Promise<ForgePr[] | null> {
         `${base}?state=open&per_page=100`,
         `${base}?state=closed&sort=updated&direction=desc&per_page=100`,
       ]
-    : [`${base}?state=open&limit=100`, `${base}?state=closed&sort=recentupdate&limit=100`];
-  const headers: Record<string, string> = { accept: "application/json", "user-agent": "rev" };
-  if (github && config.ghToken) headers.authorization = `Bearer ${config.ghToken}`;
-  if (!github && config.giteaToken) headers.authorization = `token ${config.giteaToken}`;
+    : [
+        `${base}?state=open&limit=100`,
+        `${base}?state=closed&sort=recentupdate&limit=100`,
+      ];
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    "user-agent": "rev",
+  };
+  if (github && config.ghToken)
+    headers.authorization = `Bearer ${config.ghToken}`;
+  if (!github && config.giteaToken)
+    headers.authorization = `token ${config.giteaToken}`;
   try {
     const pages = await Promise.all(
       urls.map(async (url) => {
-        const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) });
+        const res = await fetch(url, {
+          headers,
+          signal: AbortSignal.timeout(10_000),
+        });
         if (!res.ok) throw new Error(`${res.status}`);
         return mapPrs(await res.json(), `${owner}/${repo}`);
       }),

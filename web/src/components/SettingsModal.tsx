@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import type {
-  CommandPreset,
+import {
+  type CommandPreset,
   SESSION_SPAWN_PLACEHOLDERS,
   SESSION_SPAWN_PRESETS,
   WORKTREE_CMD_PLACEHOLDERS,

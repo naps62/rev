@@ -1,6 +1,5 @@
 import { join } from "node:path";
 
-
 import {
   after as afterAll,
   before as beforeAll,
@@ -12,7 +11,6 @@ import {
   DEFAULT_WORKTREE_CMD,
   DEFAULT_WORKTREE_REMOVE_CMD,
 } from "#shared/commands";
-
 
 import {
   CommandError,
@@ -102,10 +100,16 @@ describe("worktreeRemoveCommand setting", () => {
   test("defaults, persists, validates", () => {
     expect(worktreeRemoveCommand()).toBe(DEFAULT_WORKTREE_REMOVE_CMD);
     setWorktreeRemoveCommand("aoe remove {branch} --delete-worktree");
-    expect(worktreeRemoveCommand()).toBe("aoe remove {branch} --delete-worktree");
+    expect(worktreeRemoveCommand()).toBe(
+      "aoe remove {branch} --delete-worktree",
+    );
     expect(() => setWorktreeRemoveCommand("")).toThrow(CommandError);
-    expect(() => setWorktreeRemoveCommand("echo no-placeholder")).toThrow(CommandError);
-    expect(worktreeRemoveCommand()).toBe("aoe remove {branch} --delete-worktree");
+    expect(() => setWorktreeRemoveCommand("echo no-placeholder")).toThrow(
+      CommandError,
+    );
+    expect(worktreeRemoveCommand()).toBe(
+      "aoe remove {branch} --delete-worktree",
+    );
     setWorktreeRemoveCommand(DEFAULT_WORKTREE_REMOVE_CMD);
   });
 });
