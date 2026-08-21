@@ -502,7 +502,7 @@ export function Repos() {
         />
 
         {reposQ.isPending && (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(23rem,100%),1fr))] items-start gap-3">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(36rem,100%),1fr))] items-start gap-3">
             {[0, 1, 2].map((i) => (
               <div key={i} className="animate-pulse rounded-md border border-edge bg-panel px-3 py-3">
                 <div className="h-3.5 w-40 rounded-sm bg-raise" />
@@ -569,7 +569,7 @@ export function Repos() {
             {g.label && (
               <p className="mb-1.5 font-mono text-[11px] text-faint">{g.label}/</p>
             )}
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(23rem,100%),1fr))] items-start gap-3">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(36rem,100%),1fr))] items-start gap-3">
               {g.cards.map((c) => (
                 <ProjectCard
                   key={c.entry.repo.dir}
@@ -630,15 +630,19 @@ function Drift({ repo: r }: { repo: RepoInfo }) {
   );
 }
 
+/** Review progress %, floored + clamped so it only reads 100 when every line is seen. */
+function seenPct(r: RepoInfo): number | null {
+  const total = (r.additions ?? 0) + (r.deletions ?? 0);
+  return total > 0 && r.seenLines != null
+    ? r.seenLines >= total
+      ? 100
+      : Math.min(99, Math.floor((r.seenLines / total) * 100))
+    : null;
+}
+
 function Meta({ repo: r }: { repo: RepoInfo }) {
   const total = (r.additions ?? 0) + (r.deletions ?? 0);
-  // floor + clamp so "reviewed" only ever reads 100% when every line is seen
-  const pct =
-    total > 0 && r.seenLines != null
-      ? r.seenLines >= total
-        ? 100
-        : Math.min(99, Math.floor((r.seenLines / total) * 100))
-      : null;
+  const pct = seenPct(r);
   const filesTitle =
     r.changedFiles != null
       ? `${r.changedFiles} file${r.changedFiles === 1 ? "" : "s"} changed`
@@ -727,6 +731,7 @@ function ProjectCard({
   const idleRows = c.rows.filter((row) => row.dim);
   const prOf = (row: CardRow) =>
     row.repo.branch ? byBranch.get(row.repo.branch) : undefined;
+  const reservePr = c.rows.some((row) => prOf(row) !== undefined);
   const reserveRm = c.rows.some((row) => {
     const pr = prOf(row);
     return pr !== undefined && pr.state !== "open";
@@ -781,6 +786,7 @@ function ProjectCard({
               dim={row.dim}
               pr={prOf(row)}
               cardDir={r.dir}
+              reservePr={reservePr}
               reserveRm={reserveRm}
             />
           ))}
@@ -798,6 +804,7 @@ function ProjectCard({
               dim={row.dim}
               pr={prOf(row)}
               cardDir={r.dir}
+              reservePr={reservePr}
               reserveRm={reserveRm}
             />
           ))}
@@ -939,52 +946,32 @@ function RemoveWorktree({ dir, cardDir }: { dir: string; cardDir: string }) {
   );
 }
 
-function PrBadge({ pr }: { pr: PrInfo }) {
-  return (
-    <>
-      <a
-        href={pr.url}
-        target="_blank"
-        rel="noreferrer"
-        title={pr.title}
-        className="relative z-10 shrink-0 font-mono text-[10.5px] text-faint transition-colors duration-150 hover:text-fg"
-      >
-        #{pr.number}
-      </a>
-      {pr.state !== "open" && (
-        <span
-          className={cx(
-            "shrink-0 rounded-sm px-1 py-px font-mono text-[10px] font-medium",
-            pr.state === "merged" ? "bg-add-soft text-add" : "bg-del-soft text-del",
-          )}
-        >
-          {pr.state}
-        </span>
-      )}
-    </>
-  );
-}
-
 function WorktreeRow({
   repo: r,
   dim,
   pr,
   cardDir,
+  reservePr,
   reserveRm,
 }: {
   repo: RepoInfo;
   dim: boolean;
   pr?: PrInfo;
   cardDir: string;
+  /** Some sibling row has a PR — hold the number/state columns so they align. */
+  reservePr: boolean;
   /** Some sibling row shows the rm button — hold its column so times align. */
   reserveRm: boolean;
 }) {
   // A worktree's dir name repeats its branch — the branch IS its identity.
   const checkout = r.branch ?? `detached @ ${r.head}`;
   const removable = pr !== undefined && pr.state !== "open";
+  const pct = seenPct(r);
+  const total = (r.additions ?? 0) + (r.deletions ?? 0);
   return (
     // The whole row navigates via the cover link; real controls (PR link,
-    // remove button) sit above it on z-10 — anchors can't nest.
+    // remove button) sit above it on z-10 — anchors can't nest. The right
+    // side is fixed-width columns so every row's cells line up.
     <div
       className={cx(
         "relative flex items-center gap-2 px-3 py-1.5 transition-colors duration-150 hover:bg-raise/60",
@@ -999,15 +986,74 @@ function WorktreeRow({
       />
       <DirtyDot dirty={r.dirty} />
       <span className="min-w-0 truncate font-mono text-[12px] text-fg">{checkout}</span>
-      {pr && <PrBadge pr={pr} />}
       {/* ahead/behind is noise once the branch's PR is finished */}
       {!removable && <Drift repo={r} />}
-      <Meta repo={r} />
-      {reserveRm && (
-        <span className="flex w-8 shrink-0 justify-end">
-          {removable && <RemoveWorktree dir={r.dir} cardDir={cardDir} />}
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        {reservePr && (
+          <span className="flex w-24 shrink-0 items-center gap-1.5">
+            {pr && (
+              <>
+                <a
+                  href={pr.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={pr.title}
+                  className="relative z-10 w-9 shrink-0 text-right font-mono text-[10.5px] text-faint transition-colors duration-150 hover:text-fg"
+                >
+                  #{pr.number}
+                </a>
+                {pr.state !== "open" && (
+                  <span
+                    className={cx(
+                      "shrink-0 rounded-sm px-1 py-px font-mono text-[10px] font-medium",
+                      pr.state === "merged" ? "bg-add-soft text-add" : "bg-del-soft text-del",
+                    )}
+                  >
+                    {pr.state}
+                  </span>
+                )}
+              </>
+            )}
+          </span>
+        )}
+        <span className="flex w-14 shrink-0 justify-end">
+          {r.openComments > 0 && (
+            <span className="rounded-sm bg-accent-soft px-1.5 py-0.5 font-mono text-[10.5px] font-medium text-accent">
+              {r.openComments} open
+            </span>
+          )}
         </span>
-      )}
+        <span
+          className={cx(
+            "w-9 shrink-0 text-right font-mono text-[10.5px] tabular-nums",
+            pct === 100 ? "text-add" : "text-faint",
+          )}
+          title={
+            pct != null
+              ? `review progress: ${r.seenLines} of ${total} changed lines marked seen`
+              : undefined
+          }
+        >
+          {pct != null && pct > 0 ? `${pct === 100 ? "✓" : ""}${pct}%` : ""}
+        </span>
+        <span className="w-24 shrink-0 text-right font-mono text-[11px] tabular-nums">
+          {r.additions != null && total > 0 ? (
+            <DiffStat add={r.additions ?? 0} del={r.deletions ?? 0} />
+          ) : r.changedFiles != null && r.changedFiles > 0 ? (
+            <span className="text-mute">
+              {r.changedFiles} file{r.changedFiles === 1 ? "" : "s"}
+            </span>
+          ) : null}
+        </span>
+        <span className="w-14 shrink-0 text-right text-[11px] text-faint">
+          {relativeTime(r.lastActivity)}
+        </span>
+        {reserveRm && (
+          <span className="flex w-8 shrink-0 justify-end">
+            {removable && <RemoveWorktree dir={r.dir} cardDir={cardDir} />}
+          </span>
+        )}
+      </span>
     </div>
   );
 }
