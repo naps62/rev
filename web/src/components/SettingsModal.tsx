@@ -1,4 +1,7 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { WORKTREE_CMD_PLACEHOLDERS, WORKTREE_CMD_PRESETS } from "#shared/commands";
+import * as api from "../api";
 import {
   type DiffMode,
   type FeatureFlags,
@@ -23,11 +26,12 @@ export interface ReviewSettings {
   status: WsStatus;
 }
 
-type SectionId = "features" | "appearance" | "keyboard";
+type SectionId = "features" | "appearance" | "commands" | "keyboard";
 
 const SECTION_TITLE: Record<SectionId, string> = {
   features: "review features",
   appearance: "appearance",
+  commands: "commands",
   keyboard: "keyboard",
 };
 
@@ -69,6 +73,13 @@ function SectionGlyph({ id }: { id: SectionId }) {
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
         <circle cx="8" cy="8" r="5.5" stroke="currentColor" />
         <path d="M8 2.5a5.5 5.5 0 0 1 0 11Z" fill="currentColor" />
+      </svg>
+    );
+  if (id === "commands")
+    return (
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <path d="M3 4.5l4 3.5-4 3.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M8.5 12h4.5" stroke="currentColor" strokeLinecap="round" />
       </svg>
     );
   return (
@@ -475,6 +486,93 @@ function KeyboardSection({ onReviewPage }: { onReviewPage: boolean }) {
   );
 }
 
+/**
+ * The command POST /api/worktrees runs to check out a PR branch. Presets
+ * autofill the input; nothing is saved until the save button.
+ */
+function CommandsSection() {
+  const qc = useQueryClient();
+  const cmdQ = useQuery({ queryKey: ["commands"], queryFn: api.getCommands });
+  const [draft, setDraft] = useState<string | null>(null);
+  const saved = cmdQ.data?.worktreeCreate ?? "";
+  const value = draft ?? saved;
+  const save = useMutation({
+    mutationFn: (worktreeCreate: string) => api.putCommands({ worktreeCreate }),
+    onSuccess: (res) => {
+      qc.setQueryData(["commands"], res);
+      setDraft(null);
+    },
+  });
+  const dirty = draft !== null && draft !== saved;
+  return (
+    <div className="space-y-6">
+      <section>
+        <GroupHeading>worktree creation</GroupHeading>
+        <p className="mb-3 text-[11.5px] leading-snug text-mute">
+          Run for “+ worktree” on a PR branch. Split into argv (quotes group, no
+          shell), executed in the repo's main checkout after a{" "}
+          <code className="font-mono text-[11px]">git fetch origin</code>.
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {WORKTREE_CMD_PRESETS.map((p) => (
+            <button
+              key={p.name}
+              type="button"
+              title={`${p.blurb}\n${p.template}`}
+              onClick={() => setDraft(p.template)}
+              className={cx(
+                "rounded-sm border px-2 py-0.5 font-mono text-[11px] transition-colors duration-150",
+                value === p.template
+                  ? "border-accent/50 text-accent"
+                  : "border-edge text-mute hover:border-accent/50 hover:text-fg",
+              )}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            value={cmdQ.isPending ? "loading…" : value}
+            disabled={cmdQ.isPending}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && dirty) save.mutate(value);
+            }}
+            aria-label="Worktree create command"
+            className="min-w-0 flex-1 rounded-sm border border-edge bg-panel px-2.5 py-1.5 font-mono text-[12px] text-fg transition-colors duration-150 focus:border-accent/50"
+          />
+          <button
+            type="button"
+            onClick={() => save.mutate(value)}
+            disabled={!dirty || save.isPending}
+            className="shrink-0 rounded-sm border border-edge px-2.5 py-1.5 font-mono text-[11.5px] text-mute transition-colors duration-150 hover:border-accent/50 hover:text-fg disabled:opacity-50 disabled:hover:border-edge disabled:hover:text-mute"
+          >
+            {save.isPending ? "saving…" : dirty ? "save" : "saved"}
+          </button>
+        </div>
+        {save.isError && (
+          <p className="mt-1.5 text-[11.5px] text-del">{(save.error as Error).message}</p>
+        )}
+        <dl className="mt-3 space-y-1">
+          {Object.entries(WORKTREE_CMD_PLACEHOLDERS).map(([ph, desc]) => (
+            <div key={ph} className="flex items-baseline gap-3">
+              <dt className="w-24 shrink-0 rounded-sm bg-raise px-1.5 py-0.5 text-center font-mono text-[11px] text-fg">
+                {ph}
+              </dt>
+              <dd className="text-[11.5px] text-mute">{desc}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-3 text-[11px] leading-snug text-faint">
+          Anyone who can reach rev can change this command — trusted networks
+          only.
+        </p>
+      </section>
+    </div>
+  );
+}
+
 /* ----------------------------------------------------------- the control */
 
 const STATUS_NOTE: Record<WsStatus, string> = {
@@ -491,12 +589,12 @@ const STATUS_NOTE: Record<WsStatus, string> = {
  * (symbol panel) don't also fire while the modal is up.
  */
 export function SettingsControl({ review }: { review?: ReviewSettings }) {
-  const sections: SectionId[] = ["features", "appearance", "keyboard"];
+  const sections: SectionId[] = ["features", "appearance", "commands", "keyboard"];
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<SectionId>("features");
 
   // Off the review page there is no live state to bind to, so the modal
-  // edits the same localStorage store the next review will load from.
+  // edits the same server-backed store the next review will load from.
   const [stored, setStored] = useState(() => ({
     features: loadFeatures(new URLSearchParams()),
     mode: loadDiffMode(),
@@ -673,6 +771,7 @@ export function SettingsControl({ review }: { review?: ReviewSettings }) {
                   <FeaturesSection features={features} onFeatures={onFeatures} />
                 )}
                 {section === "appearance" && <AppearanceSection mode={mode} onMode={onMode} />}
+                {section === "commands" && <CommandsSection />}
                 {section === "keyboard" && <KeyboardSection onReviewPage={review != null} />}
               </div>
 
@@ -685,7 +784,9 @@ export function SettingsControl({ review }: { review?: ReviewSettings }) {
                     </span>
                   </span>
                 ) : (
-                  <span className="text-[11px] text-faint">settings apply to this browser</span>
+                  <span className="text-[11px] text-faint">
+                    saved on the server — shared by every browser
+                  </span>
                 )}
                 <span className="shrink-0 font-mono text-[10.5px] text-faint">
                   ? keyboard · esc close

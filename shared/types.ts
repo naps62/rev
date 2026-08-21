@@ -62,6 +62,69 @@ export interface RepoInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Pull requests & worktree creation
+// ---------------------------------------------------------------------------
+
+/** An open PR on the repo's origin forge whose head branch lives on origin. */
+export interface PrInfo {
+  number: number;
+  title: string;
+  /** Head branch name on origin. */
+  branch: string;
+  /** Forge web URL of the PR. */
+  url: string;
+  author: string | null;
+  draft: boolean;
+  /** Checkout (main or worktree) currently on `branch`, null when none. */
+  checkoutDir: string | null;
+}
+
+export interface PrListResponse {
+  dir: string;
+  /**
+   * Null when origin's PRs can't be listed: no remote, unsupported forge, or
+   * the API rejected the request (missing/expired token). The UI treats null
+   * as "feature unavailable", not an error.
+   */
+  prs: PrInfo[] | null;
+}
+
+export interface WorktreeCreateRequest {
+  /** Any checkout of the repo; the worktree is created off its main checkout. */
+  dir: string;
+  /** Branch to check out; may exist only on origin. */
+  branch: string;
+}
+
+export interface WorktreeCreateResponse {
+  /**
+   * Checkout now on the branch, null when the configured command created
+   * something outside `git worktree list` (e.g. a separate clone) — those
+   * appear in /api/repos after the rescan this endpoint triggers.
+   */
+  dir: string | null;
+  branch: string;
+}
+
+/** The UI-configurable command templates the server runs; see shared/commands.ts. */
+export interface CommandsResponse {
+  /** Argv template run by POST /api/worktrees ({dir}, {branch}, {remoteUrl}). */
+  worktreeCreate: string;
+}
+
+/**
+ * UI preferences, stored server-side (settings table) and shared by every
+ * browser that uses this rev instance. All fields optional: absent = the
+ * client's default. `features` keys are the web FeatureFlags names; unknown
+ * keys are dropped on write.
+ */
+export interface UiSettings {
+  features?: Record<string, boolean>;
+  diffMode?: "unified" | "split" | "mixed";
+  theme?: "light" | "dark" | "auto";
+}
+
+// ---------------------------------------------------------------------------
 // Diffs
 // ---------------------------------------------------------------------------
 
@@ -568,6 +631,19 @@ export type ServerMessage =
 // POST   /api/github/comment                 ← GithubCommentRequest → { ok: true }
 // POST   /api/github/resolve                 ← GithubResolveRequest → { ok: true }
 // PUT    /api/seen                           ← SeenRequest → { ok: true }
+// GET    /api/prs?dir                        → PrListResponse (open PRs on the
+//        repo's origin forge, annotated with the local checkout on each
+//        branch; prs:null when the forge can't be queried)
+// POST   /api/worktrees                      ← WorktreeCreateRequest
+//        → WorktreeCreateResponse (201). Runs the configured worktree-create
+//        command for the branch, then re-scans discovery.
+// GET    /api/commands                       → CommandsResponse
+// PUT    /api/commands                       ← CommandsResponse → CommandsResponse
+//        Persists the worktree-create template (settings table).
+// GET    /api/settings                       → UiSettings
+// PUT    /api/settings                       ← UiSettings → UiSettings
+//        Persists shared UI preferences (settings table); unknown fields
+//        and wrongly-typed values are dropped, not rejected.
 // POST   /api/fetch                          ← { dir, base } → { ok, baseBehind }
 //        Runs `git fetch` for base's upstream remote so the review can be
 //        re-based against origin's truth without leaving the page.

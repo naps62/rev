@@ -54,6 +54,10 @@ export function openDb(path: string = config.dbPath): void {
       PRIMARY KEY (dir, base, path)
     );
     DROP TABLE IF EXISTS seen_segments;
+    CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
   // Pre-pending-states DBs: add the columns and backfill submitted_seq = seq,
   // so watcher cursor files (which held seq values) stay valid.
@@ -85,6 +89,19 @@ export function closeDb(): void {
 function must(): DatabaseSync {
   if (!db) throw new Error("openDb() not called");
   return db;
+}
+
+export function getSetting(key: string): string | null {
+  const row = must().prepare("SELECT value FROM settings WHERE key = ?").get(key) as
+    | { value: string }
+    | undefined;
+  return row?.value ?? null;
+}
+
+export function setSetting(key: string, value: string): void {
+  must()
+    .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    .run(key, value);
 }
 
 /** Run `fn` inside BEGIN/COMMIT, rolling back on throw. */

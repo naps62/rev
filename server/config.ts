@@ -29,4 +29,6 @@ export const config = {
    * /api/github (the open review page polls it).
    */
   githubToAgent: process.env.REV_GITHUB_TO_AGENT === "1",
+  ghToken: process.env.REV_GH_TOKEN ?? process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN ?? null,
+  giteaToken: process.env.REV_GITEA_TOKEN ?? process.env.GITEA_TOKEN ?? null,
 };

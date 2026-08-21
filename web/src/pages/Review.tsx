@@ -41,20 +41,24 @@ import { entityAnchor } from "../semantic/entities.ts";
 import { findOccurrences, type Occurrence } from "../semantic/symbols.ts";
 import { attachCrosshair } from "../crosshair";
 import { startHints } from "../hints";
-import { type FeatureFlags, loadFeatures, saveFeatures } from "../features";
+import {
+  type FeatureFlags,
+  loadDiffMode,
+  loadFeatures,
+  saveDiffMode,
+  saveFeatures,
+} from "../features";
 import { TUNING } from "#shared/tuning";
 import { buildFileTree, flattenTree } from "../tree";
 import { basename, buildThreads, cx, githubToComments, shortSha, type Thread } from "../util";
 import { useRevSocket } from "../ws";
 
-const MODE_KEY = "rev.diffMode";
 const DEST_KEY = "rev.commentDest";
 
 function initialMode(params: URLSearchParams): DiffMode {
   const p = params.get("mode");
   if (p === "split" || p === "unified" || p === "mixed") return p;
-  const stored = localStorage.getItem(MODE_KEY);
-  return stored === "split" || stored === "mixed" ? stored : "unified";
+  return loadDiffMode();
 }
 
 export function Review() {
@@ -245,7 +249,7 @@ export function Review() {
   const [mode, setModeState] = useState<DiffMode>(() => initialMode(params));
   const setMode = (m: DiffMode) => {
     setModeState(m);
-    localStorage.setItem(MODE_KEY, m);
+    saveDiffMode(m);
   };
   const [features, setFeaturesState] = useState<FeatureFlags>(() => loadFeatures(params));
   const setFeatures = (
@@ -599,10 +603,7 @@ export function Review() {
     const attempt = () => {
       const el = document.querySelector<HTMLElement>(sel);
       if (el) {
-        cancelGlide();
-        window.scrollTo({
-          top: el.getBoundingClientRect().top + window.scrollY - eyeAnchorY(),
-        });
+        glideTo(el);
         el.classList.remove("el-flash");
         void el.offsetWidth;
         el.classList.add("el-flash");
@@ -1127,7 +1128,15 @@ export function Review() {
                   return a && b ? (a.seq > b.seq ? a : b) : a ?? b;
                 })()}
                 keyCmd={keyCmds[f.path]}
-                onSymbolClick={features.symbols ? setSymbol : undefined}
+                onSymbolClick={
+                  features.symbols
+                    ? (s) => {
+                        setSymbol(s);
+                        // Symbol click reclaims the side-panel slot from comments.
+                        setCommentsOpen(false);
+                      }
+                    : undefined
+                }
                 onHover={() => hoverFocus(f.path)}
                 onToggleSeen={toggleSeen}
                 onCreateComment={(anchor, body) => createComment(anchor, body)}

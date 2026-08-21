@@ -26,6 +26,8 @@ import type {
   PresenceResponse,
   SeenRequest,
   ServerMessage,
+  UiSettings,
+  WorktreeCreateRequest,
 } from "#shared/types";
 import { TUNING } from "#shared/tuning";
 import {
@@ -34,6 +36,8 @@ import {
   DbError,
   deleteSeenSnapshot,
   getSeenSnapshot,
+  getSetting,
+  setSetting,
   listComments,
   patchComment,
   putSeenSnapshot,
@@ -45,7 +49,15 @@ import { resolveComments } from "./anchor.ts";
 import { presence } from "./presence.ts";
 import { computeSemanticDiff } from "./semantic.ts";
 import { computeStack } from "./stack.ts";
+import {
+  CommandError,
+  runWorktreeCommand,
+  setWorktreeCommand,
+  validBranch,
+  worktreeCommand,
+} from "./commands.ts";
 import { invalidateRepoList, isKnownRepo, listRepos, rescan } from "./discovery.ts";
+import { listOpenPrs } from "./forge.ts";
 import {
   forwardAgentReply,
   GhError,
@@ -84,6 +96,37 @@ const IMAGE_CONTENT_TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".webp": "image/webp",
 };
+
+const UI_SETTINGS_KEY = "ui.settings";
+const DIFF_MODES = ["unified", "split", "mixed"] as const;
+const THEMES = ["light", "dark", "auto"] as const;
+
+function uiSettings(): UiSettings {
+  try {
+    return JSON.parse(getSetting(UI_SETTINGS_KEY) ?? "{}") as UiSettings;
+  } catch {
+    return {};
+  }
+}
+
+/** Whitelist fields and value types; anything else is dropped, not an error. */
+function sanitizeUiSettings(b: unknown): UiSettings | null {
+  if (typeof b !== "object" || b === null || Array.isArray(b)) return null;
+  const src = b as Record<string, unknown>;
+  const out: UiSettings = {};
+  if (typeof src.features === "object" && src.features !== null) {
+    const features: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(src.features)) {
+      if (typeof v === "boolean") features[k] = v;
+    }
+    out.features = features;
+  }
+  if (DIFF_MODES.includes(src.diffMode as never)) {
+    out.diffMode = src.diffMode as UiSettings["diffMode"];
+  }
+  if (THEMES.includes(src.theme as never)) out.theme = src.theme as UiSettings["theme"];
+  return out;
+}
 
 /**
  * Resolve a repo-relative path inside `dir`, or null when it escapes
@@ -187,6 +230,76 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     const repos = await rescan(true); // user-forced: bypass per-repo stats cache
     broadcast({ type: "repos-changed" });
     return c.json(repos);
+  });
+
+  app.get("/prs", async (c) => {
+    const dir = c.req.query("dir");
+    if (!dir) return c.json({ error: "dir is required" }, 400);
+    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    const repos = await listRepos();
+    const me = repos.find((r) => r.dir === dir);
+    const mainDir = me?.mainDir ?? dir;
+    const remote = repos.find((r) => r.dir === mainDir)?.remoteUrl ?? me?.remoteUrl ?? null;
+    if (remote === null) return c.json({ dir, prs: null });
+    const prs = await listOpenPrs(remote);
+    if (prs === null) return c.json({ dir, prs: null });
+    const checkouts = new Map<string, string>();
+    for (const r of repos) {
+      if (r.mainDir === mainDir && r.branch !== null) checkouts.set(r.branch, r.dir);
+    }
+    return c.json({
+      dir,
+      prs: prs.map((p) => ({ ...p, checkoutDir: checkouts.get(p.branch) ?? null })),
+    });
+  });
+
+  app.post("/worktrees", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as WorktreeCreateRequest | null;
+    if (!b || typeof b.dir !== "string" || typeof b.branch !== "string") {
+      return c.json({ error: "dir and branch are required" }, 400);
+    }
+    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    if (!validBranch(b.branch)) return c.json({ error: `invalid branch name: ${b.branch}` }, 400);
+    const repos = await listRepos();
+    const me = repos.find((r) => r.dir === b.dir);
+    const mainDir = me?.mainDir ?? b.dir;
+    const remote = repos.find((r) => r.dir === mainDir)?.remoteUrl ?? me?.remoteUrl ?? null;
+    let created;
+    try {
+      created = await runWorktreeCommand(mainDir, b.branch, remote);
+    } catch (err) {
+      if (err instanceof CommandError) return c.json({ error: err.message }, 400);
+      throw err;
+    }
+    await rescan(true);
+    broadcast({ type: "repos-changed" });
+    return c.json({ dir: created.dir, branch: b.branch }, 201);
+  });
+
+  app.get("/commands", (c) => c.json({ worktreeCreate: worktreeCommand() }));
+
+  app.put("/commands", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as { worktreeCreate?: unknown } | null;
+    if (!b || typeof b.worktreeCreate !== "string") {
+      return c.json({ error: "worktreeCreate is required" }, 400);
+    }
+    try {
+      setWorktreeCommand(b.worktreeCreate);
+    } catch (err) {
+      if (err instanceof CommandError) return c.json({ error: err.message }, 400);
+      throw err;
+    }
+    return c.json({ worktreeCreate: worktreeCommand() });
+  });
+
+  app.get("/settings", (c) => c.json(uiSettings()));
+
+  app.put("/settings", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as unknown;
+    const clean = sanitizeUiSettings(b);
+    if (clean === null) return c.json({ error: "settings object required" }, 400);
+    setSetting(UI_SETTINGS_KEY, JSON.stringify(clean));
+    return c.json(clean);
   });
 
   app.get("/diff", async (c) => {

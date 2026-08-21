@@ -25,9 +25,15 @@ import type {
   FileWriteRequest,
   RepoInfo,
   SeenRequest,
+  CommandsResponse,
+  PrListResponse,
   SemanticDiffResponse,
   StackResponse,
+  UiSettings,
+  WorktreeCreateRequest,
+  WorktreeCreateResponse,
 } from "#shared/types";
+import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
 
 const now = Date.now();
 const min = 60_000;
@@ -813,6 +819,59 @@ const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
 export function fxGetRepos(): RepoInfo[] {
   return clone(fixtureRepos);
+}
+
+export function fxGetPrs(dir: string): PrListResponse {
+  const repo = fixtureRepos.find((r) => r.dir === dir);
+  if (!repo || repo.remoteUrl === null) return { dir, prs: null };
+  const checkouts = new Map(
+    fixtureRepos.filter((r) => r.mainDir === repo.mainDir && r.branch).map((r) => [r.branch!, r.dir]),
+  );
+  const prs = [
+    {
+      number: 47,
+      title: "feat: session hooks for the comment watcher",
+      branch: "session-hooks",
+      url: "https://example.com/pr/47",
+      author: "naps62",
+      draft: false,
+    },
+    {
+      number: 52,
+      title: "wip: entity-level folding",
+      branch: "entity-folding",
+      url: "https://example.com/pr/52",
+      author: "naps62",
+      draft: true,
+    },
+  ];
+  return { dir, prs: prs.map((p) => ({ ...p, checkoutDir: checkouts.get(p.branch) ?? null })) };
+}
+
+export function fxCreateWorktree(req: WorktreeCreateRequest): WorktreeCreateResponse {
+  return { dir: `${req.dir}/worktrees/${req.branch}`, branch: req.branch };
+}
+
+let fxWorktreeCmd = DEFAULT_WORKTREE_CMD;
+
+export function fxGetCommands(): CommandsResponse {
+  return { worktreeCreate: fxWorktreeCmd };
+}
+
+export function fxPutCommands(req: CommandsResponse): CommandsResponse {
+  fxWorktreeCmd = req.worktreeCreate;
+  return { worktreeCreate: fxWorktreeCmd };
+}
+
+let fxUiSettings: UiSettings = {};
+
+export function fxGetSettings(): UiSettings {
+  return fxUiSettings;
+}
+
+export function fxPutSettings(req: UiSettings): UiSettings {
+  fxUiSettings = req;
+  return fxUiSettings;
 }
 
 export function fxGetDiff(dir: string, base: string): DiffResponse {

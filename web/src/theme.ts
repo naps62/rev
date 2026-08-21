@@ -1,11 +1,12 @@
 /**
- * Theme preference (light/dark/auto) persisted in localStorage; the resolved
- * scheme lands as `data-theme` on <html>, which the CSS token overrides key
- * off. An inline script in index.html applies the initial attribute before
- * first paint; this module owns it from then on.
+ * Theme preference (light/dark/auto) stored in the server-side UI settings;
+ * localStorage keeps a copy only so the inline script in index.html can
+ * apply the attribute before first paint. The resolved scheme lands as
+ * `data-theme` on <html>, which the CSS token overrides key off.
  */
 
 import { useSyncExternalStore } from "react";
+import { patchUiSettings, uiSettings } from "./settings";
 
 export type ThemePref = "light" | "dark" | "auto";
 export type Scheme = "light" | "dark";
@@ -48,11 +49,22 @@ media.addEventListener("change", () => {
 });
 
 export function setThemePref(p: ThemePref) {
+  applyPref(p);
+  patchUiSettings({ theme: p });
+}
+
+/** Adopt the server-stored pref; called once after initSettings resolves. */
+export function syncThemeFromSettings() {
+  const p = uiSettings().theme;
+  if (p) applyPref(p);
+}
+
+function applyPref(p: ThemePref) {
   pref = p;
   try {
-    localStorage.setItem(KEY, p);
+    localStorage.setItem(KEY, p); // pre-paint cache for index.html
   } catch {
-    // Losing persistence just means next load falls back to auto.
+    // Losing the cache just means a flash of the wrong theme on load.
   }
   notify();
 }

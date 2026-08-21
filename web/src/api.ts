@@ -5,6 +5,7 @@
  */
 
 import type {
+  CommandsResponse,
   Comment,
   CommentCreateRequest,
   CommentListResponse,
@@ -19,11 +20,15 @@ import type {
   GithubReplyRequest,
   GithubResolveRequest,
   InterdiffResponse,
+  PrListResponse,
   RefsResponse,
   RepoInfo,
   SeenRequest,
   SemanticDiffResponse,
   StackResponse,
+  UiSettings,
+  WorktreeCreateRequest,
+  WorktreeCreateResponse,
 } from "#shared/types";
 
 export class ApiError extends Error {
@@ -78,6 +83,37 @@ export async function getRepos(): Promise<RepoInfo[]> {
 export async function rescanRepos(): Promise<RepoInfo[]> {
   if (isFixture()) return tick((await fx()).fxGetRepos());
   return request("/api/repos/rescan", { method: "POST" });
+}
+
+export async function getPrs(dir: string): Promise<PrListResponse> {
+  if (isFixture()) return tick((await fx()).fxGetPrs(dir));
+  const q = new URLSearchParams({ dir });
+  return request(`/api/prs?${q}`);
+}
+
+export async function createWorktree(req: WorktreeCreateRequest): Promise<WorktreeCreateResponse> {
+  if (isFixture()) return tick((await fx()).fxCreateWorktree(req));
+  return request("/api/worktrees", { method: "POST", body: JSON.stringify(req) });
+}
+
+export async function getCommands(): Promise<CommandsResponse> {
+  if (isFixture()) return tick((await fx()).fxGetCommands());
+  return request("/api/commands");
+}
+
+export async function putCommands(req: CommandsResponse): Promise<CommandsResponse> {
+  if (isFixture()) return tick((await fx()).fxPutCommands(req));
+  return request("/api/commands", { method: "PUT", body: JSON.stringify(req) });
+}
+
+export async function getSettings(): Promise<UiSettings> {
+  if (isFixture()) return tick((await fx()).fxGetSettings());
+  return request("/api/settings");
+}
+
+export async function putSettings(req: UiSettings): Promise<UiSettings> {
+  if (isFixture()) return tick((await fx()).fxPutSettings(req));
+  return request("/api/settings", { method: "PUT", body: JSON.stringify(req) });
 }
 
 export async function getDiff(dir: string, base: string): Promise<DiffResponse> {

@@ -13,6 +13,7 @@ import type {
   PresenceResponse,
   ServerMessage,
 } from "#shared/types";
+import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
 import { config } from "./config.ts";
 import { closeDb, openDb } from "./db.ts";
 import { hashContent } from "./git.ts";
@@ -453,5 +454,82 @@ describe("interdiff", () => {
     const inter = (await (await app.request(`/diff/interdiff?${q}&path=b.txt`)).json()) as InterdiffResponse;
     expect(inter.file.hunks[0]!.lines.every((l) => l.kind === "del")).toBe(true);
     expect(inter.file.contentHash).toBe("");
+  });
+});
+
+describe("PRs and worktree creation", () => {
+  test("GET /prs returns prs:null for a repo with no remote", async () => {
+    const dir = makeRepo("prs-noremote");
+    const res = await app.request(`/prs?dir=${encodeURIComponent(dir)}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ dir, prs: null });
+  });
+
+  test("GET /prs rejects unknown dirs", async () => {
+    const res = await app.request("/prs?dir=/nope");
+    expect(res.status).toBe(400);
+  });
+
+  test("POST /worktrees validates body and branch name", async () => {
+    const dir = makeRepo("wt-validate");
+    expect((await json("POST", "/worktrees", { dir })).status).toBe(400);
+    expect((await json("POST", "/worktrees", { dir: "/nope", branch: "x" })).status).toBe(400);
+    expect((await json("POST", "/worktrees", { dir, branch: "--delete" })).status).toBe(400);
+    expect((await json("POST", "/worktrees", { dir, branch: "a..b" })).status).toBe(400);
+  });
+});
+
+describe("commands", () => {
+  test("GET returns the default, PUT validates and persists", async () => {
+    const before = (await (await app.request("/commands")).json()) as { worktreeCreate: string };
+    expect(typeof before.worktreeCreate).toBe("string");
+    expect((await json("PUT", "/commands", { worktreeCreate: "echo no-branch" })).status).toBe(400);
+    expect((await json("PUT", "/commands", {})).status).toBe(400);
+    const res = await json("PUT", "/commands", { worktreeCreate: "aoe add {dir} --worktree {branch}" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ worktreeCreate: "aoe add {dir} --worktree {branch}" });
+    const after = (await (await app.request("/commands")).json()) as { worktreeCreate: string };
+    expect(after.worktreeCreate).toBe("aoe add {dir} --worktree {branch}");
+  });
+});
+
+describe("settings", () => {
+  test("GET starts empty, PUT sanitizes and persists", async () => {
+    expect(await (await app.request("/settings")).json()).toEqual({});
+    expect((await json("PUT", "/settings", null)).status).toBe(400);
+    expect((await json("PUT", "/settings", [1])).status).toBe(400);
+    const res = await json("PUT", "/settings", {
+      features: { grouping: true, symbols: false, junk: "yes" },
+      diffMode: "split",
+      theme: "sepia",
+      extra: 1,
+    });
+    expect(res.status).toBe(200);
+    const clean = { features: { grouping: true, symbols: false }, diffMode: "split" };
+    expect(await res.json()).toEqual(clean);
+    expect(await (await app.request("/settings")).json()).toEqual(clean);
+  });
+});
+
+describe("POST /worktrees end-to-end (default command)", () => {
+  test("creates a worktree for a branch that only exists on origin", async () => {
+    await json("PUT", "/commands", { worktreeCreate: DEFAULT_WORKTREE_CMD });
+    const origin = makeRepo("wt-origin");
+    git(origin, "checkout", "-b", "feat-x");
+    write(origin, "f.txt", "x\n");
+    git(origin, "add", "-A");
+    git(origin, "commit", "-m", "feat");
+    git(origin, "checkout", "main");
+    const clone = tmpdir("wt-clone");
+    git(SCRATCH, "clone", origin, clone);
+    git(clone, "branch", "-r"); // sanity: origin/feat-x exists remotely only
+
+    const res = await json("POST", "/worktrees", { dir: clone, branch: "feat-x" });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { dir: string | null; branch: string };
+    expect(body.branch).toBe("feat-x");
+    expect(body.dir).toBe(join(clone, "worktrees", "feat-x"));
+    expect(git(body.dir!, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("feat-x");
+    expect(sent.some((m) => m.type === "repos-changed")).toBe(true);
   });
 });
