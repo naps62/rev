@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Cut a release from a clean main: bump the version, build the tarball, tag,
-# publish it on the public GitHub mirror, and push the formula to the tap.
+# Cut a release from a clean main: bump the version, build the tarball as a
+# smoke test, commit, tag, and push. The release workflow on the GitHub
+# mirror publishes the asset and bumps the tap — the local tarball is never
+# published (builds are not reproducible, its sha would not match CI's).
 #
 #   ./scripts/release.sh 0.2.0
 #
-# Needs `gh` authenticated for both REV_GH_REPO and REV_TAP_REPO. Pass
-# --dry-run to build and print the formula without pushing anything.
+# Pass --dry-run to build and print the formula without pushing anything.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -20,7 +21,6 @@ TAP="${REV_TAP_REPO:-naps62/homebrew-tap}"
 die() { printf 'release: %s\n' "$1" >&2; exit 1; }
 
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "usage: release.sh <major.minor.patch> [--dry-run]"
-command -v gh >/dev/null || die "gh not found (brew install gh)"
 
 if (( ! DRY )); then
   [[ -z "$(git status --porcelain)" ]] || die "working tree is dirty"
@@ -64,19 +64,6 @@ git push -q origin main "v$VERSION"
 # and push directly if a remote for it exists.
 git remote get-url github >/dev/null 2>&1 && git push -q github main "v$VERSION"
 
-gh release create "v$VERSION" "$TARBALL" \
-  --repo "$REPO" --title "v$VERSION" --generate-notes
-
-TAPDIR=$(mktemp -d)
-trap 'rm -rf "$TAPDIR"' EXIT
-gh repo clone "$TAP" "$TAPDIR" -- --quiet
-mkdir -p "$TAPDIR/Formula"
-cp packaging/homebrew/rev.rb "$TAPDIR/Formula/rev.rb"
-# An empty tap clones with an unborn branch named after init.defaultBranch;
-# brew looks for the formula on the repo's default branch, so pin it to main.
-git -C "$TAPDIR" checkout -qB main
-git -C "$TAPDIR" add Formula/rev.rb
-git -C "$TAPDIR" commit -q -m "rev $VERSION"
-git -C "$TAPDIR" push -q -u origin main
-
-echo "released v$VERSION — brew upgrade rev (or brew install $TAP/rev)"
+# Publishing is the release workflow's job: tarballs are not reproducible,
+# so a second publisher desyncs the formula sha from the release asset.
+echo "tagged v$VERSION — release workflow on $REPO publishes the asset and bumps $TAP"

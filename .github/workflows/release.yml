@@ -7,6 +7,12 @@ on:
 permissions:
   contents: write
 
+# Tarballs are not reproducible: two runs of one tag would race the asset
+# upload against the tap push and desync the formula sha.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
