@@ -555,7 +555,7 @@ export function Repos() {
         />
 
         {reposQ.isPending && (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(23rem,100%),1fr))] items-start gap-3">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(36rem,100%),1fr))] items-start gap-3">
             {[0, 1, 2].map((i) => (
               <div
                 key={i}
@@ -640,7 +640,7 @@ export function Repos() {
                 {g.label}/
               </p>
             )}
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(23rem,100%),1fr))] items-start gap-3">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(36rem,100%),1fr))] items-start gap-3">
               {g.cards.map((c) => (
                 <ProjectCard
                   key={c.entry.repo.dir}
@@ -704,15 +704,19 @@ function Drift({ repo: r }: { repo: RepoInfo }) {
   );
 }
 
+/** Review progress %, floored + clamped so it only reads 100 when every line is seen. */
+function seenPct(r: RepoInfo): number | null {
+  const total = (r.additions ?? 0) + (r.deletions ?? 0);
+  return total > 0 && r.seenLines != null
+    ? r.seenLines >= total
+      ? 100
+      : Math.min(99, Math.floor((r.seenLines / total) * 100))
+    : null;
+}
+
 function Meta({ repo: r }: { repo: RepoInfo }) {
   const total = (r.additions ?? 0) + (r.deletions ?? 0);
-  // floor + clamp so "reviewed" only ever reads 100% when every line is seen
-  const pct =
-    total > 0 && r.seenLines != null
-      ? r.seenLines >= total
-        ? 100
-        : Math.min(99, Math.floor((r.seenLines / total) * 100))
-      : null;
+  const pct = seenPct(r);
   const filesTitle =
     r.changedFiles != null
       ? `${r.changedFiles} file${r.changedFiles === 1 ? "" : "s"} changed`
@@ -755,6 +759,32 @@ function Meta({ repo: r }: { repo: RepoInfo }) {
   );
 }
 
+const PR_STATE_RANK: Record<PrInfo["state"], number> = {
+  open: 0,
+  merged: 1,
+  closed: 2,
+};
+
+/**
+ * Branch → its most relevant PR: an open PR always beats a finished one, and
+ * among finished ones the newest wins (a branch can be re-PRed).
+ */
+function prsByBranch(prs: PrInfo[]): Map<string, PrInfo> {
+  const map = new Map<string, PrInfo>();
+  for (const pr of prs) {
+    const prev = map.get(pr.branch);
+    if (
+      !prev ||
+      PR_STATE_RANK[pr.state] < PR_STATE_RANK[prev.state] ||
+      (PR_STATE_RANK[pr.state] === PR_STATE_RANK[prev.state] &&
+        pr.number > prev.number)
+    ) {
+      map.set(pr.branch, pr);
+    }
+  }
+  return map;
+}
+
 function ProjectCard({
   card: c,
   staleOpen,
@@ -767,9 +797,25 @@ function ProjectCard({
   const r = c.entry.repo;
   const checkout = r.branch ?? `detached @ ${r.head}`;
   const clickable = hasDiff(r);
+  const prsQ = useQuery({
+    queryKey: ["prs", r.dir],
+    queryFn: () => api.getPrs(r.dir),
+    enabled: r.remoteUrl !== null,
+    staleTime: TUNING.PR_CACHE_TTL_MS,
+    refetchOnWindowFocus: false,
+  });
+  const prs = prsQ.data?.prs ?? [];
+  const byBranch = useMemo(() => prsByBranch(prs), [prs]);
   // dim rows are idle worktrees; open-PR rows slot between the two groups
   const activeRows = c.rows.filter((row) => !row.dim);
   const idleRows = c.rows.filter((row) => row.dim);
+  const prOf = (row: CardRow) =>
+    row.repo.branch ? byBranch.get(row.repo.branch) : undefined;
+  const reservePr = c.rows.some((row) => prOf(row) !== undefined);
+  const reserveRm = c.rows.some((row) => {
+    const pr = prOf(row);
+    return pr !== undefined && pr.state !== "open";
+  });
   const header = (
     <>
       <span className="flex items-center gap-2">
@@ -817,17 +863,33 @@ function ProjectCard({
       {activeRows.length > 0 && (
         <div className="divide-y divide-edge-soft border-t border-edge-soft">
           {activeRows.map((row) => (
-            <WorktreeRow key={row.repo.dir} repo={row.repo} dim={row.dim} />
+            <WorktreeRow
+              key={row.repo.dir}
+              repo={row.repo}
+              dim={row.dim}
+              pr={prOf(row)}
+              cardDir={r.dir}
+              reservePr={reservePr}
+              reserveRm={reserveRm}
+            />
           ))}
         </div>
       )}
 
-      <RemotePrs repo={r} />
+      <RemotePrs dir={r.dir} prs={prs} />
 
       {idleRows.length > 0 && (
         <div className="divide-y divide-edge-soft border-t border-edge-soft">
           {idleRows.map((row) => (
-            <WorktreeRow key={row.repo.dir} repo={row.repo} dim={row.dim} />
+            <WorktreeRow
+              key={row.repo.dir}
+              repo={row.repo}
+              dim={row.dim}
+              pr={prOf(row)}
+              cardDir={r.dir}
+              reservePr={reservePr}
+              reserveRm={reserveRm}
+            />
           ))}
         </div>
       )}
@@ -852,17 +914,10 @@ function ProjectCard({
  * default — on shared repos most open PRs are other people's. Each row can
  * create a checkout via the configurable worktree command (settings).
  */
-function RemotePrs({ repo: r }: { repo: RepoInfo }) {
+function RemotePrs({ dir, prs }: { dir: string; prs: PrInfo[] }) {
   const [open, setOpen] = useState(false);
-  const prsQ = useQuery({
-    queryKey: ["prs", r.dir],
-    queryFn: () => api.getPrs(r.dir),
-    enabled: r.remoteUrl !== null,
-    staleTime: TUNING.PR_CACHE_TTL_MS,
-    refetchOnWindowFocus: false,
-  });
-  const unattached = (prsQ.data?.prs ?? []).filter(
-    (p) => p.checkoutDir === null,
+  const unattached = prs.filter(
+    (p) => p.state === "open" && p.checkoutDir === null,
   );
   if (unattached.length === 0) return null;
   return (
@@ -870,7 +925,7 @@ function RemotePrs({ repo: r }: { repo: RepoInfo }) {
       {open && (
         <div className="divide-y divide-edge-soft border-t border-edge-soft">
           {unattached.map((pr) => (
-            <PrRow key={pr.number} pr={pr} dir={r.dir} />
+            <PrRow key={pr.number} pr={pr} dir={dir} />
           ))}
         </div>
       )}
@@ -905,20 +960,7 @@ function PrRow({ pr, dir }: { pr: PrInfo; dir: string }) {
       >
         {pr.branch}
       </span>
-      <a
-        href={pr.url}
-        target="_blank"
-        rel="noreferrer"
-        title={pr.title}
-        className="shrink-0 font-mono text-[10.5px] text-faint transition-colors duration-150 hover:text-fg"
-      >
-        #{pr.number}
-      </a>
-      {pr.draft && (
-        <span className="shrink-0 rounded-sm bg-raise px-1 py-px font-mono text-[10px] text-faint">
-          draft
-        </span>
-      )}
+      <PrPill pr={pr} />
       <span className="ml-auto flex shrink-0 items-center gap-2">
         {create.isError && (
           <span
@@ -942,24 +984,165 @@ function PrRow({ pr, dir }: { pr: PrInfo; dir: string }) {
   );
 }
 
-function WorktreeRow({ repo: r, dim }: { repo: RepoInfo; dim: boolean }) {
+/**
+ * Two-click worktree removal: first click arms, second runs DELETE
+ * /api/worktrees (the configurable remove command + git fallback).
+ */
+function RemoveWorktree({ dir, cardDir }: { dir: string; cardDir: string }) {
+  const qc = useQueryClient();
+  const [armed, setArmed] = useState(false);
+  const remove = useMutation({
+    mutationFn: () => api.removeWorktree(dir),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["repos"] });
+      qc.invalidateQueries({ queryKey: ["prs", cardDir] });
+    },
+  });
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (!armed) setArmed(true);
+        else remove.mutate();
+      }}
+      onBlur={() => setArmed(false)}
+      disabled={remove.isPending}
+      title={
+        remove.isError
+          ? `removal failed: ${(remove.error as Error).message}`
+          : "remove this worktree — runs the remove command from settings → commands"
+      }
+      className={cx(
+        "relative z-10 shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[10.5px] transition-colors duration-150 disabled:text-faint",
+        armed || remove.isError
+          ? "border-del/60 text-del hover:border-del"
+          : "border-edge text-mute hover:border-del/50 hover:text-del",
+      )}
+    >
+      {remove.isPending ? "…" : armed ? "rm?" : remove.isError ? "rm!" : "rm"}
+    </button>
+  );
+}
+
+/**
+ * PR-number pill link, GitHub's color language: gray draft, green open,
+ * purple merged, red closed — no text label, the tooltip names the state.
+ */
+function PrPill({ pr }: { pr: PrInfo }) {
+  const draft = pr.state === "open" && pr.draft;
+  return (
+    <a
+      href={pr.url}
+      target="_blank"
+      rel="noreferrer"
+      title={`${draft ? "draft" : pr.state}: ${pr.title}`}
+      className={cx(
+        "relative z-10 shrink-0 rounded-sm px-1 py-px font-mono text-[10.5px] font-medium transition-opacity duration-150 hover:opacity-80",
+        draft
+          ? "bg-raise text-mute"
+          : pr.state === "open"
+            ? "bg-add-soft text-add"
+            : pr.state === "merged"
+              ? "bg-reviewer-soft text-reviewer"
+              : "bg-del-soft text-del",
+      )}
+    >
+      #{pr.number}
+    </a>
+  );
+}
+
+function WorktreeRow({
+  repo: r,
+  dim,
+  pr,
+  cardDir,
+  reservePr,
+  reserveRm,
+}: {
+  repo: RepoInfo;
+  dim: boolean;
+  pr?: PrInfo;
+  cardDir: string;
+  /** Some sibling row has a PR — hold the number/state columns so they align. */
+  reservePr: boolean;
+  /** Some sibling row shows the rm button — hold its column so times align. */
+  reserveRm: boolean;
+}) {
   // A worktree's dir name repeats its branch — the branch IS its identity.
   const checkout = r.branch ?? `detached @ ${r.head}`;
+  const removable = pr !== undefined && pr.state !== "open";
+  const pct = seenPct(r);
+  const total = (r.additions ?? 0) + (r.deletions ?? 0);
   return (
-    <Link
-      href={api.href("/review", { dir: r.dir, base: r.defaultBase ?? "main" })}
-      title={r.dir}
+    // The whole row navigates via the cover link; real controls (PR link,
+    // remove button) sit above it on z-10 — anchors can't nest. The right
+    // side is fixed-width columns so every row's cells line up.
+    <div
       className={cx(
-        "flex items-center gap-2 px-3 py-1.5 transition-colors duration-150 hover:bg-raise/60",
+        "relative flex items-center gap-2 px-3 py-1.5 transition-colors duration-150 hover:bg-raise/60",
         dim && "opacity-55",
       )}
     >
+      <Link
+        href={api.href("/review", {
+          dir: r.dir,
+          base: r.defaultBase ?? "main",
+        })}
+        title={r.dir}
+        aria-label={`review ${checkout}`}
+        className="absolute inset-0"
+      />
       <DirtyDot dirty={r.dirty} />
       <span className="min-w-0 truncate font-mono text-[12px] text-fg">
         {checkout}
       </span>
-      <Drift repo={r} />
-      <Meta repo={r} />
-    </Link>
+      {/* ahead/behind is noise once the branch's PR is finished */}
+      {!removable && <Drift repo={r} />}
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        {reservePr && (
+          <span className="flex w-12 shrink-0 justify-end">
+            {pr && <PrPill pr={pr} />}
+          </span>
+        )}
+        <span className="flex w-14 shrink-0 justify-end">
+          {r.openComments > 0 && (
+            <span className="rounded-sm bg-accent-soft px-1.5 py-0.5 font-mono text-[10.5px] font-medium text-accent">
+              {r.openComments} open
+            </span>
+          )}
+        </span>
+        <span
+          className={cx(
+            "w-9 shrink-0 text-right font-mono text-[10.5px] tabular-nums",
+            pct === 100 ? "text-add" : "text-faint",
+          )}
+          title={
+            pct != null
+              ? `review progress: ${r.seenLines} of ${total} changed lines marked seen`
+              : undefined
+          }
+        >
+          {pct != null && pct > 0 ? `${pct === 100 ? "✓" : ""}${pct}%` : ""}
+        </span>
+        <span className="w-24 shrink-0 text-right font-mono text-[11px] tabular-nums">
+          {r.additions != null && total > 0 ? (
+            <DiffStat add={r.additions ?? 0} del={r.deletions ?? 0} />
+          ) : r.changedFiles != null && r.changedFiles > 0 ? (
+            <span className="text-mute">
+              {r.changedFiles} file{r.changedFiles === 1 ? "" : "s"}
+            </span>
+          ) : null}
+        </span>
+        <span className="w-14 shrink-0 text-right text-[11px] text-faint">
+          {relativeTime(r.lastActivity)}
+        </span>
+        {reserveRm && (
+          <span className="flex w-8 shrink-0 justify-end">
+            {removable && <RemoveWorktree dir={r.dir} cardDir={cardDir} />}
+          </span>
+        )}
+      </span>
+    </div>
   );
 }

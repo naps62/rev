@@ -55,8 +55,23 @@ describe("mapPrs", () => {
         url: "https://github.com/o/r/pull/7",
         author: "alice",
         draft: false,
+        state: "open",
       },
     ]);
+  });
+
+  test("derives state from merged/merged_at/state", () => {
+    const states = (rows: object[]) => mapPrs(rows, "o/r").map((p) => p.state);
+    expect(
+      states([
+        pr({ state: "open" }),
+        // GitHub's list API: merged shows only as a merged_at timestamp
+        pr({ state: "closed", merged_at: "2026-08-01T00:00:00Z" }),
+        // Gitea sets a merged boolean
+        pr({ state: "closed", merged: true }),
+        pr({ state: "closed", merged: false, merged_at: null }),
+      ]),
+    ).toEqual(["open", "merged", "merged", "closed"]);
   });
 
   test("drops cross-fork PRs and malformed entries, keeps missing head.repo", () => {

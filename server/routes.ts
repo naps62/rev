@@ -44,12 +44,16 @@ import {
   CommandError,
   runSessionSpawnCommand,
   runWorktreeCommand,
+  runWorktreeRemoveCommand,
   sessionSpawnCommand,
   setSessionSpawnCommand,
   setWorktreeCommand,
+  setWorktreeRemoveCommand,
   validBranch,
   worktreeCommand,
+  worktreeRemoveCommand,
 } from "./commands.ts";
+
 import { config } from "./config.ts";
 import {
   ackPickedUp,
@@ -71,7 +75,9 @@ import {
   listRepos,
   rescan,
 } from "./discovery.ts";
-import { listOpenPrs } from "./forge.ts";
+import { listPrs } from "./forge.ts";
+
+
 import {
   baseBehind,
   computeDiff,
@@ -308,7 +314,7 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     const remote =
       repos.find((r) => r.dir === mainDir)?.remoteUrl ?? me?.remoteUrl ?? null;
     if (remote === null) return c.json({ dir, prs: null });
-    const prs = await listOpenPrs(remote);
+    const prs = await listPrs(remote);
     if (prs === null) return c.json({ dir, prs: null });
     const checkouts = new Map<string, string>();
     for (const r of repos) {
@@ -353,41 +359,57 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     return c.json({ dir: created.dir, branch: b.branch }, 201);
   });
 
-  app.get("/commands", (c) =>
-    c.json({
-      worktreeCreate: worktreeCommand(),
-      sessionSpawn: sessionSpawnCommand(),
-    }),
-  );
-
-  app.put("/commands", async (c) => {
-    const b = (await c.req
-      .json()
-      .catch(() => null)) as CommandsUpdateRequest | null;
-    if (
-      !b ||
-      (b.worktreeCreate === undefined && b.sessionSpawn === undefined) ||
-      (b.worktreeCreate !== undefined &&
-        typeof b.worktreeCreate !== "string") ||
-      (b.sessionSpawn !== undefined && typeof b.sessionSpawn !== "string")
-    ) {
-      return c.json(
-        { error: "worktreeCreate and/or sessionSpawn (strings) required" },
-        400,
-      );
+  app.delete("/worktrees", async (c) => {
+    const dir = c.req.query("dir");
+    if (!dir) return c.json({ error: "dir is required" }, 400);
+    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    const repos = await listRepos();
+    const me = repos.find((r) => r.dir === dir);
+    if (!me || !me.isWorktree || me.mainDir === dir) {
+      return c.json({ error: `not a linked worktree: ${dir}` }, 400);
     }
     try {
-      if (b.worktreeCreate !== undefined) setWorktreeCommand(b.worktreeCreate);
-      if (b.sessionSpawn !== undefined) setSessionSpawnCommand(b.sessionSpawn);
+      await runWorktreeRemoveCommand(me.mainDir, dir, me.branch);
     } catch (err) {
       if (err instanceof CommandError)
         return c.json({ error: err.message }, 400);
       throw err;
     }
-    return c.json({
-      worktreeCreate: worktreeCommand(),
-      sessionSpawn: sessionSpawnCommand(),
-    });
+    await rescan(true);
+    broadcast({ type: "repos-changed" });
+    return c.json({ dir });
+  });
+
+  const commands = () => ({
+    worktreeCreate: worktreeCommand(),
+    worktreeRemove: worktreeRemoveCommand(),
+    sessionSpawn: sessionSpawnCommand(),
+  });
+
+  app.get("/commands", (c) => c.json(commands()));
+
+  app.put("/commands", async (c) => {
+    const b = (await c.req
+      .json()
+      .catch(() => null)) as CommandsUpdateRequest | null;
+    const hasCreate = typeof b?.worktreeCreate === "string";
+    const hasRemove = typeof b?.worktreeRemove === "string";
+    const hasSpawn = typeof b?.sessionSpawn === "string";
+    if (!hasCreate && !hasRemove && !hasSpawn) {
+      return c.json(
+        { error: "worktreeCreate, worktreeRemove or sessionSpawn is required" },
+        400,
+      );
+    }
+    try {
+      if (hasCreate) setWorktreeCommand(b!.worktreeCreate as string);
+      if (hasRemove) setWorktreeRemoveCommand(b!.worktreeRemove as string);
+      if (hasSpawn) setSessionSpawnCommand(b!.sessionSpawn as string);
+    } catch (err) {
+      if (err instanceof CommandError) return c.json({ error: err.message }, 400);
+      throw err;
+    }
+    return c.json(commands());
   });
 
   app.get("/settings", (c) => c.json(uiSettings()));

@@ -8,6 +8,7 @@
 import {
   DEFAULT_SESSION_SPAWN_CMD,
   DEFAULT_WORKTREE_CMD,
+  DEFAULT_WORKTREE_REMOVE_CMD,
 } from "#shared/commands";
 import type {
   AgentStatusResponse,
@@ -38,6 +39,7 @@ import type {
   UiSettings,
   WorktreeCreateRequest,
   WorktreeCreateResponse,
+  WorktreeRemoveResponse,
 } from "#shared/types";
 
 const now = Date.now();
@@ -903,6 +905,7 @@ export function fxGetPrs(dir: string): PrListResponse {
       url: "https://example.com/pr/47",
       author: "naps62",
       draft: false,
+      state: "open" as const,
     },
     {
       number: 52,
@@ -911,6 +914,25 @@ export function fxGetPrs(dir: string): PrListResponse {
       url: "https://example.com/pr/52",
       author: "naps62",
       draft: true,
+      state: "open" as const,
+    },
+    {
+      number: 39,
+      title: "fix: token refresh on 401",
+      branch: "fix-auth",
+      url: "https://example.com/pr/39",
+      author: "naps62",
+      draft: false,
+      state: "merged" as const,
+    },
+    {
+      number: 31,
+      title: "spike: queue rework",
+      branch: "spike/queue-rework",
+      url: "https://example.com/pr/31",
+      author: "naps62",
+      draft: false,
+      state: "closed" as const,
     },
   ];
   return {
@@ -928,21 +950,31 @@ export function fxCreateWorktree(
   return { dir: `${req.dir}/worktrees/${req.branch}`, branch: req.branch };
 }
 
-let fxWorktreeCmd = DEFAULT_WORKTREE_CMD;
-let fxSessionSpawnCmd = DEFAULT_SESSION_SPAWN_CMD;
+export function fxRemoveWorktree(dir: string): WorktreeRemoveResponse {
+  return { dir };
+}
+
+let fxCommands: CommandsResponse = {
+  worktreeCreate: DEFAULT_WORKTREE_CMD,
+  worktreeRemove: DEFAULT_WORKTREE_REMOVE_CMD,
+  sessionSpawn: DEFAULT_SESSION_SPAWN_CMD,
+};
 
 export function fxGetCommands(): CommandsResponse {
-  return { worktreeCreate: fxWorktreeCmd, sessionSpawn: fxSessionSpawnCmd };
+  return { ...fxCommands };
 }
 
 export function fxPutCommands(req: CommandsUpdateRequest): CommandsResponse {
-  if (req.worktreeCreate !== undefined) fxWorktreeCmd = req.worktreeCreate;
-  if (req.sessionSpawn !== undefined) fxSessionSpawnCmd = req.sessionSpawn;
+  fxCommands = { ...fxCommands, ...req };
   return fxGetCommands();
 }
 
 export function fxGetAgentStatus(dir: string): AgentStatusResponse {
-  return { dir, listening: false, spawnConfigured: fxSessionSpawnCmd !== "" };
+  return {
+    dir,
+    listening: false,
+    spawnConfigured: fxCommands.sessionSpawn !== "",
+  };
 }
 
 let fxUiSettings: UiSettings = {};

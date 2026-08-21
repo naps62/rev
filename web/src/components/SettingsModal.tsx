@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import {
-  type CommandPreset,
+import type {
+  CommandPreset,
   SESSION_SPAWN_PLACEHOLDERS,
   SESSION_SPAWN_PRESETS,
   WORKTREE_CMD_PLACEHOLDERS,
   WORKTREE_CMD_PRESETS,
+  WORKTREE_REMOVE_PLACEHOLDERS,
+  WORKTREE_REMOVE_PRESETS,
 } from "#shared/commands";
+
 import * as api from "../api";
 import {
   type DiffMode,
@@ -703,7 +706,7 @@ function CommandEditor({
 }: {
   title: ReactNode;
   description: ReactNode;
-  field: "worktreeCreate" | "sessionSpawn";
+  field: "worktreeCreate" | "worktreeRemove" | "sessionSpawn";
   presets: CommandPreset[];
   placeholders: Record<string, string>;
   ariaLabel: string;
@@ -804,6 +807,23 @@ function CommandsSection() {
         placeholders={WORKTREE_CMD_PLACEHOLDERS}
         ariaLabel="Worktree create command"
         saved={cmdQ.data?.worktreeCreate ?? ""}
+        loading={cmdQ.isPending}
+      />
+      <CommandEditor
+        title="worktree removal"
+        description={
+          <>
+            Run for “rm” on a merged or closed PR's worktree row. If the
+            worktree is still registered afterwards (e.g. the command only
+            closed a session), rev falls back to{" "}
+            <code className="font-mono text-[11px]">git worktree remove</code>.
+          </>
+        }
+        field="worktreeRemove"
+        presets={WORKTREE_REMOVE_PRESETS}
+        placeholders={WORKTREE_REMOVE_PLACEHOLDERS}
+        ariaLabel="Worktree remove command"
+        saved={cmdQ.data?.worktreeRemove ?? ""}
         loading={cmdQ.isPending}
       />
       <CommandEditor
