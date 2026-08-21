@@ -680,6 +680,27 @@ function Meta({ repo: r }: { repo: RepoInfo }) {
   );
 }
 
+const PR_STATE_RANK: Record<PrInfo["state"], number> = { open: 0, merged: 1, closed: 2 };
+
+/**
+ * Branch → its most relevant PR: an open PR always beats a finished one, and
+ * among finished ones the newest wins (a branch can be re-PRed).
+ */
+function prsByBranch(prs: PrInfo[]): Map<string, PrInfo> {
+  const map = new Map<string, PrInfo>();
+  for (const pr of prs) {
+    const prev = map.get(pr.branch);
+    if (
+      !prev ||
+      PR_STATE_RANK[pr.state] < PR_STATE_RANK[prev.state] ||
+      (PR_STATE_RANK[pr.state] === PR_STATE_RANK[prev.state] && pr.number > prev.number)
+    ) {
+      map.set(pr.branch, pr);
+    }
+  }
+  return map;
+}
+
 function ProjectCard({
   card: c,
   staleOpen,
@@ -692,6 +713,15 @@ function ProjectCard({
   const r = c.entry.repo;
   const checkout = r.branch ?? `detached @ ${r.head}`;
   const clickable = hasDiff(r);
+  const prsQ = useQuery({
+    queryKey: ["prs", r.dir],
+    queryFn: () => api.getPrs(r.dir),
+    enabled: r.remoteUrl !== null,
+    staleTime: TUNING.PR_CACHE_TTL_MS,
+    refetchOnWindowFocus: false,
+  });
+  const prs = prsQ.data?.prs ?? [];
+  const byBranch = useMemo(() => prsByBranch(prs), [prs]);
   // dim rows are idle worktrees; open-PR rows slot between the two groups
   const activeRows = c.rows.filter((row) => !row.dim);
   const idleRows = c.rows.filter((row) => row.dim);
@@ -739,17 +769,29 @@ function ProjectCard({
       {activeRows.length > 0 && (
         <div className="divide-y divide-edge-soft border-t border-edge-soft">
           {activeRows.map((row) => (
-            <WorktreeRow key={row.repo.dir} repo={row.repo} dim={row.dim} />
+            <WorktreeRow
+              key={row.repo.dir}
+              repo={row.repo}
+              dim={row.dim}
+              pr={row.repo.branch ? byBranch.get(row.repo.branch) : undefined}
+              cardDir={r.dir}
+            />
           ))}
         </div>
       )}
 
-      <RemotePrs repo={r} />
+      <RemotePrs dir={r.dir} prs={prs} />
 
       {idleRows.length > 0 && (
         <div className="divide-y divide-edge-soft border-t border-edge-soft">
           {idleRows.map((row) => (
-            <WorktreeRow key={row.repo.dir} repo={row.repo} dim={row.dim} />
+            <WorktreeRow
+              key={row.repo.dir}
+              repo={row.repo}
+              dim={row.dim}
+              pr={row.repo.branch ? byBranch.get(row.repo.branch) : undefined}
+              cardDir={r.dir}
+            />
           ))}
         </div>
       )}
@@ -774,23 +816,16 @@ function ProjectCard({
  * default — on shared repos most open PRs are other people's. Each row can
  * create a checkout via the configurable worktree command (settings).
  */
-function RemotePrs({ repo: r }: { repo: RepoInfo }) {
+function RemotePrs({ dir, prs }: { dir: string; prs: PrInfo[] }) {
   const [open, setOpen] = useState(false);
-  const prsQ = useQuery({
-    queryKey: ["prs", r.dir],
-    queryFn: () => api.getPrs(r.dir),
-    enabled: r.remoteUrl !== null,
-    staleTime: TUNING.PR_CACHE_TTL_MS,
-    refetchOnWindowFocus: false,
-  });
-  const unattached = (prsQ.data?.prs ?? []).filter((p) => p.checkoutDir === null);
+  const unattached = prs.filter((p) => p.state === "open" && p.checkoutDir === null);
   if (unattached.length === 0) return null;
   return (
     <>
       {open && (
         <div className="divide-y divide-edge-soft border-t border-edge-soft">
           {unattached.map((pr) => (
-            <PrRow key={pr.number} pr={pr} dir={r.dir} />
+            <PrRow key={pr.number} pr={pr} dir={dir} />
           ))}
         </div>
       )}
@@ -856,22 +891,110 @@ function PrRow({ pr, dir }: { pr: PrInfo; dir: string }) {
   );
 }
 
-function WorktreeRow({ repo: r, dim }: { repo: RepoInfo; dim: boolean }) {
+/**
+ * Two-click worktree removal: first click arms, second runs DELETE
+ * /api/worktrees (the configurable remove command + git fallback).
+ */
+function RemoveWorktree({ dir, cardDir }: { dir: string; cardDir: string }) {
+  const qc = useQueryClient();
+  const [armed, setArmed] = useState(false);
+  const remove = useMutation({
+    mutationFn: () => api.removeWorktree(dir),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["repos"] });
+      qc.invalidateQueries({ queryKey: ["prs", cardDir] });
+    },
+  });
+  return (
+    <>
+      {remove.isError && (
+        <span title={(remove.error as Error).message} className="relative z-10 shrink-0 font-mono text-[10.5px] text-del">
+          failed
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          if (!armed) setArmed(true);
+          else remove.mutate();
+        }}
+        onBlur={() => setArmed(false)}
+        disabled={remove.isPending}
+        title="remove this worktree — runs the remove command from settings → commands"
+        className={cx(
+          "relative z-10 shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[10.5px] transition-colors duration-150 disabled:text-faint",
+          armed
+            ? "border-del/60 text-del hover:border-del"
+            : "border-edge text-mute hover:border-del/50 hover:text-del",
+        )}
+      >
+        {remove.isPending ? "…" : armed ? "sure?" : "rm"}
+      </button>
+    </>
+  );
+}
+
+function PrBadge({ pr }: { pr: PrInfo }) {
+  return (
+    <>
+      <a
+        href={pr.url}
+        target="_blank"
+        rel="noreferrer"
+        title={pr.title}
+        className="relative z-10 shrink-0 font-mono text-[10.5px] text-faint transition-colors duration-150 hover:text-fg"
+      >
+        #{pr.number}
+      </a>
+      {pr.state !== "open" && (
+        <span
+          className={cx(
+            "shrink-0 rounded-sm px-1 py-px font-mono text-[10px] font-medium",
+            pr.state === "merged" ? "bg-add-soft text-add" : "bg-del-soft text-del",
+          )}
+        >
+          {pr.state}
+        </span>
+      )}
+    </>
+  );
+}
+
+function WorktreeRow({
+  repo: r,
+  dim,
+  pr,
+  cardDir,
+}: {
+  repo: RepoInfo;
+  dim: boolean;
+  pr?: PrInfo;
+  cardDir: string;
+}) {
   // A worktree's dir name repeats its branch — the branch IS its identity.
   const checkout = r.branch ?? `detached @ ${r.head}`;
   return (
-    <Link
-      href={api.href("/review", { dir: r.dir, base: r.defaultBase ?? "main" })}
-      title={r.dir}
+    // The whole row navigates via the cover link; real controls (PR link,
+    // remove button) sit above it on z-10 — anchors can't nest.
+    <div
       className={cx(
-        "flex items-center gap-2 px-3 py-1.5 transition-colors duration-150 hover:bg-raise/60",
+        "relative flex items-center gap-2 px-3 py-1.5 transition-colors duration-150 hover:bg-raise/60",
         dim && "opacity-55",
       )}
     >
+      <Link
+        href={api.href("/review", { dir: r.dir, base: r.defaultBase ?? "main" })}
+        title={r.dir}
+        aria-label={`review ${checkout}`}
+        className="absolute inset-0"
+      />
       <DirtyDot dirty={r.dirty} />
-      <span className="min-w-0 truncate font-mono text-[12px] text-fg">{checkout}</span>
-      <Drift repo={r} />
+      <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg">{checkout}</span>
+      {pr && <PrBadge pr={pr} />}
+      {/* ahead/behind is noise once the branch's PR is finished */}
+      {(!pr || pr.state === "open") && <Drift repo={r} />}
       <Meta repo={r} />
-    </Link>
+      {pr && pr.state !== "open" && <RemoveWorktree dir={r.dir} cardDir={cardDir} />}
+    </div>
   );
 }

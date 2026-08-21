@@ -65,7 +65,13 @@ export interface RepoInfo {
 // Pull requests & worktree creation
 // ---------------------------------------------------------------------------
 
-/** An open PR on the repo's origin forge whose head branch lives on origin. */
+export type PrState = "open" | "merged" | "closed";
+
+/**
+ * A PR on the repo's origin forge whose head branch lives on origin: every
+ * open PR, plus recently-updated merged/closed ones so a local worktree can
+ * be matched to its finished PR.
+ */
 export interface PrInfo {
   number: number;
   title: string;
@@ -75,6 +81,7 @@ export interface PrInfo {
   url: string;
   author: string | null;
   draft: boolean;
+  state: PrState;
   /** Checkout (main or worktree) currently on `branch`, null when none. */
   checkoutDir: string | null;
 }
@@ -106,10 +113,21 @@ export interface WorktreeCreateResponse {
   branch: string;
 }
 
+export interface WorktreeRemoveRequest {
+  /** The linked worktree checkout to remove (never a main checkout). */
+  dir: string;
+}
+
+export interface WorktreeRemoveResponse {
+  dir: string;
+}
+
 /** The UI-configurable command templates the server runs; see shared/commands.ts. */
 export interface CommandsResponse {
   /** Argv template run by POST /api/worktrees ({dir}, {branch}, {remoteUrl}). */
   worktreeCreate: string;
+  /** Argv template run by DELETE /api/worktrees ({dir}, {mainDir}, {branch}). */
+  worktreeRemove: string;
 }
 
 /**
@@ -631,15 +649,19 @@ export type ServerMessage =
 // POST   /api/github/comment                 ← GithubCommentRequest → { ok: true }
 // POST   /api/github/resolve                 ← GithubResolveRequest → { ok: true }
 // PUT    /api/seen                           ← SeenRequest → { ok: true }
-// GET    /api/prs?dir                        → PrListResponse (open PRs on the
-//        repo's origin forge, annotated with the local checkout on each
-//        branch; prs:null when the forge can't be queried)
+// GET    /api/prs?dir                        → PrListResponse (open + recently
+//        closed PRs on the repo's origin forge, annotated with the local
+//        checkout on each branch; prs:null when the forge can't be queried)
 // POST   /api/worktrees                      ← WorktreeCreateRequest
 //        → WorktreeCreateResponse (201). Runs the configured worktree-create
 //        command for the branch, then re-scans discovery.
+// DELETE /api/worktrees?dir                  → WorktreeRemoveResponse. Runs the
+//        configured worktree-remove command; if the worktree is still
+//        registered afterwards (e.g. the command only closed a session),
+//        falls back to `git worktree remove`. Then re-scans discovery.
 // GET    /api/commands                       → CommandsResponse
-// PUT    /api/commands                       ← CommandsResponse → CommandsResponse
-//        Persists the worktree-create template (settings table).
+// PUT    /api/commands                       ← Partial<CommandsResponse> → CommandsResponse
+//        Persists the given command templates (settings table).
 // GET    /api/settings                       → UiSettings
 // PUT    /api/settings                       ← UiSettings → UiSettings
 //        Persists shared UI preferences (settings table); unknown fields

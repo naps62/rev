@@ -36,3 +36,25 @@ export const WORKTREE_CMD_PRESETS: CommandPreset[] = [
 ];
 
 export const DEFAULT_WORKTREE_CMD = WORKTREE_CMD_PRESETS[0]!.template;
+
+/** Placeholders available in the worktree-remove template. */
+export const WORKTREE_REMOVE_PLACEHOLDERS: Record<string, string> = {
+  "{dir}": "absolute path of the worktree checkout being removed",
+  "{mainDir}": "absolute path of the repo's main checkout",
+  "{branch}": "branch the worktree has checked out",
+};
+
+export const WORKTREE_REMOVE_PRESETS: CommandPreset[] = [
+  {
+    name: "git worktree",
+    template: "git -C {mainDir} worktree remove {dir}",
+    blurb: "plain worktree removal (refuses dirty trees)",
+  },
+  {
+    name: "aoe",
+    template: "aoe remove {branch} --delete-worktree",
+    blurb: "close the agent-of-empires session, then its worktree",
+  },
+];
+
+export const DEFAULT_WORKTREE_REMOVE_CMD = WORKTREE_REMOVE_PRESETS[0]!.template;

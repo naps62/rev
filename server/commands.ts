@@ -7,7 +7,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
+import { DEFAULT_WORKTREE_CMD, DEFAULT_WORKTREE_REMOVE_CMD } from "#shared/commands";
 import { TUNING } from "#shared/tuning";
 import { getSetting, setSetting } from "./db.ts";
 import { run } from "./git.ts";
@@ -15,6 +15,7 @@ import { run } from "./git.ts";
 export class CommandError extends Error {}
 
 const WORKTREE_CMD_KEY = "commands.worktreeCreate";
+const WORKTREE_REMOVE_KEY = "commands.worktreeRemove";
 
 /**
  * Conservative allowlist rather than full git ref grammar: the branch lands
@@ -61,6 +62,24 @@ export function setWorktreeCommand(template: string): void {
   if (tokens.length === 0) throw new CommandError("empty command");
   if (!template.includes("{branch}")) throw new CommandError("template must use {branch}");
   setSetting(WORKTREE_CMD_KEY, template.trim());
+}
+
+export function worktreeRemoveCommand(): string {
+  try {
+    return getSetting(WORKTREE_REMOVE_KEY) ?? DEFAULT_WORKTREE_REMOVE_CMD;
+  } catch {
+    return DEFAULT_WORKTREE_REMOVE_CMD; // DB not opened (tests)
+  }
+}
+
+/** Validate and persist the removal template; throws CommandError on a bad one. */
+export function setWorktreeRemoveCommand(template: string): void {
+  const tokens = splitTemplate(template.trim());
+  if (tokens.length === 0) throw new CommandError("empty command");
+  if (!template.includes("{dir}") && !template.includes("{branch}")) {
+    throw new CommandError("template must use {dir} or {branch}");
+  }
+  setSetting(WORKTREE_REMOVE_KEY, template.trim());
 }
 
 function exec(argv: string[], cwd: string): Promise<void> {
@@ -111,4 +130,41 @@ export async function runWorktreeCommand(
   }
   await exec(argv, mainDir);
   return { dir: await worktreeFor(mainDir, branch) };
+}
+
+async function worktreeListed(mainDir: string, dir: string): Promise<boolean> {
+  const out = await run(mainDir, ["worktree", "list", "--porcelain"]);
+  return out.split("\n").includes(`worktree ${dir}`);
+}
+
+/**
+ * Run the configured removal command for the worktree at `dir`. The command
+ * may only close an agent session (or fail because none exists), so success
+ * is judged by the outcome: if the worktree is still registered afterwards,
+ * fall back to a plain `git worktree remove`; only when that also fails is
+ * the command's own error surfaced.
+ */
+export async function runWorktreeRemoveCommand(
+  mainDir: string,
+  dir: string,
+  branch: string | null,
+): Promise<void> {
+  const argv = substitute(splitTemplate(worktreeRemoveCommand()), {
+    dir,
+    mainDir,
+    branch: branch ?? "",
+  });
+  if (argv.length === 0) throw new CommandError("empty command");
+  let primary: CommandError | null = null;
+  try {
+    await exec(argv, mainDir);
+  } catch (err) {
+    primary = err as CommandError;
+  }
+  if (!(await worktreeListed(mainDir, dir))) return;
+  try {
+    await run(mainDir, ["worktree", "remove", dir]);
+  } catch (err) {
+    throw primary ?? new CommandError(`git worktree remove failed: ${(err as Error).message}`);
+  }
 }

@@ -32,8 +32,9 @@ import type {
   UiSettings,
   WorktreeCreateRequest,
   WorktreeCreateResponse,
+  WorktreeRemoveResponse,
 } from "#shared/types";
-import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
+import { DEFAULT_WORKTREE_CMD, DEFAULT_WORKTREE_REMOVE_CMD } from "#shared/commands";
 
 const now = Date.now();
 const min = 60_000;
@@ -835,6 +836,7 @@ export function fxGetPrs(dir: string): PrListResponse {
       url: "https://example.com/pr/47",
       author: "naps62",
       draft: false,
+      state: "open" as const,
     },
     {
       number: 52,
@@ -843,6 +845,25 @@ export function fxGetPrs(dir: string): PrListResponse {
       url: "https://example.com/pr/52",
       author: "naps62",
       draft: true,
+      state: "open" as const,
+    },
+    {
+      number: 39,
+      title: "fix: token refresh on 401",
+      branch: "fix-auth",
+      url: "https://example.com/pr/39",
+      author: "naps62",
+      draft: false,
+      state: "merged" as const,
+    },
+    {
+      number: 31,
+      title: "spike: queue rework",
+      branch: "spike/queue-rework",
+      url: "https://example.com/pr/31",
+      author: "naps62",
+      draft: false,
+      state: "closed" as const,
     },
   ];
   return { dir, prs: prs.map((p) => ({ ...p, checkoutDir: checkouts.get(p.branch) ?? null })) };
@@ -852,15 +873,22 @@ export function fxCreateWorktree(req: WorktreeCreateRequest): WorktreeCreateResp
   return { dir: `${req.dir}/worktrees/${req.branch}`, branch: req.branch };
 }
 
-let fxWorktreeCmd = DEFAULT_WORKTREE_CMD;
-
-export function fxGetCommands(): CommandsResponse {
-  return { worktreeCreate: fxWorktreeCmd };
+export function fxRemoveWorktree(dir: string): WorktreeRemoveResponse {
+  return { dir };
 }
 
-export function fxPutCommands(req: CommandsResponse): CommandsResponse {
-  fxWorktreeCmd = req.worktreeCreate;
-  return { worktreeCreate: fxWorktreeCmd };
+let fxCommands: CommandsResponse = {
+  worktreeCreate: DEFAULT_WORKTREE_CMD,
+  worktreeRemove: DEFAULT_WORKTREE_REMOVE_CMD,
+};
+
+export function fxGetCommands(): CommandsResponse {
+  return { ...fxCommands };
+}
+
+export function fxPutCommands(req: Partial<CommandsResponse>): CommandsResponse {
+  fxCommands = { ...fxCommands, ...req };
+  return { ...fxCommands };
 }
 
 let fxUiSettings: UiSettings = {};

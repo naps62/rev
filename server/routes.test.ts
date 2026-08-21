@@ -1,6 +1,6 @@
 import { before as beforeAll, describe, test } from "node:test";
 import { expect } from "expect";
-import { rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -13,7 +13,7 @@ import type {
   PresenceResponse,
   ServerMessage,
 } from "#shared/types";
-import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
+import { DEFAULT_WORKTREE_CMD, DEFAULT_WORKTREE_REMOVE_CMD } from "#shared/commands";
 import { config } from "./config.ts";
 import { closeDb, openDb } from "./db.ts";
 import { hashContent } from "./git.ts";
@@ -480,16 +480,28 @@ describe("PRs and worktree creation", () => {
 });
 
 describe("commands", () => {
-  test("GET returns the default, PUT validates and persists", async () => {
-    const before = (await (await app.request("/commands")).json()) as { worktreeCreate: string };
+  test("GET returns the defaults, PUT validates and persists per field", async () => {
+    const before = (await (await app.request("/commands")).json()) as {
+      worktreeCreate: string;
+      worktreeRemove: string;
+    };
     expect(typeof before.worktreeCreate).toBe("string");
+    expect(typeof before.worktreeRemove).toBe("string");
     expect((await json("PUT", "/commands", { worktreeCreate: "echo no-branch" })).status).toBe(400);
+    expect((await json("PUT", "/commands", { worktreeRemove: "echo no-placeholder" })).status).toBe(400);
     expect((await json("PUT", "/commands", {})).status).toBe(400);
     const res = await json("PUT", "/commands", { worktreeCreate: "aoe add {dir} --worktree {branch}" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ worktreeCreate: "aoe add {dir} --worktree {branch}" });
-    const after = (await (await app.request("/commands")).json()) as { worktreeCreate: string };
-    expect(after.worktreeCreate).toBe("aoe add {dir} --worktree {branch}");
+    expect(await res.json()).toEqual({
+      worktreeCreate: "aoe add {dir} --worktree {branch}",
+      worktreeRemove: before.worktreeRemove,
+    });
+    const res2 = await json("PUT", "/commands", { worktreeRemove: "aoe remove {branch} --delete-worktree" });
+    expect(res2.status).toBe(200);
+    expect(await res2.json()).toEqual({
+      worktreeCreate: "aoe add {dir} --worktree {branch}",
+      worktreeRemove: "aoe remove {branch} --delete-worktree",
+    });
   });
 });
 
@@ -531,5 +543,53 @@ describe("POST /worktrees end-to-end (default command)", () => {
     expect(body.dir).toBe(join(clone, "worktrees", "feat-x"));
     expect(git(body.dir!, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("feat-x");
     expect(sent.some((m) => m.type === "repos-changed")).toBe(true);
+  });
+});
+
+describe("DELETE /worktrees", () => {
+  const setup = async (name: string) => {
+    await json("PUT", "/commands", { worktreeCreate: DEFAULT_WORKTREE_CMD });
+    const main = makeRepo(name);
+    git(main, "branch", "feat-y");
+    const res = await json("POST", "/worktrees", { dir: main, branch: "feat-y" });
+    expect(res.status).toBe(201);
+    const { dir } = (await res.json()) as { dir: string };
+    return { main, dir };
+  };
+
+  test("validates dir: missing, unknown, and main checkouts are rejected", async () => {
+    const main = makeRepo("wtrm-validate");
+    expect((await app.request("/worktrees", { method: "DELETE" })).status).toBe(400);
+    expect((await app.request("/worktrees?dir=/nope", { method: "DELETE" })).status).toBe(400);
+    const res = await app.request(`/worktrees?dir=${encodeURIComponent(main)}`, { method: "DELETE" });
+    expect(res.status).toBe(400);
+  });
+
+  test("removes a worktree with the default command", async () => {
+    const { dir } = await setup("wtrm-default");
+    await json("PUT", "/commands", { worktreeRemove: DEFAULT_WORKTREE_REMOVE_CMD });
+    const res = await app.request(`/worktrees?dir=${encodeURIComponent(dir)}`, { method: "DELETE" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ dir });
+    expect(existsSync(dir)).toBe(false);
+    expect(sent.some((m) => m.type === "repos-changed")).toBe(true);
+  });
+
+  test("falls back to git worktree remove when the command leaves the worktree", async () => {
+    const { dir } = await setup("wtrm-fallback");
+    // A session-closing command that never touches the worktree itself.
+    await json("PUT", "/commands", { worktreeRemove: "echo closed {dir}" });
+    const res = await app.request(`/worktrees?dir=${encodeURIComponent(dir)}`, { method: "DELETE" });
+    expect(res.status).toBe(200);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  test("surfaces the command's error when the worktree survives both attempts", async () => {
+    const { dir } = await setup("wtrm-dirty");
+    writeFileSync(join(dir, "dirty.txt"), "x\n"); // untracked file: git refuses to remove
+    await json("PUT", "/commands", { worktreeRemove: "false {dir}" });
+    const res = await app.request(`/worktrees?dir=${encodeURIComponent(dir)}`, { method: "DELETE" });
+    expect(res.status).toBe(400);
+    expect(existsSync(dir)).toBe(true);
   });
 });

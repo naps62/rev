@@ -29,6 +29,7 @@ import type {
   UiSettings,
   WorktreeCreateRequest,
   WorktreeCreateResponse,
+  WorktreeRemoveResponse,
 } from "#shared/types";
 
 export class ApiError extends Error {
@@ -96,12 +97,18 @@ export async function createWorktree(req: WorktreeCreateRequest): Promise<Worktr
   return request("/api/worktrees", { method: "POST", body: JSON.stringify(req) });
 }
 
+export async function removeWorktree(dir: string): Promise<WorktreeRemoveResponse> {
+  if (isFixture()) return tick((await fx()).fxRemoveWorktree(dir));
+  const q = new URLSearchParams({ dir });
+  return request(`/api/worktrees?${q}`, { method: "DELETE" });
+}
+
 export async function getCommands(): Promise<CommandsResponse> {
   if (isFixture()) return tick((await fx()).fxGetCommands());
   return request("/api/commands");
 }
 
-export async function putCommands(req: CommandsResponse): Promise<CommandsResponse> {
+export async function putCommands(req: Partial<CommandsResponse>): Promise<CommandsResponse> {
   if (isFixture()) return tick((await fx()).fxPutCommands(req));
   return request("/api/commands", { method: "PUT", body: JSON.stringify(req) });
 }

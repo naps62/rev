@@ -1,14 +1,16 @@
 import { after as afterAll, before as beforeAll, describe, test } from "node:test";
 import { expect } from "expect";
 import { join } from "node:path";
-import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
+import { DEFAULT_WORKTREE_CMD, DEFAULT_WORKTREE_REMOVE_CMD } from "#shared/commands";
 import {
   CommandError,
   setWorktreeCommand,
+  setWorktreeRemoveCommand,
   splitTemplate,
   substitute,
   validBranch,
   worktreeCommand,
+  worktreeRemoveCommand,
 } from "./commands.ts";
 import { closeDb, openDb } from "./db.ts";
 import { tmpdir } from "./testutil.ts";
@@ -61,5 +63,17 @@ describe("worktreeCommand setting", () => {
     expect(() => setWorktreeCommand("echo no-branch")).toThrow(CommandError);
     expect(() => setWorktreeCommand(`echo "oops {branch}`)).toThrow(CommandError);
     expect(worktreeCommand()).toBe("aoe add {dir} --worktree {branch}");
+  });
+});
+
+describe("worktreeRemoveCommand setting", () => {
+  test("defaults, persists, validates", () => {
+    expect(worktreeRemoveCommand()).toBe(DEFAULT_WORKTREE_REMOVE_CMD);
+    setWorktreeRemoveCommand("aoe remove {branch} --delete-worktree");
+    expect(worktreeRemoveCommand()).toBe("aoe remove {branch} --delete-worktree");
+    expect(() => setWorktreeRemoveCommand("")).toThrow(CommandError);
+    expect(() => setWorktreeRemoveCommand("echo no-placeholder")).toThrow(CommandError);
+    expect(worktreeRemoveCommand()).toBe("aoe remove {branch} --delete-worktree");
+    setWorktreeRemoveCommand(DEFAULT_WORKTREE_REMOVE_CMD);
   });
 });
