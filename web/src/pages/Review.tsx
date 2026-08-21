@@ -1038,7 +1038,15 @@ export function Review() {
                   return a && b ? (a.seq > b.seq ? a : b) : a ?? b;
                 })()}
                 keyCmd={keyCmds[f.path]}
-                onSymbolClick={features.symbols ? setSymbol : undefined}
+                onSymbolClick={
+                  features.symbols
+                    ? (s) => {
+                        setSymbol(s);
+                        // Symbol click reclaims the side-panel slot from comments.
+                        setCommentsOpen(false);
+                      }
+                    : undefined
+                }
                 onHover={() => hoverFocus(f.path)}
                 onToggleSeen={toggleSeen}
                 onCreateComment={(anchor, body) => createComment(anchor, body)}
