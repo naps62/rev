@@ -929,7 +929,7 @@ export function SettingsControl({ review }: { review?: ReviewSettings }) {
             ref={panelRef}
             tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
-            className="modal-in flex max-h-[min(600px,100%)] w-full max-w-[680px] flex-col overflow-hidden rounded-md border border-edge bg-panel shadow-pop outline-none sm:h-[min(560px,100%)] sm:flex-row"
+            className="modal-in flex max-h-[min(760px,100%)] w-full max-w-[860px] flex-col overflow-hidden rounded-md border border-edge bg-panel shadow-pop outline-none sm:h-[min(700px,100%)] sm:flex-row"
           >
             <nav
               aria-label="Settings sections"
