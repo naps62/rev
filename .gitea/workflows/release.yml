@@ -1,0 +1,71 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+# Tarballs are not reproducible: two runs of one tag would race the asset
+# upload against the tap push and desync the formula sha.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The server tests shell out to git in throwaway repos.
+      - run: |
+          git config --global user.email ci@example.com
+          git config --global user.name ci
+      - run: pnpm run lint
+      - run: pnpm run knip
+      - run: pnpm run typecheck
+      - run: pnpm test
+
+      - name: Check the tag matches package.json
+        run: |
+          VERSION=$(node -p 'require("./package.json").version')
+          [[ "v$VERSION" == "$GITHUB_REF_NAME" ]] ||
+            { echo "tag $GITHUB_REF_NAME != package.json $VERSION"; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - run: ./scripts/package.sh
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/rev-${{ env.VERSION }}.tar.gz
+          generate_release_notes: true
+
+      - name: Push the formula to the tap
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          TAP_REPO: ${{ vars.TAP_REPO || 'naps62/homebrew-tap' }}
+        run: |
+          [[ -n "$TAP_TOKEN" ]] || { echo "no TAP_TOKEN secret; skipping tap bump"; exit 0; }
+          SHA=$(cut -d' ' -f1 < "dist/rev-$VERSION.tar.gz.sha256")
+          ./scripts/bump-formula.sh "$VERSION" "$SHA" > /tmp/rev.rb
+          git clone --quiet "https://x-access-token:$TAP_TOKEN@github.com/$TAP_REPO" /tmp/tap
+          mkdir -p /tmp/tap/Formula
+          cp /tmp/rev.rb /tmp/tap/Formula/rev.rb
+          cd /tmp/tap
+          git config user.email ci@example.com
+          git config user.name ci
+          # An empty tap clones with an unborn branch; brew reads the formula
+          # from the repo's default branch, so pin it to main.
+          git checkout -qB main
+          git add Formula/rev.rb
+          git diff --quiet --cached || git commit -qm "rev $VERSION"
+          git push -q -u origin main
