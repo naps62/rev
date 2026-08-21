@@ -1,13 +1,12 @@
 /**
- * The UI-configurable worktree-create command: stored in the settings table,
- * defaulting to a plain `git worktree add`. The template is split into argv
- * (quote-aware, no shell) and placeholders are substituted per token, so a
- * value can never add or split arguments. Executed with cwd = the repo's
- * main checkout.
+ * The UI-configurable commands (worktree-create, session-spawn): stored in
+ * the settings table. Templates are split into argv (quote-aware, no shell)
+ * and placeholders are substituted per token, so a value can never add or
+ * split arguments.
  */
 
 import { execFile } from "node:child_process";
-import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
+import { DEFAULT_SESSION_SPAWN_CMD, DEFAULT_WORKTREE_CMD } from "#shared/commands";
 import { TUNING } from "#shared/tuning";
 import { getSetting, setSetting } from "./db.ts";
 import { run } from "./git.ts";
@@ -15,6 +14,7 @@ import { run } from "./git.ts";
 export class CommandError extends Error {}
 
 const WORKTREE_CMD_KEY = "commands.worktreeCreate";
+const SESSION_SPAWN_CMD_KEY = "commands.sessionSpawn";
 
 /**
  * Conservative allowlist rather than full git ref grammar: the branch lands
@@ -69,12 +69,38 @@ export function setWorktreeCommand(template: string): void {
   setSetting(WORKTREE_CMD_KEY, template.trim());
 }
 
-function exec(argv: string[], cwd: string): Promise<void> {
+export function sessionSpawnCommand(): string {
+  try {
+    return getSetting(SESSION_SPAWN_CMD_KEY) ?? DEFAULT_SESSION_SPAWN_CMD;
+  } catch {
+    return DEFAULT_SESSION_SPAWN_CMD; // DB not opened (tests)
+  }
+}
+
+/** Validate and persist the session-spawn template; empty disables spawning. */
+export function setSessionSpawnCommand(template: string): void {
+  const trimmed = template.trim();
+  if (trimmed !== "") {
+    if (splitTemplate(trimmed).length === 0) throw new CommandError("empty command");
+    if (!trimmed.includes("{dir}")) throw new CommandError("template must use {dir}");
+  }
+  setSetting(SESSION_SPAWN_CMD_KEY, trimmed);
+}
+
+/** Run the configured session-spawn command for a checkout; cwd = the checkout. */
+export async function runSessionSpawnCommand(dir: string, branch: string | null): Promise<void> {
+  const template = sessionSpawnCommand();
+  if (template === "") throw new CommandError("no session-spawn command configured");
+  const argv = substitute(splitTemplate(template), { dir, branch: branch ?? "" });
+  await exec(argv, dir, TUNING.SESSION_SPAWN_CMD_TIMEOUT_MS);
+}
+
+function exec(argv: string[], cwd: string, timeout: number = TUNING.WORKTREE_CMD_TIMEOUT_MS): Promise<void> {
   return new Promise((res, rej) => {
     execFile(
       argv[0]!,
       argv.slice(1),
-      { cwd, timeout: TUNING.WORKTREE_CMD_TIMEOUT_MS },
+      { cwd, timeout },
       (err, stdout, stderr) => {
         if (err) {
           const detail = (stderr || stdout || err.message)

@@ -161,6 +161,15 @@ UI), and exits — which re-invokes the session. A shared per-dir cursor in
 `~/.local/state/rev/` makes delivery at-most-once across sessions. Non-Claude
 agents can use the same API directly (`shared/types.ts`).
 
+If no session is listening on a checkout when a batch is sent, the server can
+start one: configure the **session spawn** command in settings → commands
+(e.g. `tmux new-session -d -c {dir} claude`; empty = disabled). Submit runs
+it and holds the batch until the new session's watcher polls, so the fresh
+cursor can't skip it; if no watcher arrives within 2 minutes the comments
+stay pending and the UI shows the error. Recent agent activity (a poll, an
+ack, an agent reply — within 5 minutes) counts as a live session, so a busy
+agent between deliveries doesn't get a duplicate.
+
 ## Caveats (spike)
 
 - No auth — anyone on the LAN can read diffs and write files. Do not expose

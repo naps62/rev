@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
+  type CommandPreset,
+  SESSION_SPAWN_PLACEHOLDERS,
+  SESSION_SPAWN_PRESETS,
   WORKTREE_CMD_PLACEHOLDERS,
   WORKTREE_CMD_PRESETS,
 } from "#shared/commands";
@@ -688,18 +691,30 @@ function KeyboardSection({ onReviewPage }: { onReviewPage: boolean }) {
   );
 }
 
-/**
- * The command POST /api/worktrees runs to check out a PR branch. Presets
- * autofill the input; nothing is saved until the save button.
- */
-function CommandsSection() {
+function CommandEditor({
+  title,
+  description,
+  field,
+  presets,
+  placeholders,
+  ariaLabel,
+  saved,
+  loading,
+}: {
+  title: ReactNode;
+  description: ReactNode;
+  field: "worktreeCreate" | "sessionSpawn";
+  presets: CommandPreset[];
+  placeholders: Record<string, string>;
+  ariaLabel: string;
+  saved: string;
+  loading: boolean;
+}) {
   const qc = useQueryClient();
-  const cmdQ = useQuery({ queryKey: ["commands"], queryFn: api.getCommands });
   const [draft, setDraft] = useState<string | null>(null);
-  const saved = cmdQ.data?.worktreeCreate ?? "";
   const value = draft ?? saved;
   const save = useMutation({
-    mutationFn: (worktreeCreate: string) => api.putCommands({ worktreeCreate }),
+    mutationFn: (template: string) => api.putCommands({ [field]: template }),
     onSuccess: (res) => {
       qc.setQueryData(["commands"], res);
       setDraft(null);
@@ -707,72 +722,109 @@ function CommandsSection() {
   });
   const dirty = draft !== null && draft !== saved;
   return (
-    <div className="space-y-6">
-      <section>
-        <GroupHeading>worktree creation</GroupHeading>
-        <p className="mb-3 text-[11.5px] leading-snug text-mute">
-          Run for “+ worktree” on a PR branch. Split into argv (quotes group, no
-          shell), executed in the repo's main checkout after a{" "}
-          <code className="font-mono text-[11px]">git fetch origin</code>.
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {WORKTREE_CMD_PRESETS.map((p) => (
-            <button
-              key={p.name}
-              type="button"
-              title={`${p.blurb}\n${p.template}`}
-              onClick={() => setDraft(p.template)}
-              className={cx(
-                "rounded-sm border px-2 py-0.5 font-mono text-[11px] transition-colors duration-150",
-                value === p.template
-                  ? "border-accent/50 text-accent"
-                  : "border-edge text-mute hover:border-accent/50 hover:text-fg",
-              )}
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            value={cmdQ.isPending ? "loading…" : value}
-            disabled={cmdQ.isPending}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && dirty) save.mutate(value);
-            }}
-            aria-label="Worktree create command"
-            className="min-w-0 flex-1 rounded-sm border border-edge bg-panel px-2.5 py-1.5 font-mono text-[12px] text-fg transition-colors duration-150 focus:border-accent/50"
-          />
+    <section>
+      <GroupHeading>{title}</GroupHeading>
+      <p className="mb-3 text-[11.5px] leading-snug text-mute">{description}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {presets.map((p) => (
           <button
+            key={p.name}
             type="button"
-            onClick={() => save.mutate(value)}
-            disabled={!dirty || save.isPending}
-            className="shrink-0 rounded-sm border border-edge px-2.5 py-1.5 font-mono text-[11.5px] text-mute transition-colors duration-150 hover:border-accent/50 hover:text-fg disabled:opacity-50 disabled:hover:border-edge disabled:hover:text-mute"
+            title={`${p.blurb}\n${p.template}`}
+            onClick={() => setDraft(p.template)}
+            className={cx(
+              "rounded-sm border px-2 py-0.5 font-mono text-[11px] transition-colors duration-150",
+              value === p.template
+                ? "border-accent/50 text-accent"
+                : "border-edge text-mute hover:border-accent/50 hover:text-fg",
+            )}
           >
-            {save.isPending ? "saving…" : dirty ? "save" : "saved"}
+            {p.name}
           </button>
-        </div>
-        {save.isError && (
-          <p className="mt-1.5 text-[11.5px] text-del">
-            {(save.error as Error).message}
-          </p>
-        )}
-        <dl className="mt-3 space-y-1">
-          {Object.entries(WORKTREE_CMD_PLACEHOLDERS).map(([ph, desc]) => (
-            <div key={ph} className="flex items-baseline gap-3">
-              <dt className="w-24 shrink-0 rounded-sm bg-raise px-1.5 py-0.5 text-center font-mono text-[11px] text-fg">
-                {ph}
-              </dt>
-              <dd className="text-[11.5px] text-mute">{desc}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-3 text-[11px] leading-snug text-faint">
-          Anyone who can reach rev can change this command — trusted networks
-          only.
-        </p>
-      </section>
+        ))}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          value={loading ? "loading…" : value}
+          disabled={loading}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && dirty) save.mutate(value);
+          }}
+          aria-label={ariaLabel}
+          className="min-w-0 flex-1 rounded-sm border border-edge bg-panel px-2.5 py-1.5 font-mono text-[12px] text-fg transition-colors duration-150 focus:border-accent/50"
+        />
+        <button
+          type="button"
+          onClick={() => save.mutate(value)}
+          disabled={!dirty || save.isPending}
+          className="shrink-0 rounded-sm border border-edge px-2.5 py-1.5 font-mono text-[11.5px] text-mute transition-colors duration-150 hover:border-accent/50 hover:text-fg disabled:opacity-50 disabled:hover:border-edge disabled:hover:text-mute"
+        >
+          {save.isPending ? "saving…" : dirty ? "save" : "saved"}
+        </button>
+      </div>
+      {save.isError && (
+        <p className="mt-1.5 text-[11.5px] text-del">{(save.error as Error).message}</p>
+      )}
+      <dl className="mt-3 space-y-1">
+        {Object.entries(placeholders).map(([ph, desc]) => (
+          <div key={ph} className="flex items-baseline gap-3">
+            <dt className="w-24 shrink-0 rounded-sm bg-raise px-1.5 py-0.5 text-center font-mono text-[11px] text-fg">
+              {ph}
+            </dt>
+            <dd className="text-[11.5px] text-mute">{desc}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+/**
+ * The commands the server runs for UI actions. Presets autofill the input;
+ * nothing is saved until the save button.
+ */
+function CommandsSection() {
+  const cmdQ = useQuery({ queryKey: ["commands"], queryFn: api.getCommands });
+  return (
+    <div className="space-y-6">
+      <CommandEditor
+        title="worktree creation"
+        description={
+          <>
+            Run for “+ worktree” on a PR branch. Split into argv (quotes group,
+            no shell), executed in the repo's main checkout after a{" "}
+            <code className="font-mono text-[11px]">git fetch origin</code>.
+          </>
+        }
+        field="worktreeCreate"
+        presets={WORKTREE_CMD_PRESETS}
+        placeholders={WORKTREE_CMD_PLACEHOLDERS}
+        ariaLabel="Worktree create command"
+        saved={cmdQ.data?.worktreeCreate ?? ""}
+        loading={cmdQ.isPending}
+      />
+      <CommandEditor
+        title="session spawn"
+        description={
+          <>
+            Run when comments are sent to a checkout with no agent session
+            listening; the batch is held until the new session's watcher picks
+            it up. Executed in the checkout. Empty = never spawn (comments just
+            queue).
+          </>
+        }
+        field="sessionSpawn"
+        presets={SESSION_SPAWN_PRESETS}
+        placeholders={SESSION_SPAWN_PLACEHOLDERS}
+        ariaLabel="Session spawn command"
+        saved={cmdQ.data?.sessionSpawn ?? ""}
+        loading={cmdQ.isPending}
+      />
+      <p className="text-[11px] leading-snug text-faint">
+        Anyone who can reach rev can change these commands — trusted networks
+        only.
+      </p>
     </div>
   );
 }

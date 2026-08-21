@@ -110,6 +110,26 @@ export interface WorktreeCreateResponse {
 export interface CommandsResponse {
   /** Argv template run by POST /api/worktrees ({dir}, {branch}, {remoteUrl}). */
   worktreeCreate: string;
+  /**
+   * Argv template run by POST /api/comments/submit when no agent session is
+   * listening on the dir ({dir}, {branch}). Empty string = never spawn.
+   */
+  sessionSpawn: string;
+}
+
+/** PUT /api/commands body: only the present fields are updated. */
+export interface CommandsUpdateRequest {
+  worktreeCreate?: string;
+  sessionSpawn?: string;
+}
+
+/** Whether an agent session is listening for submitted comments on a dir. */
+export interface AgentStatusResponse {
+  dir: string;
+  /** A watcher is long-polling the submitted channel, or agent activity was seen recently. */
+  listening: boolean;
+  /** The session-spawn template is non-empty, so submit can start a session. */
+  spawnConfigured: boolean;
 }
 
 /**
@@ -441,6 +461,13 @@ export interface CommentsSubmitRequest {
   dir: string;
 }
 
+export interface CommentsSubmitResponse {
+  submitted: number;
+  cursor: number;
+  /** true when submit started an agent session first (session-spawn command). */
+  spawned: boolean;
+}
+
 /** Watcher delivery ack: marks submitted comments ≤ upTo as picked up. */
 export interface CommentsAckRequest {
   dir: string;
@@ -609,7 +636,11 @@ export type ServerMessage =
 //        to LONG_POLL_MS when nothing is newer than `since`.
 // POST   /api/comments                       ← CommentCreateRequest → Comment
 // POST   /api/comments/submit                ← CommentsSubmitRequest
-//        → { submitted: number; cursor: number }
+//        → CommentsSubmitResponse. When no agent session is listening on the
+//        dir and the session-spawn command is configured, runs it and waits
+//        for the new session's watcher before releasing the batch (504 and
+//        comments stay pending if it never arrives).
+// GET    /api/agent?dir                      → AgentStatusResponse
 // POST   /api/comments/ack                   ← CommentsAckRequest → { acked: number }
 // PATCH  /api/comments/:id                   ← CommentPatchRequest  → Comment
 // GET    /api/github?dir[&refresh=1]         → GithubConvosResponse (open-PR review
@@ -626,8 +657,8 @@ export type ServerMessage =
 //        → WorktreeCreateResponse (201). Runs the configured worktree-create
 //        command for the branch, then re-scans discovery.
 // GET    /api/commands                       → CommandsResponse
-// PUT    /api/commands                       ← CommandsResponse → CommandsResponse
-//        Persists the worktree-create template (settings table).
+// PUT    /api/commands                       ← CommandsUpdateRequest → CommandsResponse
+//        Persists the command templates (settings table).
 // GET    /api/settings                       → UiSettings
 // PUT    /api/settings                       ← UiSettings → UiSettings
 //        Persists shared UI preferences (settings table); unknown fields

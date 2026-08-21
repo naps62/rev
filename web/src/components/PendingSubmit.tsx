@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { TUNING } from "#shared/tuning";
 import type { Comment } from "#shared/types";
@@ -37,6 +37,17 @@ export function PendingSubmit({
 
   const [deadline, setDeadline] = useState<number | null>(null);
   const armed = count > 0;
+
+  // Whether an agent session is listening — when not and spawning is
+  // configured, Send will start one first (the server holds the batch).
+  const agentQ = useQuery({
+    queryKey: ["agent", dir],
+    queryFn: () => api.getAgentStatus(dir),
+    enabled: armed,
+    refetchInterval: 15_000,
+  });
+  const willSpawn =
+    agentQ.data != null && !agentQ.data.listening && agentQ.data.spawnConfigured;
 
   // A new pending comment (maxSeq moves) restarts the idle window.
   useEffect(() => {
@@ -131,14 +142,34 @@ export function PendingSubmit({
           sends in {countdown(deadline - now)}
         </span>
       )}
+      {submitMut.isError && (
+        <span
+          className="max-w-56 truncate text-[11px] text-del"
+          title={(submitMut.error as Error).message}
+        >
+          {(submitMut.error as Error).message}
+        </span>
+      )}
+      {willSpawn && !submitMut.isPending && (
+        <span
+          className="text-[11px] text-faint"
+          title="No agent session is listening on this checkout — sending starts one first"
+        >
+          no session — send starts one
+        </span>
+      )}
       <button
         type="button"
         disabled={submitMut.isPending}
-        title="Send the batch to the agent now (a)"
+        title={
+          willSpawn
+            ? "Start an agent session and send the batch to it (a)"
+            : "Send the batch to the agent now (a)"
+        }
         onClick={() => fireRef.current()}
         className="rounded-sm border border-accent/40 px-2 py-0.5 text-[12px] text-accent transition-colors duration-150 hover:bg-accent hover:text-bg disabled:cursor-default disabled:border-edge disabled:text-faint"
       >
-        {submitMut.isPending ? "sending…" : "Send now"}
+        {submitMut.isPending ? (willSpawn ? "starting session…" : "sending…") : "Send now"}
       </button>
     </div>
   );

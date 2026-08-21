@@ -5,9 +5,8 @@
  * review flow is exercisable offline.
  */
 
-import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
+import { DEFAULT_SESSION_SPAWN_CMD, DEFAULT_WORKTREE_CMD } from "#shared/commands";
 import type {
-  CommandsResponse,
   Comment,
   CommentCreateRequest,
   CommentPatchRequest,
@@ -27,6 +26,10 @@ import type {
   PrListResponse,
   RepoInfo,
   SeenRequest,
+  AgentStatusResponse,
+  CommandsResponse,
+  CommandsUpdateRequest,
+  CommentsSubmitResponse,
   SemanticDiffResponse,
   StackResponse,
   UiSettings,
@@ -923,14 +926,20 @@ export function fxCreateWorktree(
 }
 
 let fxWorktreeCmd = DEFAULT_WORKTREE_CMD;
+let fxSessionSpawnCmd = DEFAULT_SESSION_SPAWN_CMD;
 
 export function fxGetCommands(): CommandsResponse {
-  return { worktreeCreate: fxWorktreeCmd };
+  return { worktreeCreate: fxWorktreeCmd, sessionSpawn: fxSessionSpawnCmd };
 }
 
-export function fxPutCommands(req: CommandsResponse): CommandsResponse {
-  fxWorktreeCmd = req.worktreeCreate;
-  return { worktreeCreate: fxWorktreeCmd };
+export function fxPutCommands(req: CommandsUpdateRequest): CommandsResponse {
+  if (req.worktreeCreate !== undefined) fxWorktreeCmd = req.worktreeCreate;
+  if (req.sessionSpawn !== undefined) fxSessionSpawnCmd = req.sessionSpawn;
+  return fxGetCommands();
+}
+
+export function fxGetAgentStatus(dir: string): AgentStatusResponse {
+  return { dir, listening: false, spawnConfigured: fxSessionSpawnCmd !== "" };
 }
 
 let fxUiSettings: UiSettings = {};
@@ -1146,10 +1155,7 @@ export function fxPostComment(req: CommentCreateRequest): Comment {
   return clone(c);
 }
 
-export function fxSubmitComments(dir: string): {
-  submitted: number;
-  cursor: number;
-} {
+export function fxSubmitComments(dir: string): CommentsSubmitResponse {
   void dir;
   const pending = state.comments
     .filter((c) => c.status === "pending")
@@ -1158,7 +1164,7 @@ export function fxSubmitComments(dir: string): {
     c.status = "submitted";
     c.submittedSeq = ++state.seq;
   }
-  return { submitted: pending.length, cursor: state.seq };
+  return { submitted: pending.length, cursor: state.seq, spawned: false };
 }
 
 export function fxPostFetch(req: { dir: string; base: string }): {
