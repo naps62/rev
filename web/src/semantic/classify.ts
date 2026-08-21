@@ -10,7 +10,13 @@ import { buildFileTree, flattenTree, type TreeNode } from "../tree.ts";
 
 export type FileClass = "code" | "tests" | "config" | "docs" | "generated";
 
-export const CLASS_ORDER: FileClass[] = ["code", "tests", "config", "docs", "generated"];
+const CLASS_ORDER: FileClass[] = [
+  "code",
+  "tests",
+  "config",
+  "docs",
+  "generated",
+];
 
 export const CLASS_LABEL: Record<FileClass, string> = {
   code: "Code",

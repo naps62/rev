@@ -11,7 +11,7 @@ import { join, relative } from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import { WebSocketServer, type WebSocket } from "ws";
+import { type WebSocket, WebSocketServer } from "ws";
 import type { ClientMessage, ServerMessage } from "#shared/types";
 import { config } from "./config.ts";
 import { openDb } from "./db.ts";
@@ -29,7 +29,9 @@ function main(): void {
     for (const ws of socketDirs.keys()) ws.send(json);
   };
 
-  watcher.onRepoChange((dir, paths) => broadcast({ type: "diff-invalidated", dir, paths }));
+  watcher.onRepoChange((dir, paths) =>
+    broadcast({ type: "diff-invalidated", dir, paths }),
+  );
   startDiscoveryTimer(() => broadcast({ type: "repos-changed" }));
 
   const app = new Hono().route("/api", buildApi(broadcast));
@@ -47,7 +49,11 @@ function main(): void {
     app.get("*", serveStatic({ root, path: "index.html" })); // SPA fallback
   }
 
-  const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port });
+  const server = serve({
+    fetch: app.fetch,
+    hostname: config.host,
+    port: config.port,
+  });
 
   const wss = new WebSocketServer({ noServer: true });
   server.on("upgrade", (req, socket, head) => {
@@ -55,7 +61,9 @@ function main(): void {
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+    wss.handleUpgrade(req, socket, head, (ws) =>
+      wss.emit("connection", ws, req),
+    );
   });
 
   wss.on("connection", (ws) => {

@@ -32,7 +32,7 @@ export const VIEW_FEATURES = [
   "entities",
 ] as const;
 
-export const FEATURE_DEFAULTS: FeatureFlags = {
+const FEATURE_DEFAULTS: FeatureFlags = {
   grouping: false,
   classDefaults: false,
   importFolds: false,

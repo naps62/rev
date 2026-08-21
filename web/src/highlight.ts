@@ -7,7 +7,7 @@
 
 import type { Scheme } from "./theme";
 
-export interface Token {
+interface Token {
   content: string;
   color?: string;
 }
@@ -63,7 +63,7 @@ const EXT_LANG: Record<string, LangId> = {
   sql: "sql",
 };
 
-export function langForPath(path: string): LangId | null {
+function langForPath(path: string): LangId | null {
   const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
   return EXT_LANG[ext] ?? null;
 }
@@ -79,7 +79,10 @@ const cache = new Map<string, Promise<TokenLine[] | null>>();
 async function getHighlighter(): Promise<HighlighterCore> {
   highlighterPromise ??= (async () => {
     const [{ createHighlighterCore }, { createJavaScriptRegexEngine }] =
-      await Promise.all([import("shiki/core"), import("shiki/engine/javascript")]);
+      await Promise.all([
+        import("shiki/core"),
+        import("shiki/engine/javascript"),
+      ]);
     return createHighlighterCore({
       themes: [
         import("shiki/themes/github-dark-default.mjs"),
@@ -123,7 +126,9 @@ export function highlightLines(
         if (tokens.length < lines.length) return null;
         return tokens
           .slice(0, lines.length)
-          .map((line) => line.map((t) => ({ content: t.content, color: t.color })));
+          .map((line) =>
+            line.map((t) => ({ content: t.content, color: t.color })),
+          );
       } catch {
         return null;
       }

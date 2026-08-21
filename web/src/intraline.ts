@@ -66,8 +66,10 @@ export function intralineSpans(hunks: DiffHunk[]): Map<number, Span> {
         for (let p = 0; p < j - i; p++) {
           const spans = pairSpans(lines[i + p]!.text, lines[j + p]!.text);
           if (spans) {
-            if (spans.del.end > spans.del.start) map.set(base + i + p, spans.del);
-            if (spans.add.end > spans.add.start) map.set(base + j + p, spans.add);
+            if (spans.del.end > spans.del.start)
+              map.set(base + i + p, spans.del);
+            if (spans.add.end > spans.add.start)
+              map.set(base + j + p, spans.add);
           }
         }
       }

@@ -4,7 +4,11 @@ import type { Comment, CommentAnchor } from "#shared/types";
 import { resolveAnchor, resolveComments } from "./anchor.ts";
 import { makeRepo, write } from "./testutil.ts";
 
-function anchor(line: number, snippet: string, context?: CommentAnchor["context"]): CommentAnchor {
+function anchor(
+  line: number,
+  snippet: string,
+  context?: CommentAnchor["context"],
+): CommentAnchor {
   return { file: "a.txt", side: "new", line, snippet, context };
 }
 
@@ -62,9 +66,15 @@ describe("resolveComments", () => {
     const dir = makeRepo("anchor", { "a.txt": "one\ntwo\nthree\n" });
     write(dir, "a.txt", "zero\none\ntwo\nthree\n"); // shift everything down one
 
-    const moved = comment({ anchor: { file: "a.txt", side: "new", line: 2, snippet: "two" } });
-    const oldSide = comment({ anchor: { file: "a.txt", side: "old", line: 2, snippet: "two" } });
-    const gone = comment({ anchor: { file: "missing.txt", side: "new", line: 1, snippet: "x" } });
+    const moved = comment({
+      anchor: { file: "a.txt", side: "new", line: 2, snippet: "two" },
+    });
+    const oldSide = comment({
+      anchor: { file: "a.txt", side: "old", line: 2, snippet: "two" },
+    });
+    const gone = comment({
+      anchor: { file: "missing.txt", side: "new", line: 1, snippet: "x" },
+    });
     const reply = comment({ parentId: "root-id" });
 
     await resolveComments(dir, [moved, oldSide, gone, reply]);

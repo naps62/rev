@@ -1,13 +1,20 @@
 /**
- * The UI-configurable worktree-create command: stored in the settings table,
- * defaulting to a plain `git worktree add`. The template is split into argv
- * (quote-aware, no shell) and placeholders are substituted per token, so a
- * value can never add or split arguments. Executed with cwd = the repo's
- * main checkout.
+ * The UI-configurable commands (worktree-create, session-spawn): stored in
+ * the settings table. Templates are split into argv (quote-aware, no shell)
+ * and placeholders are substituted per token, so a value can never add or
+ * split arguments.
  */
 
 import { execFile } from "node:child_process";
-import { DEFAULT_WORKTREE_CMD, DEFAULT_WORKTREE_REMOVE_CMD } from "#shared/commands";
+
+
+import {
+  DEFAULT_SESSION_SPAWN_CMD,
+  DEFAULT_WORKTREE_CMD,
+  DEFAULT_WORKTREE_REMOVE_CMD,
+} from "#shared/commands";
+
+
 import { TUNING } from "#shared/tuning";
 import { getSetting, setSetting } from "./db.ts";
 import { run } from "./git.ts";
@@ -16,6 +23,7 @@ export class CommandError extends Error {}
 
 const WORKTREE_CMD_KEY = "commands.worktreeCreate";
 const WORKTREE_REMOVE_KEY = "commands.worktreeRemove";
+const SESSION_SPAWN_CMD_KEY = "commands.sessionSpawn";
 
 /**
  * Conservative allowlist rather than full git ref grammar: the branch lands
@@ -32,17 +40,22 @@ export function validBranch(branch: string): boolean {
 
 /** Split a template into argv tokens; '…' and "…" group whole tokens, no escapes. */
 export function splitTemplate(template: string): string[] {
-  if ((template.match(/'/g) ?? []).length % 2 || (template.match(/"/g) ?? []).length % 2) {
+  if (
+    (template.match(/'/g) ?? []).length % 2 ||
+    (template.match(/"/g) ?? []).length % 2
+  ) {
     throw new CommandError("unbalanced quote in template");
   }
   const tokens: string[] = [];
   const re = /'([^']*)'|"([^"]*)"|([^\s'"]+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(template)) !== null) tokens.push(m[1] ?? m[2] ?? m[3]!);
+  for (const m of template.matchAll(re)) tokens.push(m[1] ?? m[2] ?? m[3]!);
   return tokens;
 }
 
-export function substitute(tokens: string[], vars: Record<string, string>): string[] {
+export function substitute(
+  tokens: string[],
+  vars: Record<string, string>,
+): string[] {
   return tokens.map((t) =>
     t.replace(/\{(\w+)\}/g, (whole, name: string) => vars[name] ?? whole),
   );
@@ -60,7 +73,8 @@ export function worktreeCommand(): string {
 export function setWorktreeCommand(template: string): void {
   const tokens = splitTemplate(template.trim());
   if (tokens.length === 0) throw new CommandError("empty command");
-  if (!template.includes("{branch}")) throw new CommandError("template must use {branch}");
+  if (!template.includes("{branch}"))
+    throw new CommandError("template must use {branch}");
   setSetting(WORKTREE_CMD_KEY, template.trim());
 }
 
@@ -82,19 +96,72 @@ export function setWorktreeRemoveCommand(template: string): void {
   setSetting(WORKTREE_REMOVE_KEY, template.trim());
 }
 
-function exec(argv: string[], cwd: string): Promise<void> {
+export function sessionSpawnCommand(): string {
+  try {
+    return getSetting(SESSION_SPAWN_CMD_KEY) ?? DEFAULT_SESSION_SPAWN_CMD;
+  } catch {
+    return DEFAULT_SESSION_SPAWN_CMD; // DB not opened (tests)
+  }
+}
+
+/** Validate and persist the session-spawn template; empty disables spawning. */
+export function setSessionSpawnCommand(template: string): void {
+  const trimmed = template.trim();
+  if (trimmed !== "") {
+    if (splitTemplate(trimmed).length === 0)
+      throw new CommandError("empty command");
+    if (!trimmed.includes("{dir}"))
+      throw new CommandError("template must use {dir}");
+  }
+  setSetting(SESSION_SPAWN_CMD_KEY, trimmed);
+}
+
+/** Run the configured session-spawn command for a checkout; cwd = the checkout. */
+export async function runSessionSpawnCommand(
+  dir: string,
+  branch: string | null,
+  repo: string,
+): Promise<void> {
+  const template = sessionSpawnCommand();
+  if (template === "")
+    throw new CommandError("no session-spawn command configured");
+  const argv = substitute(splitTemplate(template), {
+    dir,
+    branch: branch ?? "",
+    repo,
+  });
+  await exec(argv, dir, TUNING.SESSION_SPAWN_CMD_TIMEOUT_MS);
+}
+
+function exec(
+  argv: string[],
+  cwd: string,
+  timeout: number = TUNING.WORKTREE_CMD_TIMEOUT_MS,
+): Promise<void> {
   return new Promise((res, rej) => {
-    execFile(argv[0]!, argv.slice(1), { cwd, timeout: TUNING.WORKTREE_CMD_TIMEOUT_MS }, (err, stdout, stderr) => {
-      if (err) {
-        const detail = (stderr || stdout || err.message).trim().split("\n").slice(-3).join(" ");
-        rej(new CommandError(`${argv[0]} failed: ${detail}`));
-      } else res();
-    });
+    execFile(
+      argv[0]!,
+      argv.slice(1),
+      { cwd, timeout },
+      (err, stdout, stderr) => {
+        if (err) {
+          const detail = (stderr || stdout || err.message)
+            .trim()
+            .split("\n")
+            .slice(-3)
+            .join(" ");
+          rej(new CommandError(`${argv[0]} failed: ${detail}`));
+        } else res();
+      },
+    );
   });
 }
 
 /** Worktree dir currently on `branch`, from `git worktree list` in mainDir. */
-async function worktreeFor(mainDir: string, branch: string): Promise<string | null> {
+async function worktreeFor(
+  mainDir: string,
+  branch: string,
+): Promise<string | null> {
   const out = await run(mainDir, ["worktree", "list", "--porcelain"]);
   let dir: string | null = null;
   for (const line of out.split("\n")) {
@@ -114,7 +181,8 @@ export async function runWorktreeCommand(
   branch: string,
   remoteUrl: string | null,
 ): Promise<{ dir: string | null }> {
-  if (!validBranch(branch)) throw new CommandError(`invalid branch name: ${branch}`);
+  if (!validBranch(branch))
+    throw new CommandError(`invalid branch name: ${branch}`);
   const argv = substitute(splitTemplate(worktreeCommand()), {
     dir: mainDir,
     branch,

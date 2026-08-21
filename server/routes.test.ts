@@ -1,19 +1,29 @@
+import { existsSync, symlinkSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { before as beforeAll, describe, test } from "node:test";
 import { expect } from "expect";
-import { existsSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+
+
+import {
+  DEFAULT_WORKTREE_CMD,
+  DEFAULT_WORKTREE_REMOVE_CMD,
+} from "#shared/commands";
+import { TUNING } from "#shared/tuning";
+
+
 import type {
   Comment,
   CommentListResponse,
   DiffResponse,
   DiffSummaryResponse,
   FileDiffResponse,
-  InterdiffResponse,
   PresenceResponse,
   ServerMessage,
 } from "#shared/types";
-import { DEFAULT_WORKTREE_CMD, DEFAULT_WORKTREE_REMOVE_CMD } from "#shared/commands";
+
+
+
 import { config } from "./config.ts";
 import { closeDb, openDb } from "./db.ts";
 import { hashContent } from "./git.ts";
@@ -45,7 +55,9 @@ describe("resolveInRepo", () => {
   test("rejects traversal, absolute paths, symlink escapes", () => {
     const dir = makeRepo("safe");
     expect(resolveInRepo(dir, "a.txt")).toBe(join(dir, "a.txt"));
-    expect(resolveInRepo(dir, "sub/new-file.txt")).toBe(join(dir, "sub/new-file.txt"));
+    expect(resolveInRepo(dir, "sub/new-file.txt")).toBe(
+      join(dir, "sub/new-file.txt"),
+    );
     expect(resolveInRepo(dir, "../outside.txt")).toBeNull();
     expect(resolveInRepo(dir, "sub/../../outside.txt")).toBeNull();
     expect(resolveInRepo(dir, "/etc/passwd")).toBeNull();
@@ -58,7 +70,9 @@ describe("resolveInRepo", () => {
 describe("github routes", () => {
   test("GET /github validates dir and soft-fails on non-github repos", async () => {
     expect((await app.request("/github")).status).toBe(400);
-    expect((await app.request(`/github?dir=${encodeURIComponent("/etc")}`)).status).toBe(400);
+    expect(
+      (await app.request(`/github?dir=${encodeURIComponent("/etc")}`)).status,
+    ).toBe(400);
     const dir = makeRepo("gh-route");
     const res = await app.request(`/github?dir=${encodeURIComponent(dir)}`);
     expect(res.status).toBe(200);
@@ -68,13 +82,30 @@ describe("github routes", () => {
   });
 
   test("POST /github/reply|comment|resolve validate their bodies", async () => {
-    expect((await json("POST", "/github/reply", { dir: "x" })).status).toBe(400);
-    expect((await json("POST", "/github/reply", { dir: "x", body: "hi", rootId: "nope" })).status).toBe(400);
-    expect((await json("POST", "/github/comment", { dir: "x", body: " " })).status).toBe(400);
-    expect((await json("POST", "/github/resolve", { dir: "x", threadId: "t" })).status).toBe(400);
+    expect((await json("POST", "/github/reply", { dir: "x" })).status).toBe(
+      400,
+    );
+    expect(
+      (
+        await json("POST", "/github/reply", {
+          dir: "x",
+          body: "hi",
+          rootId: "nope",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await json("POST", "/github/comment", { dir: "x", body: " " })).status,
+    ).toBe(400);
+    expect(
+      (await json("POST", "/github/resolve", { dir: "x", threadId: "t" }))
+        .status,
+    ).toBe(400);
     // known repo without a PR: upstream failure surfaces as 502, not a crash
     const dir = makeRepo("gh-route-mut");
-    expect((await json("POST", "/github/reply", { dir, body: "hi" })).status).toBe(502);
+    expect(
+      (await json("POST", "/github/reply", { dir, body: "hi" })).status,
+    ).toBe(502);
   });
 });
 
@@ -86,9 +117,13 @@ describe("routes", () => {
   });
 
   test("unknown dir is rejected everywhere", async () => {
-    const res = await app.request(`/diff?dir=${encodeURIComponent("/etc")}&base=main`);
+    const res = await app.request(
+      `/diff?dir=${encodeURIComponent("/etc")}&base=main`,
+    );
     expect(res.status).toBe(400);
-    const res2 = await app.request(`/diff?dir=${encodeURIComponent(tmpdir("notrepo"))}&base=main`);
+    const res2 = await app.request(
+      `/diff?dir=${encodeURIComponent(tmpdir("notrepo"))}&base=main`,
+    );
     expect(res2.status).toBe(400);
   });
 
@@ -98,9 +133,13 @@ describe("routes", () => {
     write(dir, "a.txt", "edited\n");
     const q = `dir=${encodeURIComponent(dir)}&base=main`;
 
-    const bad = await app.request(`/diff?dir=${encodeURIComponent(dir)}&base=nope`);
+    const bad = await app.request(
+      `/diff?dir=${encodeURIComponent(dir)}&base=nope`,
+    );
     expect(bad.status).toBe(400);
-    expect(typeof ((await bad.json()) as { error: string }).error).toBe("string");
+    expect(typeof ((await bad.json()) as { error: string }).error).toBe(
+      "string",
+    );
 
     const res = await app.request(`/diff?${q}`);
     expect(res.status).toBe(200);
@@ -118,12 +157,16 @@ describe("routes", () => {
       seen: true,
     });
     expect(await seenRes.json()).toEqual({ ok: true });
-    const diff2 = (await (await app.request(`/diff?${q}`)).json()) as DiffResponse;
+    const diff2 = (await (
+      await app.request(`/diff?${q}`)
+    ).json()) as DiffResponse;
     expect(diff2.files.find((f) => f.path === "a.txt")!.seen).toBe(true);
 
     // file changes → stale: true
     write(dir, "a.txt", "edited more\n");
-    const diff3 = (await (await app.request(`/diff?${q}`)).json()) as DiffResponse;
+    const diff3 = (await (
+      await app.request(`/diff?${q}`)
+    ).json()) as DiffResponse;
     const f3 = diff3.files.find((f) => f.path === "a.txt")!;
     expect(f3.seen).toBe(false);
     expect(f3.stale).toBe(true);
@@ -137,17 +180,36 @@ describe("routes", () => {
     const body = (await got.json()) as { content: string; contentHash: string };
     expect(body.content).toBe("v1\n");
 
-    const conflict = await json("PUT", "/file", { dir, path: "a.txt", content: "v2\n", baseHash: "wrong" });
+    const conflict = await json("PUT", "/file", {
+      dir,
+      path: "a.txt",
+      content: "v2\n",
+      baseHash: "wrong",
+    });
     expect(conflict.status).toBe(409);
 
-    const ok = await json("PUT", "/file", { dir, path: "a.txt", content: "v2\n", baseHash: body.contentHash });
+    const ok = await json("PUT", "/file", {
+      dir,
+      path: "a.txt",
+      content: "v2\n",
+      baseHash: body.contentHash,
+    });
     expect(ok.status).toBe(200);
-    expect(((await ok.json()) as { contentHash: string }).contentHash).toBe(hashContent("v2\n"));
+    expect(((await ok.json()) as { contentHash: string }).contentHash).toBe(
+      hashContent("v2\n"),
+    );
     expect(await readFile(join(dir, "a.txt"), "utf8")).toBe("v2\n");
 
-    const esc = await json("PUT", "/file", { dir, path: "../esc.txt", content: "x", baseHash: "" });
+    const esc = await json("PUT", "/file", {
+      dir,
+      path: "../esc.txt",
+      content: "x",
+      baseHash: "",
+    });
     expect(esc.status).toBe(400);
-    const escRead = await app.request(`/file?dir=${encodeURIComponent(dir)}&path=..%2Fesc.txt`);
+    const escRead = await app.request(
+      `/file?dir=${encodeURIComponent(dir)}&path=..%2Fesc.txt`,
+    );
     expect(escRead.status).toBe(400);
   });
 
@@ -170,7 +232,9 @@ describe("routes", () => {
     const newRes = await app.request(`/file/raw?${q}`);
     expect(new Uint8Array(await newRes.arrayBuffer())).toEqual(newImage);
 
-    const escaped = await app.request(`/file/raw?dir=${encodeURIComponent(dir)}&path=..%2Fimage.png`);
+    const escaped = await app.request(
+      `/file/raw?dir=${encodeURIComponent(dir)}&path=..%2Fimage.png`,
+    );
     expect(escaped.status).toBe(400);
   });
 
@@ -187,22 +251,47 @@ describe("routes", () => {
     });
     expect(created.status).toBe(201);
     const root = (await created.json()) as Comment;
-    expect(sent).toContainEqual({ type: "comments-changed", dir, seq: root.seq });
+    expect(sent).toContainEqual({
+      type: "comments-changed",
+      dir,
+      seq: root.seq,
+    });
 
-    const badAuthor = await json("POST", "/comments", { dir, base: "main", author: "bot", body: "x" });
+    const badAuthor = await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "bot",
+      body: "x",
+    });
     expect(badAuthor.status).toBe(400);
-    const badParent = await json("POST", "/comments", { dir, base: "main", author: "user", body: "x", parentId: "nope" });
+    const badParent = await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "user",
+      body: "x",
+      parentId: "nope",
+    });
     expect(badParent.status).toBe(400);
 
-    const replied = await json("POST", "/comments", { dir, base: "main", author: "agent", body: "done", parentId: root.id });
+    const replied = await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "agent",
+      body: "done",
+      parentId: root.id,
+    });
     const reply = (await replied.json()) as Comment;
     expect(reply.parentId).toBe(root.id);
     expect(reply.anchor).toBeNull();
 
-    const patched = await json("PATCH", `/comments/${root.id}`, { resolved: true });
+    const patched = await json("PATCH", `/comments/${root.id}`, {
+      resolved: true,
+    });
     expect(patched.status).toBe(200);
     expect(((await patched.json()) as Comment).resolvedAt).toBeGreaterThan(0);
-    const missing = await json("PATCH", "/comments/does-not-exist", { resolved: true });
+    const missing = await json("PATCH", "/comments/does-not-exist", {
+      resolved: true,
+    });
     expect(missing.status).toBe(404);
 
     const list = await app.request(`/comments?dir=${encodeURIComponent(dir)}`);
@@ -210,8 +299,12 @@ describe("routes", () => {
     expect(comments.map((c) => c.id)).toEqual([root.id, reply.id]);
     expect(cursor).toBe(reply.seq);
 
-    const since = await app.request(`/comments?dir=${encodeURIComponent(dir)}&since=${root.seq}`);
-    expect(((await since.json()) as CommentListResponse).comments.map((c) => c.id)).toEqual([reply.id]);
+    const since = await app.request(
+      `/comments?dir=${encodeURIComponent(dir)}&since=${root.seq}`,
+    );
+    expect(
+      ((await since.json()) as CommentListResponse).comments.map((c) => c.id),
+    ).toEqual([reply.id]);
   });
 
   test("pending: hidden from submitted channel until submit; ack flips picked_up", async () => {
@@ -219,11 +312,22 @@ describe("routes", () => {
     sent.length = 0;
 
     const immediate = (await (
-      await json("POST", "/comments", { dir, base: "main", author: "user", body: "now" })
+      await json("POST", "/comments", {
+        dir,
+        base: "main",
+        author: "user",
+        body: "now",
+      })
     ).json()) as Comment;
     expect(immediate.status).toBe("submitted");
     const draft = (await (
-      await json("POST", "/comments", { dir, base: "main", author: "user", body: "later", pending: true })
+      await json("POST", "/comments", {
+        dir,
+        base: "main",
+        author: "user",
+        body: "later",
+        pending: true,
+      })
     ).json()) as Comment;
     expect(draft.status).toBe("pending");
     expect(draft.submittedSeq).toBeNull();
@@ -236,9 +340,14 @@ describe("routes", () => {
     sent.length = 0;
     const submit = await json("POST", "/comments/submit", { dir });
     expect(submit.status).toBe(200);
-    const { submitted, cursor } = (await submit.json()) as { submitted: number; cursor: number };
+    const { submitted, cursor } = (await submit.json()) as {
+      submitted: number;
+      cursor: number;
+    };
     expect(submitted).toBe(1);
-    expect(sent.some((m) => m.type === "comments-changed" && m.dir === dir)).toBe(true);
+    expect(
+      sent.some((m) => m.type === "comments-changed" && m.dir === dir),
+    ).toBe(true);
 
     res = (await (await app.request(chan)).json()) as CommentListResponse;
     expect(res.comments.map((c) => c.body)).toEqual(["now", "later"]);
@@ -247,9 +356,18 @@ describe("routes", () => {
     const ack = await json("POST", "/comments/ack", { dir, upTo: cursor });
     expect((await ack.json()) as { acked: number }).toEqual({ acked: 2 });
     res = (await (await app.request(chan)).json()) as CommentListResponse;
-    expect(res.comments.map((c) => c.status)).toEqual(["picked_up", "picked_up"]);
+    expect(res.comments.map((c) => c.status)).toEqual([
+      "picked_up",
+      "picked_up",
+    ]);
 
-    const badPending = await json("POST", "/comments", { dir, base: "main", author: "user", body: "x", pending: "yes" });
+    const badPending = await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "user",
+      body: "x",
+      pending: "yes",
+    });
     expect(badPending.status).toBe(400);
     const badAck = await json("POST", "/comments/ack", { dir, upTo: "nope" });
     expect(badAck.status).toBe(400);
@@ -257,7 +375,13 @@ describe("routes", () => {
 
   test("submitted-channel long-poll resolves on submit, not on pending create", async () => {
     const dir = makeRepo("routes-poll-submitted");
-    await json("POST", "/comments", { dir, base: "main", author: "user", body: "draft", pending: true });
+    await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "user",
+      body: "draft",
+      pending: true,
+    });
     const t0 = Date.now();
     const waiting = app.request(
       `/comments?dir=${encodeURIComponent(dir)}&since=0&wait=1&submitted=1`,
@@ -272,9 +396,16 @@ describe("routes", () => {
   test("long-poll resolves early when a comment lands", async () => {
     const dir = makeRepo("routes-poll");
     const t0 = Date.now();
-    const pending = app.request(`/comments?dir=${encodeURIComponent(dir)}&since=0&wait=1`);
+    const pending = app.request(
+      `/comments?dir=${encodeURIComponent(dir)}&since=0&wait=1`,
+    );
     await new Promise((r) => setTimeout(r, 50));
-    await json("POST", "/comments", { dir, base: "main", author: "user", body: "wake up" });
+    await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "user",
+      body: "wake up",
+    });
     const res = (await (await pending).json()) as CommentListResponse;
     expect(res.comments.map((c) => c.body)).toEqual(["wake up"]);
     expect(Date.now() - t0).toBeLessThan(5_000); // resolved by notify, not the 25s cap
@@ -284,7 +415,12 @@ describe("routes", () => {
   // far more than the 5s default under a loaded machine.
   test("comments: reviewer author accepted", async () => {
     const dir = makeRepo("routes-reviewer");
-    const res = await json("POST", "/comments", { dir, base: "main", author: "reviewer", body: "nit" });
+    const res = await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "reviewer",
+      body: "nit",
+    });
     expect(res.status).toBe(201);
   });
 
@@ -305,7 +441,9 @@ describe("GET /diff/summary and /diff/file", () => {
     write(dir, "new.txt", "n1\n");
     const q = `dir=${encodeURIComponent(dir)}&base=main`;
 
-    const bad = await app.request(`/diff/summary?dir=${encodeURIComponent(dir)}&base=nope`);
+    const bad = await app.request(
+      `/diff/summary?dir=${encodeURIComponent(dir)}&base=nope`,
+    );
     expect(bad.status).toBe(400);
 
     const res = await app.request(`/diff/summary?${q}`);
@@ -315,7 +453,9 @@ describe("GET /diff/summary and /diff/file", () => {
     expect(a.status).toBe("modified");
     expect(a.contentHash).toBe(hashContent("edited\n"));
     expect("hunks" in a).toBe(false);
-    expect(summary.files.find((f) => f.path === "new.txt")!.status).toBe("untracked");
+    expect(summary.files.find((f) => f.path === "new.txt")!.status).toBe(
+      "untracked",
+    );
 
     await json("PUT", "/seen", {
       dir,
@@ -339,13 +479,17 @@ describe("GET /diff/summary and /diff/file", () => {
     const untrackedRes = await app.request(`/diff/file?${q}&path=new.txt`);
     const ufd = (await untrackedRes.json()) as FileDiffResponse;
     expect(ufd.file.status).toBe("untracked");
-    expect(ufd.file.hunks[0]!.lines).toEqual([{ kind: "add", newLine: 1, text: "n1" }]);
+    expect(ufd.file.hunks[0]!.lines).toEqual([
+      { kind: "add", newLine: 1, text: "n1" },
+    ]);
 
     const missing = await app.request(`/diff/file?${q}&path=unchanged.txt`);
     expect(missing.status).toBe(404);
 
-    const escape = await app.request(`/diff/file?${q}&path=${encodeURIComponent("../x")}`);
-    expect(escape.status).toBe(400);
+    const escaping = await app.request(
+      `/diff/file?${q}&path=${encodeURIComponent("../x")}`,
+    );
+    expect(escaping.status).toBe(400);
   });
 });
 
@@ -355,7 +499,12 @@ describe("GET /refs", () => {
     git(dir, "branch", "feat-x");
     const head = git(dir, "rev-parse", "HEAD").trim();
     git(dir, "update-ref", "refs/remotes/origin/main", head);
-    git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    git(
+      dir,
+      "symbolic-ref",
+      "refs/remotes/origin/HEAD",
+      "refs/remotes/origin/main",
+    );
 
     const res = await app.request(`/refs?dir=${encodeURIComponent(dir)}`);
     expect(res.status).toBe(200);
@@ -401,62 +550,6 @@ describe("GET /presence", () => {
   });
 });
 
-describe("interdiff", () => {
-  test("seen snapshots the file; interdiff returns only the delta since", async () => {
-    const dir = makeRepo("routes-interdiff", { "a.txt": "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n" });
-    git(dir, "checkout", "-b", "f");
-    // first round of changes, reviewed and marked seen
-    write(dir, "a.txt", "l1\nCHANGED\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n");
-    const q = `dir=${encodeURIComponent(dir)}&base=main`;
-    const hash1 = hashContent("l1\nCHANGED\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n");
-    await json("PUT", "/seen", { dir, base: "main", path: "a.txt", contentHash: hash1, seen: true });
-
-    // nothing changed since → interdiff exists, zero hunks
-    const clean = (await (await app.request(`/diff/interdiff?${q}&path=a.txt`)).json()) as InterdiffResponse;
-    expect(clean.sinceHash).toBe(hash1);
-    expect(clean.file.hunks).toEqual([]);
-
-    // second round of changes at the END of the file
-    write(dir, "a.txt", "l1\nCHANGED\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nAFTER\n");
-    const inter = (await (await app.request(`/diff/interdiff?${q}&path=a.txt`)).json()) as InterdiffResponse;
-    // the delta shows ONLY round two: one hunk touching AFTER, not CHANGED
-    expect(inter.file.hunks).toHaveLength(1);
-    const text = inter.file.hunks[0]!.lines.map((l) => `${l.kind}:${l.text}`).join("|");
-    expect(text).toContain("add:AFTER");
-    expect(text).toContain("del:l10");
-    expect(text).not.toContain("add:CHANGED");
-    // while the full per-file diff still shows both rounds
-    const full = (await (await app.request(`/diff/file?${q}&path=a.txt`)).json()) as FileDiffResponse;
-    const fullText = full.file.hunks.flatMap((h) => h.lines).map((l) => `${l.kind}:${l.text}`).join("|");
-    expect(fullText).toContain("add:CHANGED");
-    expect(fullText).toContain("add:AFTER");
-
-    // un-marking seen drops the snapshot
-    await json("PUT", "/seen", { dir, base: "main", path: "a.txt", contentHash: hash1, seen: false });
-    const gone = await app.request(`/diff/interdiff?${q}&path=a.txt`);
-    expect(gone.status).toBe(404);
-  });
-
-  test("hash-mismatched seen stores no snapshot; deleted file diffs to all-del", async () => {
-    const dir = makeRepo("routes-interdiff2", { "b.txt": "x1\nx2\n" });
-    git(dir, "checkout", "-b", "f");
-    write(dir, "b.txt", "x1\nx2\nx3\n");
-    const q = `dir=${encodeURIComponent(dir)}&base=main`;
-
-    // stale contentHash (file moved on) → seen recorded but no snapshot
-    await json("PUT", "/seen", { dir, base: "main", path: "b.txt", contentHash: "0123456789abcdef", seen: true });
-    expect((await app.request(`/diff/interdiff?${q}&path=b.txt`)).status).toBe(404);
-
-    // proper snapshot, then delete the file → interdiff is all deletions
-    const h = hashContent("x1\nx2\nx3\n");
-    await json("PUT", "/seen", { dir, base: "main", path: "b.txt", contentHash: h, seen: true });
-    rmSync(join(dir, "b.txt"));
-    const inter = (await (await app.request(`/diff/interdiff?${q}&path=b.txt`)).json()) as InterdiffResponse;
-    expect(inter.file.hunks[0]!.lines.every((l) => l.kind === "del")).toBe(true);
-    expect(inter.file.contentHash).toBe("");
-  });
-});
-
 describe("PRs and worktree creation", () => {
   test("GET /prs returns prs:null for a repo with no remote", async () => {
     const dir = makeRepo("prs-noremote");
@@ -473,9 +566,15 @@ describe("PRs and worktree creation", () => {
   test("POST /worktrees validates body and branch name", async () => {
     const dir = makeRepo("wt-validate");
     expect((await json("POST", "/worktrees", { dir })).status).toBe(400);
-    expect((await json("POST", "/worktrees", { dir: "/nope", branch: "x" })).status).toBe(400);
-    expect((await json("POST", "/worktrees", { dir, branch: "--delete" })).status).toBe(400);
-    expect((await json("POST", "/worktrees", { dir, branch: "a..b" })).status).toBe(400);
+    expect(
+      (await json("POST", "/worktrees", { dir: "/nope", branch: "x" })).status,
+    ).toBe(400);
+    expect(
+      (await json("POST", "/worktrees", { dir, branch: "--delete" })).status,
+    ).toBe(400);
+    expect(
+      (await json("POST", "/worktrees", { dir, branch: "a..b" })).status,
+    ).toBe(400);
   });
 });
 
@@ -484,24 +583,179 @@ describe("commands", () => {
     const before = (await (await app.request("/commands")).json()) as {
       worktreeCreate: string;
       worktreeRemove: string;
+      sessionSpawn: string;
     };
     expect(typeof before.worktreeCreate).toBe("string");
     expect(typeof before.worktreeRemove).toBe("string");
-    expect((await json("PUT", "/commands", { worktreeCreate: "echo no-branch" })).status).toBe(400);
-    expect((await json("PUT", "/commands", { worktreeRemove: "echo no-placeholder" })).status).toBe(400);
-    expect((await json("PUT", "/commands", {})).status).toBe(400);
-    const res = await json("PUT", "/commands", { worktreeCreate: "aoe add {dir} --worktree {branch}" });
+    expect(before.sessionSpawn).toBe("");
+    expect(
+      (await json("PUT", "/commands", { worktreeCreate: "echo no-branch" }))
+        .status,
+    ).toBe(400);
+    expect(
+      (
+        await json("PUT", "/commands", {
+          worktreeRemove: "echo no-placeholder",
+        })
+      ).status,
+    ).toBe(400);
+    expect((await json("PUT", "/commands", )).status).toBe(400);
+    expect(
+      (await json("PUT", "/commands", { sessionSpawn: "echo no-dir" })).status,
+    ).toBe(400);
+    const res = await json("PUT", "/commands", {
+      worktreeCreate: "aoe add {dir} --worktree {branch}",
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       worktreeCreate: "aoe add {dir} --worktree {branch}",
       worktreeRemove: before.worktreeRemove,
+      sessionSpawn: "",
     });
-    const res2 = await json("PUT", "/commands", { worktreeRemove: "aoe remove {branch} --delete-worktree" });
+    const res2 = await json("PUT", "/commands", {
+      worktreeRemove: "aoe remove {branch} --delete-worktree",
+    });
     expect(res2.status).toBe(200);
     expect(await res2.json()).toEqual({
       worktreeCreate: "aoe add {dir} --worktree {branch}",
       worktreeRemove: "aoe remove {branch} --delete-worktree",
+      sessionSpawn: "",
     });
+    const spawn = await json("PUT", "/commands", {
+      sessionSpawn: "tmux new-session -d -c {dir} claude",
+    });
+    expect(spawn.status).toBe(200);
+    expect(await spawn.json()).toEqual({
+      worktreeCreate: "aoe add {dir} --worktree {branch}",
+      worktreeRemove: "aoe remove {branch} --delete-worktree",
+      sessionSpawn: "tmux new-session -d -c {dir} claude",
+    });
+    await json("PUT", "/commands", { sessionSpawn: "" }); // empty disables again
+    const after = (await (await app.request("/commands")).json()) as {
+      sessionSpawn: string;
+    };
+    expect(after.sessionSpawn).toBe("");
+  });
+});
+
+describe("session spawn on submit", () => {
+  test("GET /agent reflects watcher polling and spawn config", async () => {
+    const dir = makeRepo("agent-status");
+    const status = async () =>
+      (await (
+        await app.request(`/agent?dir=${encodeURIComponent(dir)}`)
+      ).json()) as {
+        listening: boolean;
+        spawnConfigured: boolean;
+      };
+    expect((await app.request("/agent")).status).toBe(400);
+    expect(await status()).toEqual({
+      dir,
+      listening: false,
+      spawnConfigured: false,
+    });
+    await app.request(`/comments?dir=${encodeURIComponent(dir)}&submitted=1`);
+    expect((await status()).listening).toBe(true);
+    await json("PUT", "/commands", { sessionSpawn: "true {dir}" });
+    expect((await status()).spawnConfigured).toBe(true);
+    await json("PUT", "/commands", { sessionSpawn: "" });
+  });
+
+  test("submit spawns a session and holds the batch until its watcher arrives", async () => {
+    const dir = makeRepo("spawn-e2e");
+    await json("PUT", "/commands", {
+      sessionSpawn: "touch {dir}/spawned-{repo}",
+    });
+    await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "user",
+      body: "fix this",
+      pending: true,
+    });
+
+    const submitting = json("POST", "/comments/submit", { dir });
+    // Simulate the spawned session's watcher arriving after a beat.
+    const watcher = (async () => {
+      await new Promise((r) => setTimeout(r, 150));
+      return app.request(
+        `/comments?dir=${encodeURIComponent(dir)}&since=0&wait=1&submitted=1`,
+      );
+    })();
+
+    const submit = await submitting;
+    expect(submit.status).toBe(200);
+    expect(await submit.json()).toEqual({
+      submitted: 1,
+      cursor: expect.any(Number),
+      spawned: true,
+    });
+    expect(existsSync(join(dir, `spawned-${basename(dir)}`))).toBe(true);
+    const delivered = (await (await watcher).json()) as CommentListResponse;
+    expect(delivered.comments.map((c) => c.body)).toEqual(["fix this"]);
+    await json("PUT", "/commands", { sessionSpawn: "" });
+  });
+
+  test("submit does not spawn when a session is already live", async () => {
+    const dir = makeRepo("spawn-live");
+    await json("PUT", "/commands", { sessionSpawn: "touch {dir}/spawned" });
+    await app.request(`/comments?dir=${encodeURIComponent(dir)}&submitted=1`); // recent agent poll
+    await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "user",
+      body: "quick",
+      pending: true,
+    });
+    const submit = await json("POST", "/comments/submit", { dir });
+    expect(await submit.json()).toEqual({
+      submitted: 1,
+      cursor: expect.any(Number),
+      spawned: false,
+    });
+    expect(existsSync(join(dir, "spawned"))).toBe(false);
+    await json("PUT", "/commands", { sessionSpawn: "" });
+  });
+
+  test("watcher never arrives: 504 and comments stay pending", async () => {
+    const tuning = TUNING as { SESSION_SPAWN_READY_TIMEOUT_MS: number };
+    const orig = tuning.SESSION_SPAWN_READY_TIMEOUT_MS;
+    tuning.SESSION_SPAWN_READY_TIMEOUT_MS = 100;
+    try {
+      const dir = makeRepo("spawn-timeout");
+      await json("PUT", "/commands", { sessionSpawn: "true {dir}" });
+      await json("POST", "/comments", {
+        dir,
+        base: "main",
+        author: "user",
+        body: "lost?",
+        pending: true,
+      });
+      const submit = await json("POST", "/comments/submit", { dir });
+      expect(submit.status).toBe(504);
+      const list = (await (
+        await app.request(`/comments?dir=${encodeURIComponent(dir)}`)
+      ).json()) as CommentListResponse;
+      expect(list.comments.map((c) => c.status)).toEqual(["pending"]);
+    } finally {
+      tuning.SESSION_SPAWN_READY_TIMEOUT_MS = orig;
+      await json("PUT", "/commands", { sessionSpawn: "" });
+    }
+  });
+
+  test("failing spawn command surfaces as 400", async () => {
+    const dir = makeRepo("spawn-fail");
+    await json("PUT", "/commands", { sessionSpawn: "false {dir}" });
+    await json("POST", "/comments", {
+      dir,
+      base: "main",
+      author: "user",
+      body: "oops",
+      pending: true,
+    });
+    const submit = await json("POST", "/comments/submit", { dir });
+    expect(submit.status).toBe(400);
+    await json("PUT", "/commands", { sessionSpawn: "" });
   });
 });
 
@@ -517,7 +771,10 @@ describe("settings", () => {
       extra: 1,
     });
     expect(res.status).toBe(200);
-    const clean = { features: { grouping: true, symbols: false }, diffMode: "split" };
+    const clean = {
+      features: { grouping: true, symbols: false },
+      diffMode: "split",
+    };
     expect(await res.json()).toEqual(clean);
     expect(await (await app.request("/settings")).json()).toEqual(clean);
   });
@@ -536,12 +793,17 @@ describe("POST /worktrees end-to-end (default command)", () => {
     git(SCRATCH, "clone", origin, clone);
     git(clone, "branch", "-r"); // sanity: origin/feat-x exists remotely only
 
-    const res = await json("POST", "/worktrees", { dir: clone, branch: "feat-x" });
+    const res = await json("POST", "/worktrees", {
+      dir: clone,
+      branch: "feat-x",
+    });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { dir: string | null; branch: string };
     expect(body.branch).toBe("feat-x");
     expect(body.dir).toBe(join(clone, "worktrees", "feat-x"));
-    expect(git(body.dir!, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("feat-x");
+    expect(git(body.dir!, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(
+      "feat-x",
+    );
     expect(sent.some((m) => m.type === "repos-changed")).toBe(true);
   });
 });

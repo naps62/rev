@@ -23,7 +23,8 @@ function labelsFor(n: number): string[] {
   if (n <= A.length) return [...A].slice(0, n);
   const out: string[] = [];
   for (let i = 0; out.length < n && i < A.length; i++) {
-    for (let j = 0; out.length < n && j < A.length; j++) out.push(A[i]! + A[j]!);
+    for (let j = 0; out.length < n && j < A.length; j++)
+      out.push(A[i]! + A[j]!);
   }
   return out;
 }

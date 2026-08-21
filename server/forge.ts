@@ -11,16 +11,24 @@
  * homepage doesn't hammer an unreachable forge.
  */
 
+
 import type { PrInfo, PrState } from "#shared/types";
+
+
 import { TUNING } from "#shared/tuning";
+import type { PrInfo } from "#shared/types";
 import { config } from "./config.ts";
 
 export type ForgePr = Omit<PrInfo, "checkoutDir">;
 
 /** Host, owner and repo name from an https or scp-like ssh remote URL. */
-export function parseRemoteRepo(url: string): { host: string; owner: string; repo: string } | null {
-  const ssh = /^(?:ssh:\/\/)?(?:[\w.-]+@)?([\w.-]+)[:/]([^/:]+)\/([^/]+?)(?:\.git)?\/?$/;
-  const http = /^https?:\/\/(?:[^@/]+@)?([\w.-]+)(?::\d+)?\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/;
+export function parseRemoteRepo(
+  url: string,
+): { host: string; owner: string; repo: string } | null {
+  const ssh =
+    /^(?:ssh:\/\/)?(?:[\w.-]+@)?([\w.-]+)[:/]([^/:]+)\/([^/]+?)(?:\.git)?\/?$/;
+  const http =
+    /^https?:\/\/(?:[^@/]+@)?([\w.-]+)(?::\d+)?\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/;
   const m = http.exec(url) ?? ssh.exec(url);
   return m ? { host: m[1]!, owner: m[2]!, repo: m[3]! } : null;
 }
@@ -55,7 +63,11 @@ export function mapPrs(raw: unknown, ownerRepo: string): ForgePr[] {
     const branch = p.head?.ref;
     if (typeof p.number !== "number" || typeof branch !== "string") continue;
     const headRepo = p.head?.repo?.full_name;
-    if (typeof headRepo === "string" && headRepo.toLowerCase() !== ownerRepo.toLowerCase()) continue;
+    if (
+      typeof headRepo === "string" &&
+      headRepo.toLowerCase() !== ownerRepo.toLowerCase()
+    )
+      continue;
     out.push({
       number: p.number,
       title: typeof p.title === "string" ? p.title : "",

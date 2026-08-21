@@ -1,9 +1,23 @@
-import { after as afterAll, before as beforeAll, describe, test } from "node:test";
-import { expect } from "expect";
 import { join } from "node:path";
-import { DEFAULT_WORKTREE_CMD, DEFAULT_WORKTREE_REMOVE_CMD } from "#shared/commands";
+
+
+import {
+  after as afterAll,
+  before as beforeAll,
+  describe,
+  test,
+} from "node:test";
+import { expect } from "expect";
+import {
+  DEFAULT_WORKTREE_CMD,
+  DEFAULT_WORKTREE_REMOVE_CMD,
+} from "#shared/commands";
+
+
 import {
   CommandError,
+  sessionSpawnCommand,
+  setSessionSpawnCommand,
   setWorktreeCommand,
   setWorktreeRemoveCommand,
   splitTemplate,
@@ -37,10 +51,22 @@ describe("validBranch", () => {
 
 describe("splitTemplate / substitute", () => {
   test("splits on whitespace, quotes group whole tokens", () => {
-    expect(splitTemplate("git -C {dir} worktree add worktrees/{branch} {branch}")).toEqual([
-      "git", "-C", "{dir}", "worktree", "add", "worktrees/{branch}", "{branch}",
+    expect(
+      splitTemplate("git -C {dir} worktree add worktrees/{branch} {branch}"),
+    ).toEqual([
+      "git",
+      "-C",
+      "{dir}",
+      "worktree",
+      "add",
+      "worktrees/{branch}",
+      "{branch}",
     ]);
-    expect(splitTemplate(`sh -c 'echo hi there'`)).toEqual(["sh", "-c", "echo hi there"]);
+    expect(splitTemplate(`sh -c 'echo hi there'`)).toEqual([
+      "sh",
+      "-c",
+      "echo hi there",
+    ]);
     expect(splitTemplate(`x "a b" y`)).toEqual(["x", "a b", "y"]);
     expect(() => splitTemplate(`x "a b`)).toThrow(CommandError);
   });
@@ -50,7 +76,11 @@ describe("splitTemplate / substitute", () => {
       branch: "feat/x",
       dir: "/tmp/repo with space",
     });
-    expect(argv).toEqual(["worktrees/feat/x", "/tmp/repo with space", "{nope}"]);
+    expect(argv).toEqual([
+      "worktrees/feat/x",
+      "/tmp/repo with space",
+      "{nope}",
+    ]);
   });
 });
 
@@ -61,7 +91,9 @@ describe("worktreeCommand setting", () => {
     expect(worktreeCommand()).toBe("aoe add {dir} --worktree {branch}");
     expect(() => setWorktreeCommand("")).toThrow(CommandError);
     expect(() => setWorktreeCommand("echo no-branch")).toThrow(CommandError);
-    expect(() => setWorktreeCommand(`echo "oops {branch}`)).toThrow(CommandError);
+    expect(() => setWorktreeCommand(`echo "oops {branch}`)).toThrow(
+      CommandError,
+    );
     expect(worktreeCommand()).toBe("aoe add {dir} --worktree {branch}");
   });
 });
@@ -75,5 +107,20 @@ describe("worktreeRemoveCommand setting", () => {
     expect(() => setWorktreeRemoveCommand("echo no-placeholder")).toThrow(CommandError);
     expect(worktreeRemoveCommand()).toBe("aoe remove {branch} --delete-worktree");
     setWorktreeRemoveCommand(DEFAULT_WORKTREE_REMOVE_CMD);
+  });
+});
+
+describe("sessionSpawnCommand setting", () => {
+  test("defaults empty, persists, validates, empty disables", () => {
+    expect(sessionSpawnCommand()).toBe("");
+    setSessionSpawnCommand("tmux new-session -d -c {dir} claude");
+    expect(sessionSpawnCommand()).toBe("tmux new-session -d -c {dir} claude");
+    expect(() => setSessionSpawnCommand("echo no-dir")).toThrow(CommandError);
+    expect(() => setSessionSpawnCommand(`echo "oops {dir}`)).toThrow(
+      CommandError,
+    );
+    expect(sessionSpawnCommand()).toBe("tmux new-session -d -c {dir} claude");
+    setSessionSpawnCommand("  ");
+    expect(sessionSpawnCommand()).toBe("");
   });
 });

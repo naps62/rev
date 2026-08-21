@@ -24,7 +24,10 @@ export function ReviewProgress({
   const totals = useMemo(
     () =>
       files.reduce(
-        (acc, f) => ({ add: acc.add + f.additions, del: acc.del + f.deletions }),
+        (acc, f) => ({
+          add: acc.add + f.additions,
+          del: acc.del + f.deletions,
+        }),
         { add: 0, del: 0 },
       ),
     [files],
@@ -72,10 +75,7 @@ export function ReviewProgress({
     }`;
 
   return (
-    <div
-      className="flex min-w-0 shrink items-center justify-center gap-2.5"
-      aria-label="Review progress"
-    >
+    <div className="flex min-w-0 shrink items-center justify-center gap-2.5">
       <span
         className={`flex shrink-0 items-center gap-1 whitespace-nowrap font-mono text-[11.5px] tabular-nums transition-colors duration-300 ${
           complete ? "text-add" : "text-mute"

@@ -19,6 +19,9 @@
     "package": "./scripts/package.sh",
     "start": "NODE_ENV=production node server/index.ts",
     "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "knip": "knip",
     "test": "node --test \"server/**/*.test.ts\" \"web/src/**/*.test.ts\""
   },
   "dependencies": {
@@ -33,6 +36,7 @@
     "ws": "^8"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.9",
     "@tailwindcss/vite": "^4",
     "@types/node": "^26",
     "@types/react": "^19",
@@ -41,6 +45,7 @@
     "@vitejs/plugin-react": "^4",
     "esbuild": "^0.28",
     "expect": "^30",
+    "knip": "^6.32.2",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vite": "^6"

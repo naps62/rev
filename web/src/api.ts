@@ -5,12 +5,14 @@
  */
 
 import type {
+  AgentStatusResponse,
   CommandsResponse,
+  CommandsUpdateRequest,
   Comment,
   CommentCreateRequest,
   CommentListResponse,
   CommentPatchRequest,
-  DiffResponse,
+  CommentsSubmitResponse,
   DiffSummaryResponse,
   FileContentResponse,
   FileDiffResponse,
@@ -19,7 +21,6 @@ import type {
   GithubConvosResponse,
   GithubReplyRequest,
   GithubResolveRequest,
-  InterdiffResponse,
   PrListResponse,
   RefsResponse,
   RepoInfo,
@@ -45,7 +46,10 @@ export function isFixture(): boolean {
 }
 
 /** Keeps the fixture flag on internal navigation so the mode is sticky. */
-export function href(path: string, params: Record<string, string> = {}): string {
+export function href(
+  path: string,
+  params: Record<string, string> = {},
+): string {
   const search = new URLSearchParams(params);
   if (isFixture()) search.set("fixture", "");
   const qs = search.toString().replace(/=(?=&|$)/g, "");
@@ -73,7 +77,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 const fx = () => import("./dev-fixture");
 
 // Fixture calls resolve on a microtask; a tick keeps loading states honest.
-const tick = <T,>(v: T): Promise<T> =>
+const tick = <T>(v: T): Promise<T> =>
   new Promise((r) => setTimeout(() => r(v), 30));
 
 export async function getRepos(): Promise<RepoInfo[]> {
@@ -92,9 +96,14 @@ export async function getPrs(dir: string): Promise<PrListResponse> {
   return request(`/api/prs?${q}`);
 }
 
-export async function createWorktree(req: WorktreeCreateRequest): Promise<WorktreeCreateResponse> {
+export async function createWorktree(
+  req: WorktreeCreateRequest,
+): Promise<WorktreeCreateResponse> {
   if (isFixture()) return tick((await fx()).fxCreateWorktree(req));
-  return request("/api/worktrees", { method: "POST", body: JSON.stringify(req) });
+  return request("/api/worktrees", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
 }
 
 export async function removeWorktree(dir: string): Promise<WorktreeRemoveResponse> {
@@ -108,9 +117,19 @@ export async function getCommands(): Promise<CommandsResponse> {
   return request("/api/commands");
 }
 
-export async function putCommands(req: Partial<CommandsResponse>): Promise<CommandsResponse> {
+export async function putCommands(
+  req: CommandsUpdateRequest,
+): Promise<CommandsResponse> {
   if (isFixture()) return tick((await fx()).fxPutCommands(req));
   return request("/api/commands", { method: "PUT", body: JSON.stringify(req) });
+}
+
+export async function getAgentStatus(
+  dir: string,
+): Promise<AgentStatusResponse> {
+  if (isFixture()) return tick((await fx()).fxGetAgentStatus(dir));
+  const q = new URLSearchParams({ dir });
+  return request(`/api/agent?${q}`);
 }
 
 export async function getSettings(): Promise<UiSettings> {
@@ -123,13 +142,10 @@ export async function putSettings(req: UiSettings): Promise<UiSettings> {
   return request("/api/settings", { method: "PUT", body: JSON.stringify(req) });
 }
 
-export async function getDiff(dir: string, base: string): Promise<DiffResponse> {
-  if (isFixture()) return tick((await fx()).fxGetDiff(dir, base));
-  const q = new URLSearchParams({ dir, base });
-  return request(`/api/diff?${q}`);
-}
-
-export async function getDiffSummary(dir: string, base: string): Promise<DiffSummaryResponse> {
+export async function getDiffSummary(
+  dir: string,
+  base: string,
+): Promise<DiffSummaryResponse> {
   if (isFixture()) return tick((await fx()).fxGetDiffSummary(dir, base));
   const q = new URLSearchParams({ dir, base });
   return request(`/api/diff/summary?${q}`);
@@ -147,7 +163,10 @@ export async function getFileDiff(
   return request(`/api/diff/file?${q}`);
 }
 
-export async function getSemanticDiff(dir: string, base: string): Promise<SemanticDiffResponse> {
+export async function getSemanticDiff(
+  dir: string,
+  base: string,
+): Promise<SemanticDiffResponse> {
   if (isFixture()) return tick((await fx()).fxGetSemanticDiff(dir, base));
   const q = new URLSearchParams({ dir, base });
   return request(`/api/semantic?${q}`);
@@ -159,23 +178,20 @@ export async function getRefs(dir: string): Promise<RefsResponse> {
   return request(`/api/refs?${q}`);
 }
 
-export async function getStack(dir: string, base: string): Promise<StackResponse> {
+export async function getStack(
+  dir: string,
+  base: string,
+): Promise<StackResponse> {
   if (isFixture()) return tick((await fx()).fxGetStack(dir, base));
   const q = new URLSearchParams({ dir, base });
   return request(`/api/stack?${q}`);
 }
 
-export async function getInterdiff(
+export async function getFile(
   dir: string,
-  base: string,
   path: string,
-): Promise<InterdiffResponse> {
-  if (isFixture()) return tick((await fx()).fxGetInterdiff(dir, base, path));
-  const q = new URLSearchParams({ dir, base, path });
-  return request(`/api/diff/interdiff?${q}`);
-}
-
-export async function getFile(dir: string, path: string, rev?: string): Promise<FileContentResponse> {
+  rev?: string,
+): Promise<FileContentResponse> {
   if (isFixture()) return tick((await fx()).fxGetFile(dir, path));
   const q = new URLSearchParams({ dir, path });
   if (rev) q.set("rev", rev);
@@ -199,12 +215,17 @@ export function rawFileUrl(
   return `/api/file/raw?${q}`;
 }
 
-export async function putFile(req: FileWriteRequest): Promise<FileContentResponse> {
+export async function putFile(
+  req: FileWriteRequest,
+): Promise<FileContentResponse> {
   if (isFixture()) return tick((await fx()).fxPutFile(req));
   return request("/api/file", { method: "PUT", body: JSON.stringify(req) });
 }
 
-export async function getComments(dir: string, base?: string): Promise<CommentListResponse> {
+export async function getComments(
+  dir: string,
+  base?: string,
+): Promise<CommentListResponse> {
   if (isFixture()) return tick((await fx()).fxGetComments(dir));
   const q = new URLSearchParams({ dir });
   if (base) q.set("base", base);
@@ -213,15 +234,26 @@ export async function getComments(dir: string, base?: string): Promise<CommentLi
 
 export async function postComment(req: CommentCreateRequest): Promise<Comment> {
   if (isFixture()) return tick((await fx()).fxPostComment(req));
-  return request("/api/comments", { method: "POST", body: JSON.stringify(req) });
+  return request("/api/comments", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
 }
 
-export async function submitComments(dir: string): Promise<{ submitted: number; cursor: number }> {
+export async function submitComments(
+  dir: string,
+): Promise<CommentsSubmitResponse> {
   if (isFixture()) return tick((await fx()).fxSubmitComments(dir));
-  return request("/api/comments/submit", { method: "POST", body: JSON.stringify({ dir }) });
+  return request("/api/comments/submit", {
+    method: "POST",
+    body: JSON.stringify({ dir }),
+  });
 }
 
-export async function patchComment(id: string, patch: CommentPatchRequest): Promise<Comment> {
+export async function patchComment(
+  id: string,
+  patch: CommentPatchRequest,
+): Promise<Comment> {
   if (isFixture()) return tick((await fx()).fxPatchComment(id, patch));
   return request(`/api/comments/${encodeURIComponent(id)}`, {
     method: "PATCH",
@@ -229,26 +261,44 @@ export async function patchComment(id: string, patch: CommentPatchRequest): Prom
   });
 }
 
-export async function getGithubConvos(dir: string, refresh = false): Promise<GithubConvosResponse> {
+export async function getGithubConvos(
+  dir: string,
+  refresh = false,
+): Promise<GithubConvosResponse> {
   if (isFixture()) return tick((await fx()).fxGetGithub(dir));
   const q = new URLSearchParams({ dir });
   if (refresh) q.set("refresh", "1");
   return request(`/api/github?${q}`);
 }
 
-export async function postGithubReply(req: GithubReplyRequest): Promise<{ ok: true }> {
+export async function postGithubReply(
+  req: GithubReplyRequest,
+): Promise<{ ok: true }> {
   if (isFixture()) return tick((await fx()).fxPostGithubReply(req));
-  return request("/api/github/reply", { method: "POST", body: JSON.stringify(req) });
+  return request("/api/github/reply", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
 }
 
-export async function postGithubComment(req: GithubCommentRequest): Promise<{ ok: true }> {
+export async function postGithubComment(
+  req: GithubCommentRequest,
+): Promise<{ ok: true }> {
   if (isFixture()) return tick((await fx()).fxPostGithubComment(req));
-  return request("/api/github/comment", { method: "POST", body: JSON.stringify(req) });
+  return request("/api/github/comment", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
 }
 
-export async function postGithubResolve(req: GithubResolveRequest): Promise<{ ok: true }> {
+export async function postGithubResolve(
+  req: GithubResolveRequest,
+): Promise<{ ok: true }> {
   if (isFixture()) return tick((await fx()).fxPostGithubResolve(req));
-  return request("/api/github/resolve", { method: "POST", body: JSON.stringify(req) });
+  return request("/api/github/resolve", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
 }
 
 export async function putSeen(req: SeenRequest): Promise<{ ok: true }> {

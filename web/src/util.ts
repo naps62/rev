@@ -1,4 +1,8 @@
-import type { Comment, GithubComment, GithubConvosResponse } from "#shared/types";
+import type {
+  Comment,
+  GithubComment,
+  GithubConvosResponse,
+} from "#shared/types";
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -45,7 +49,9 @@ export function buildThreads(comments: Comment[]): Thread[] {
   }
   return roots.map((root) => ({
     root,
-    replies: (byParent.get(root.id) ?? []).sort((a, b) => a.createdAt - b.createdAt),
+    replies: (byParent.get(root.id) ?? []).sort(
+      (a, b) => a.createdAt - b.createdAt,
+    ),
   }));
 }
 
@@ -57,7 +63,10 @@ export const lineKey = (side: "old" | "new", line: number) => `${side}:${line}`;
  * ordering) as local ones. Ids are prefixed "gh:" and never hit local
  * comment endpoints — reply/resolve are routed by `source`.
  */
-export function githubToComments(res: GithubConvosResponse, base: string): Comment[] {
+export function githubToComments(
+  res: GithubConvosResponse,
+  base: string,
+): Comment[] {
   const out: Comment[] = [];
   const common = {
     dir: res.dir,

@@ -29,7 +29,9 @@ function readStore(): Store {
     const raw = localStorage.getItem(KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed != null ? (parsed as Store) : {};
+    return typeof parsed === "object" && parsed != null
+      ? (parsed as Store)
+      : {};
   } catch {
     return {};
   }
@@ -43,10 +45,18 @@ function writeStore(store: Store) {
   }
 }
 
-export function loadFoldState(dir: string, path: string, hash: string): FoldState | null {
+export function loadFoldState(
+  dir: string,
+  path: string,
+  hash: string,
+): FoldState | null {
   const e = readStore()[entryKey(dir, path)];
   if (!e || e.hash !== hash) return null;
-  return { folds: e.folds ?? [], showBodies: e.showBodies ?? false, hunks: e.hunks ?? [] };
+  return {
+    folds: e.folds ?? [],
+    showBodies: e.showBodies ?? false,
+    hunks: e.hunks ?? [],
+  };
 }
 
 export function saveFoldState(
@@ -57,7 +67,11 @@ export function saveFoldState(
 ) {
   const store = readStore();
   const k = entryKey(dir, path);
-  if (state.folds.length === 0 && !state.showBodies && state.hunks.length === 0) {
+  if (
+    state.folds.length === 0 &&
+    !state.showBodies &&
+    state.hunks.length === 0
+  ) {
     if (!(k in store)) return;
     delete store[k];
   } else {
@@ -67,7 +81,9 @@ export function saveFoldState(
       keys
         .sort((a, b) => (store[a]!.at ?? 0) - (store[b]!.at ?? 0))
         .slice(0, keys.length - MAX_ENTRIES)
-        .forEach((old) => delete store[old]);
+        .forEach((old) => {
+          delete store[old];
+        });
     }
   }
   writeStore(store);

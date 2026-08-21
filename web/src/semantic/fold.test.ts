@@ -3,7 +3,12 @@ import { describe, it } from "node:test";
 import type { DiffLine } from "#shared/types";
 import { importFolds, langOf, testFolds } from "./fold.ts";
 
-const ctx = (text: string): DiffLine => ({ kind: "context", oldLine: 1, newLine: 1, text });
+const ctx = (text: string): DiffLine => ({
+  kind: "context",
+  oldLine: 1,
+  newLine: 1,
+  text,
+});
 const add = (text: string): DiffLine => ({ kind: "add", newLine: 1, text });
 const del = (text: string): DiffLine => ({ kind: "del", oldLine: 1, text });
 
@@ -31,7 +36,12 @@ describe("importFolds", () => {
     const runs = importFolds(lines, "ts");
     assert.equal(runs.length, 1);
     assert.deepEqual(
-      { start: runs[0]!.start, end: runs[0]!.end, adds: runs[0]!.adds, dels: runs[0]!.dels },
+      {
+        start: runs[0]!.start,
+        end: runs[0]!.end,
+        adds: runs[0]!.adds,
+        dels: runs[0]!.dels,
+      },
       { start: 0, end: 3, adds: 2, dels: 1 },
     );
   });
@@ -50,7 +60,11 @@ describe("importFolds", () => {
   });
 
   it("folds 2 import lines but never a single one", () => {
-    const two = [add(`import { a } from "./a";`), add(`import { b } from "./b";`), ctx("code")];
+    const two = [
+      add(`import { a } from "./a";`),
+      add(`import { b } from "./b";`),
+      ctx("code"),
+    ];
     assert.equal(importFolds(two, "ts").length, 1);
     const one = [add(`import { a } from "./a";`), ctx("code")];
     assert.equal(importFolds(one, "ts").length, 0);
@@ -155,7 +169,7 @@ describe("testFolds", () => {
     const lines = [
       ctx("#[test]"),
       ctx("fn parses_empty() {"),
-      add("    let out = parse(\"\");"),
+      add('    let out = parse("");'),
       add("    assert!(out.is_empty());"),
       add("    assert_eq!(out.len(), 0);"),
       ctx("}"),

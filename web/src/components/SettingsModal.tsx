@@ -1,13 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import {
-  type CommandPreset,
+import type {
+  CommandPreset,
+  SESSION_SPAWN_PLACEHOLDERS,
+  SESSION_SPAWN_PRESETS,
   WORKTREE_CMD_PLACEHOLDERS,
   WORKTREE_CMD_PRESETS,
   WORKTREE_REMOVE_PLACEHOLDERS,
   WORKTREE_REMOVE_PRESETS,
 } from "#shared/commands";
-import type { CommandsResponse } from "#shared/types";
+
 import * as api from "../api";
 import {
   type DiffMode,
@@ -18,11 +20,11 @@ import {
   saveFeatures,
   VIEW_FEATURES,
 } from "../features";
-import { setThemePref, useThemePref, type ThemePref } from "../theme";
+import { setThemePref, type ThemePref, useThemePref } from "../theme";
+import { cx } from "../util";
 import type { WsStatus } from "../ws";
 import { Checkbox } from "./Checkbox";
 import { LiveDot } from "./LiveDot";
-import { cx } from "../util";
 
 /** Review-page state surfaced in the modal; absent on pages without a diff. */
 export interface ReviewSettings {
@@ -69,9 +71,19 @@ function SectionGlyph({ id }: { id: SectionId }) {
   if (id === "features")
     return (
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-        <path d="M3 3h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <path
+          d="M3 3h10"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
         <path d="M5 6.25h8" stroke="currentColor" strokeLinecap="round" />
-        <path d="M3 9.75h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <path
+          d="M3 9.75h10"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
         <path d="M5 13h8" stroke="currentColor" strokeLinecap="round" />
       </svg>
     );
@@ -85,13 +97,25 @@ function SectionGlyph({ id }: { id: SectionId }) {
   if (id === "commands")
     return (
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-        <path d="M3 4.5l4 3.5-4 3.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+        <path
+          d="M3 4.5l4 3.5-4 3.5"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
         <path d="M8.5 12h4.5" stroke="currentColor" strokeLinecap="round" />
       </svg>
     );
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" />
+      <rect
+        x="1.5"
+        y="3.5"
+        width="13"
+        height="9"
+        rx="1.5"
+        stroke="currentColor"
+      />
       <path
         d="M4 6.25h.75M6.75 6.25h.75M9.5 6.25h.75M12.25 6.25h.01M4 8.5h.75M6.75 8.5h.75M9.5 8.5h.75M12 8.5h.25M5.5 10.75h5"
         stroke="currentColor"
@@ -106,33 +130,152 @@ function SectionGlyph({ id }: { id: SectionId }) {
 function ModeArt({ mode }: { mode: DiffMode }) {
   return (
     <svg viewBox="0 0 44 30" fill="none" aria-hidden className="h-auto w-full">
-      <rect x="0.5" y="0.5" width="43" height="29" rx="2.5" className="stroke-edge" />
+      <rect
+        x="0.5"
+        y="0.5"
+        width="43"
+        height="29"
+        rx="2.5"
+        className="stroke-edge"
+      />
       {mode === "unified" ? (
         <>
-          <rect x="5" y="5" width="24" height="2.5" rx="1.25" className="fill-mute/50" />
-          <rect x="5" y="10" width="31" height="2.5" rx="1.25" className="fill-del" />
-          <rect x="5" y="15" width="31" height="2.5" rx="1.25" className="fill-add" />
-          <rect x="5" y="20" width="19" height="2.5" rx="1.25" className="fill-mute/50" />
+          <rect
+            x="5"
+            y="5"
+            width="24"
+            height="2.5"
+            rx="1.25"
+            className="fill-mute/50"
+          />
+          <rect
+            x="5"
+            y="10"
+            width="31"
+            height="2.5"
+            rx="1.25"
+            className="fill-del"
+          />
+          <rect
+            x="5"
+            y="15"
+            width="31"
+            height="2.5"
+            rx="1.25"
+            className="fill-add"
+          />
+          <rect
+            x="5"
+            y="20"
+            width="19"
+            height="2.5"
+            rx="1.25"
+            className="fill-mute/50"
+          />
         </>
       ) : mode === "split" ? (
         <>
           <path d="M22 .5v29" className="stroke-edge" />
-          <rect x="4.5" y="5" width="12" height="2.5" rx="1.25" className="fill-mute/50" />
-          <rect x="4.5" y="10" width="14" height="2.5" rx="1.25" className="fill-del" />
-          <rect x="4.5" y="15" width="10" height="2.5" rx="1.25" className="fill-mute/50" />
-          <rect x="26" y="5" width="12" height="2.5" rx="1.25" className="fill-mute/50" />
-          <rect x="26" y="10" width="14" height="2.5" rx="1.25" className="fill-add" />
-          <rect x="26" y="15" width="10" height="2.5" rx="1.25" className="fill-mute/50" />
+          <rect
+            x="4.5"
+            y="5"
+            width="12"
+            height="2.5"
+            rx="1.25"
+            className="fill-mute/50"
+          />
+          <rect
+            x="4.5"
+            y="10"
+            width="14"
+            height="2.5"
+            rx="1.25"
+            className="fill-del"
+          />
+          <rect
+            x="4.5"
+            y="15"
+            width="10"
+            height="2.5"
+            rx="1.25"
+            className="fill-mute/50"
+          />
+          <rect
+            x="26"
+            y="5"
+            width="12"
+            height="2.5"
+            rx="1.25"
+            className="fill-mute/50"
+          />
+          <rect
+            x="26"
+            y="10"
+            width="14"
+            height="2.5"
+            rx="1.25"
+            className="fill-add"
+          />
+          <rect
+            x="26"
+            y="15"
+            width="10"
+            height="2.5"
+            rx="1.25"
+            className="fill-mute/50"
+          />
         </>
       ) : (
         <>
           <path d="M.5 15.5h43M22 .5v15" className="stroke-edge" />
-          <rect x="4.5" y="4.5" width="12" height="2.5" rx="1.25" className="fill-del" />
-          <rect x="26" y="4.5" width="14" height="2.5" rx="1.25" className="fill-add" />
-          <rect x="4.5" y="9.5" width="9" height="2.5" rx="1.25" className="fill-mute/50" />
-          <rect x="26" y="9.5" width="9" height="2.5" rx="1.25" className="fill-mute/50" />
-          <rect x="5" y="19.5" width="31" height="2.5" rx="1.25" className="fill-add" />
-          <rect x="5" y="24" width="24" height="2.5" rx="1.25" className="fill-add" />
+          <rect
+            x="4.5"
+            y="4.5"
+            width="12"
+            height="2.5"
+            rx="1.25"
+            className="fill-del"
+          />
+          <rect
+            x="26"
+            y="4.5"
+            width="14"
+            height="2.5"
+            rx="1.25"
+            className="fill-add"
+          />
+          <rect
+            x="4.5"
+            y="9.5"
+            width="9"
+            height="2.5"
+            rx="1.25"
+            className="fill-mute/50"
+          />
+          <rect
+            x="26"
+            y="9.5"
+            width="9"
+            height="2.5"
+            rx="1.25"
+            className="fill-mute/50"
+          />
+          <rect
+            x="5"
+            y="19.5"
+            width="31"
+            height="2.5"
+            rx="1.25"
+            className="fill-add"
+          />
+          <rect
+            x="5"
+            y="24"
+            width="24"
+            height="2.5"
+            rx="1.25"
+            className="fill-add"
+          />
         </>
       )}
     </svg>
@@ -144,7 +287,15 @@ function ModeArt({ mode }: { mode: DiffMode }) {
 function ThemeMini({ bg, edge, bar, add, del }: Record<string, string>) {
   return (
     <>
-      <rect x="0.5" y="0.5" width="43" height="29" rx="2.5" fill={bg} stroke={edge} />
+      <rect
+        x="0.5"
+        y="0.5"
+        width="43"
+        height="29"
+        rx="2.5"
+        fill={bg}
+        stroke={edge}
+      />
       <rect x="5" y="5" width="16" height="2.5" rx="1.25" fill={bar} />
       <rect x="3" y="11" width="38" height="4.5" rx="1" fill={add} />
       <rect x="3" y="17.5" width="38" height="4.5" rx="1" fill={del} />
@@ -196,11 +347,16 @@ function ThemeArt({ pref }: { pref: ThemePref }) {
 
 /* ------------------------------------------------------- section content */
 
-const FEATURE_ROWS: { key: keyof FeatureFlags; label: string; blurb: string }[] = [
+const FEATURE_ROWS: {
+  key: keyof FeatureFlags;
+  label: string;
+  blurb: string;
+}[] = [
   {
     key: "grouping",
     label: "group by kind",
-    blurb: "Order the rail and diff by file class: code, tests, tooling, docs, generated.",
+    blurb:
+      "Order the rail and diff by file class: code, tests, tooling, docs, generated.",
   },
   {
     key: "classDefaults",
@@ -220,11 +376,18 @@ const FEATURE_ROWS: { key: keyof FeatureFlags; label: string; blurb: string }[] 
   {
     key: "entities",
     label: "entity outline",
-    blurb: "Per-file strip of changed functions and classes (needs the sem CLI).",
+    blurb:
+      "Per-file strip of changed functions and classes (needs the sem CLI).",
   },
 ];
 
-function GroupHeading({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+function GroupHeading({
+  children,
+  aside,
+}: {
+  children: ReactNode;
+  aside?: ReactNode;
+}) {
   return (
     <div className="mb-2 flex items-baseline justify-between gap-3">
       <h3 className="text-[11px] font-semibold uppercase tracking-wide text-mute">
@@ -251,7 +414,12 @@ function FeatureRow({
       <Checkbox checked={on} onChange={onToggle} className="mt-0.5" />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-3">
-          <span className={cx("font-mono text-[12.5px]", on ? "text-accent" : "text-fg")}>
+          <span
+            className={cx(
+              "font-mono text-[12.5px]",
+              on ? "text-accent" : "text-fg",
+            )}
+          >
             {row.label}
           </span>
           {hint && (
@@ -260,7 +428,9 @@ function FeatureRow({
             </kbd>
           )}
         </span>
-        <span className="mt-0.5 block text-[11.5px] leading-snug text-mute">{row.blurb}</span>
+        <span className="mt-0.5 block text-[11.5px] leading-snug text-mute">
+          {row.blurb}
+        </span>
       </span>
     </label>
   );
@@ -316,7 +486,9 @@ function FeaturesSection({
               key={r.key}
               row={r}
               on={features[r.key]}
-              onToggle={() => onFeatures({ ...features, [r.key]: !features[r.key] })}
+              onToggle={() =>
+                onFeatures({ ...features, [r.key]: !features[r.key] })
+              }
             />
           ))}
         </div>
@@ -331,11 +503,14 @@ function FeaturesSection({
             row={{
               key: "crosshair",
               label: "crosshair",
-              blurb: "Pointer line and column highlight over the diff. Not part of the presets.",
+              blurb:
+                "Pointer line and column highlight over the diff. Not part of the presets.",
             }}
             on={features.crosshair}
             hint="x"
-            onToggle={() => onFeatures({ ...features, crosshair: !features.crosshair })}
+            onToggle={() =>
+              onFeatures({ ...features, crosshair: !features.crosshair })
+            }
           />
         </div>
       </section>
@@ -357,6 +532,7 @@ function OptionCard({
   onSelect: () => void;
 }) {
   return (
+    // biome-ignore lint/a11y/useSemanticElements: styled card acting as a radio; a native input would need a full restyle
     <button
       type="button"
       role="radio"
@@ -370,7 +546,12 @@ function OptionCard({
       )}
     >
       {art}
-      <span className={cx("font-mono text-[12px]", active ? "text-accent" : "text-fg")}>
+      <span
+        className={cx(
+          "font-mono text-[12px]",
+          active ? "text-accent" : "text-fg",
+        )}
+      >
         {name}
       </span>
       <span className="text-[11px] leading-snug text-mute">{blurb}</span>
@@ -379,9 +560,19 @@ function OptionCard({
 }
 
 const MODE_OPTIONS: { value: DiffMode; blurb: string }[] = [
-  { value: "unified", blurb: "One column — removed and added lines interleaved in order." },
-  { value: "split", blurb: "Two columns — old version on the left, new on the right." },
-  { value: "mixed", blurb: "Split, but fully added or deleted files render as one column." },
+  {
+    value: "unified",
+    blurb: "One column — removed and added lines interleaved in order.",
+  },
+  {
+    value: "split",
+    blurb: "Two columns — old version on the left, new on the right.",
+  },
+  {
+    value: "mixed",
+    blurb:
+      "Split, but files with only additions or only deletions render as one column.",
+  },
 ];
 
 const THEME_OPTIONS: { value: ThemePref; blurb: string }[] = [
@@ -402,7 +593,11 @@ function AppearanceSection({
     <div className="space-y-6">
       <section>
         <GroupHeading>diff layout</GroupHeading>
-        <div role="radiogroup" aria-label="Diff layout" className="grid gap-2 sm:grid-cols-3">
+        <div
+          role="radiogroup"
+          aria-label="Diff layout"
+          className="grid gap-2 sm:grid-cols-3"
+        >
           {MODE_OPTIONS.map((o) => (
             <OptionCard
               key={o.value}
@@ -417,7 +612,11 @@ function AppearanceSection({
       </section>
       <section>
         <GroupHeading>theme</GroupHeading>
-        <div role="radiogroup" aria-label="Theme" className="grid gap-2 sm:grid-cols-3">
+        <div
+          role="radiogroup"
+          aria-label="Theme"
+          className="grid gap-2 sm:grid-cols-3"
+        >
           {THEME_OPTIONS.map((o) => (
             <OptionCard
               key={o.value}
@@ -487,32 +686,32 @@ function KeyboardSection({ onReviewPage }: { onReviewPage: boolean }) {
         </section>
       ))}
       {!onReviewPage && (
-        <p className="text-[11px] text-faint">Shortcuts apply on the review page.</p>
+        <p className="text-[11px] text-faint">
+          Shortcuts apply on the review page.
+        </p>
       )}
     </div>
   );
 }
 
-/**
- * One editable command template (presets + input + save). Presets autofill
- * the input; nothing is saved until the save button.
- */
 function CommandEditor({
+  title,
+  description,
   field,
-  heading,
-  blurb,
   presets,
   placeholders,
+  ariaLabel,
   saved,
-  pending,
+  loading,
 }: {
-  field: keyof CommandsResponse;
-  heading: string;
-  blurb: ReactNode;
+  title: ReactNode;
+  description: ReactNode;
+  field: "worktreeCreate" | "worktreeRemove" | "sessionSpawn";
   presets: CommandPreset[];
   placeholders: Record<string, string>;
+  ariaLabel: string;
   saved: string;
-  pending: boolean;
+  loading: boolean;
 }) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<string | null>(null);
@@ -527,8 +726,8 @@ function CommandEditor({
   const dirty = draft !== null && draft !== saved;
   return (
     <section>
-      <GroupHeading>{heading}</GroupHeading>
-      <p className="mb-3 text-[11.5px] leading-snug text-mute">{blurb}</p>
+      <GroupHeading>{title}</GroupHeading>
+      <p className="mb-3 text-[11.5px] leading-snug text-mute">{description}</p>
       <div className="flex flex-wrap gap-1.5">
         {presets.map((p) => (
           <button
@@ -549,13 +748,13 @@ function CommandEditor({
       </div>
       <div className="mt-2 flex items-center gap-2">
         <input
-          value={pending ? "loading…" : value}
-          disabled={pending}
+          value={loading ? "loading…" : value}
+          disabled={loading}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && dirty) save.mutate(value);
           }}
-          aria-label={`${heading} command`}
+          aria-label={ariaLabel}
           className="min-w-0 flex-1 rounded-sm border border-edge bg-panel px-2.5 py-1.5 font-mono text-[12px] text-fg transition-colors duration-150 focus:border-accent/50"
         />
         <button
@@ -568,7 +767,9 @@ function CommandEditor({
         </button>
       </div>
       {save.isError && (
-        <p className="mt-1.5 text-[11.5px] text-del">{(save.error as Error).message}</p>
+        <p className="mt-1.5 text-[11.5px] text-del">
+          {(save.error as Error).message}
+        </p>
       )}
       <dl className="mt-3 space-y-1">
         {Object.entries(placeholders).map(([ph, desc]) => (
@@ -584,29 +785,33 @@ function CommandEditor({
   );
 }
 
+/**
+ * The commands the server runs for UI actions. Presets autofill the input;
+ * nothing is saved until the save button.
+ */
 function CommandsSection() {
   const cmdQ = useQuery({ queryKey: ["commands"], queryFn: api.getCommands });
   return (
     <div className="space-y-6">
       <CommandEditor
-        field="worktreeCreate"
-        heading="worktree creation"
-        blurb={
+        title="worktree creation"
+        description={
           <>
             Run for “+ worktree” on a PR branch. Split into argv (quotes group,
             no shell), executed in the repo's main checkout after a{" "}
             <code className="font-mono text-[11px]">git fetch origin</code>.
           </>
         }
+        field="worktreeCreate"
         presets={WORKTREE_CMD_PRESETS}
         placeholders={WORKTREE_CMD_PLACEHOLDERS}
+        ariaLabel="Worktree create command"
         saved={cmdQ.data?.worktreeCreate ?? ""}
-        pending={cmdQ.isPending}
+        loading={cmdQ.isPending}
       />
       <CommandEditor
-        field="worktreeRemove"
-        heading="worktree removal"
-        blurb={
+        title="worktree removal"
+        description={
           <>
             Run for “rm” on a merged or closed PR's worktree row. If the
             worktree is still registered afterwards (e.g. the command only
@@ -614,10 +819,29 @@ function CommandsSection() {
             <code className="font-mono text-[11px]">git worktree remove</code>.
           </>
         }
+        field="worktreeRemove"
         presets={WORKTREE_REMOVE_PRESETS}
         placeholders={WORKTREE_REMOVE_PLACEHOLDERS}
+        ariaLabel="Worktree remove command"
         saved={cmdQ.data?.worktreeRemove ?? ""}
-        pending={cmdQ.isPending}
+        loading={cmdQ.isPending}
+      />
+      <CommandEditor
+        title="session spawn"
+        description={
+          <>
+            Run when comments are sent to a checkout with no agent session
+            listening; the batch is held until the new session's watcher picks
+            it up. Executed in the checkout. Empty = never spawn (comments just
+            queue).
+          </>
+        }
+        field="sessionSpawn"
+        presets={SESSION_SPAWN_PRESETS}
+        placeholders={SESSION_SPAWN_PLACEHOLDERS}
+        ariaLabel="Session spawn command"
+        saved={cmdQ.data?.sessionSpawn ?? ""}
+        loading={cmdQ.isPending}
       />
       <p className="text-[11px] leading-snug text-faint">
         Anyone who can reach rev can change these commands — trusted networks
@@ -643,7 +867,12 @@ const STATUS_NOTE: Record<WsStatus, string> = {
  * (symbol panel) don't also fire while the modal is up.
  */
 export function SettingsControl({ review }: { review?: ReviewSettings }) {
-  const sections: SectionId[] = ["features", "appearance", "commands", "keyboard"];
+  const sections: SectionId[] = [
+    "features",
+    "appearance",
+    "commands",
+    "keyboard",
+  ];
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<SectionId>("features");
 
@@ -774,7 +1003,7 @@ export function SettingsControl({ review }: { review?: ReviewSettings }) {
             ref={panelRef}
             tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
-            className="modal-in flex max-h-[min(600px,100%)] w-full max-w-[680px] flex-col overflow-hidden rounded-md border border-edge bg-panel shadow-pop outline-none sm:h-[min(560px,100%)] sm:flex-row"
+            className="modal-in flex max-h-[min(760px,100%)] w-full max-w-[860px] flex-col overflow-hidden rounded-md border border-edge bg-panel shadow-pop outline-none sm:h-[min(700px,100%)] sm:flex-row"
           >
             <nav
               aria-label="Settings sections"
@@ -807,26 +1036,45 @@ export function SettingsControl({ review }: { review?: ReviewSettings }) {
 
             <div className="flex min-w-0 flex-1 flex-col">
               <div className="flex items-center justify-between border-b border-edge-soft py-2 pl-5 pr-2.5">
-                <h2 className="text-[13px] font-semibold text-fg">{SECTION_TITLE[section]}</h2>
+                <h2 className="text-[13px] font-semibold text-fg">
+                  {SECTION_TITLE[section]}
+                </h2>
                 <button
                   type="button"
                   onClick={close}
                   aria-label="Close settings"
                   className="grid size-7 place-items-center rounded-sm text-mute transition-colors duration-150 hover:bg-raise hover:text-fg"
                 >
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-                    <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeLinecap="round" />
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden
+                  >
+                    <path
+                      d="M4 4l8 8M12 4l-8 8"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                    />
                   </svg>
                 </button>
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
                 {section === "features" && (
-                  <FeaturesSection features={features} onFeatures={onFeatures} />
+                  <FeaturesSection
+                    features={features}
+                    onFeatures={onFeatures}
+                  />
                 )}
-                {section === "appearance" && <AppearanceSection mode={mode} onMode={onMode} />}
+                {section === "appearance" && (
+                  <AppearanceSection mode={mode} onMode={onMode} />
+                )}
                 {section === "commands" && <CommandsSection />}
-                {section === "keyboard" && <KeyboardSection onReviewPage={review != null} />}
+                {section === "keyboard" && (
+                  <KeyboardSection onReviewPage={review != null} />
+                )}
               </div>
 
               <div className="flex items-center justify-between gap-3 border-t border-edge-soft px-5 py-2">

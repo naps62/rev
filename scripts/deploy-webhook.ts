@@ -3,16 +3,18 @@
 // Runs as the rev-deploy systemd user service. Verifies the Gitea HMAC
 // signature, then launches the deploy detached via `systemd-run --user` so it
 // survives this listener being restarted (deploys restart this service too).
-import http from "node:http";
-import { createHmac, timingSafeEqual } from "node:crypto";
+
 import { spawn } from "node:child_process";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import http from "node:http";
 import { homedir } from "node:os";
 import path from "node:path";
 
 const PORT = Number(process.env.REV_DEPLOY_PORT ?? 7374);
 const SECRET = process.env.REV_WEBHOOK_SECRET;
-const PROD_DIR = process.env.REV_PROD_DIR ?? path.join(homedir(), "tea/yolo/rev");
+const PROD_DIR =
+  process.env.REV_PROD_DIR ?? path.join(homedir(), "tea/yolo/rev");
 const LOCK_DIR = path.join(homedir(), ".local/share/rev");
 const LOCK_FILE = path.join(LOCK_DIR, "deploy.lock");
 
@@ -39,9 +41,19 @@ function deploy() {
     "git reset --hard origin/main",
     "./scripts/deploy.sh",
   ].join(" && ");
+  // The transient unit does NOT inherit this listener's environment; without
+  // forwarding, deploy.sh misses REV_SKIP_UNIT_INSTALL and clobbers (or fails
+  // on) unit files a config manager owns. The webhook secret stays behind —
+  // transient-unit env is readable via `systemctl --user show`.
+  const passEnv = Object.entries(process.env)
+    .filter(
+      ([k, v]) =>
+        k.startsWith("REV_") && k !== "REV_WEBHOOK_SECRET" && v !== undefined,
+    )
+    .map(([k, v]) => `--setenv=${k}=${v}`);
   const child = spawn(
     "systemd-run",
-    ["--user", "--collect", "flock", LOCK_FILE, "bash", "-c", cmd],
+    ["--user", "--collect", ...passEnv, "flock", LOCK_FILE, "bash", "-c", cmd],
     { detached: true, stdio: "ignore" },
   );
   child.unref();
@@ -57,7 +69,9 @@ http
     req.on("data", (c) => chunks.push(c));
     req.on("end", () => {
       const body = Buffer.concat(chunks);
-      if (!verify(body, req.headers["x-gitea-signature"] as string | undefined)) {
+      if (
+        !verify(body, req.headers["x-gitea-signature"] as string | undefined)
+      ) {
         console.error("rejected: bad signature");
         res.writeHead(403).end();
         return;
@@ -79,4 +93,6 @@ http
       res.writeHead(202).end("deploying");
     });
   })
-  .listen(PORT, "0.0.0.0", () => console.log(`rev-deploy listening on :${PORT}`));
+  .listen(PORT, "0.0.0.0", () =>
+    console.log(`rev-deploy listening on :${PORT}`),
+  );

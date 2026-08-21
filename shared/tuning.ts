@@ -37,7 +37,16 @@ export const TUNING = {
   WATCH_DEBOUNCE_MS: 150,
 
   /** Dir names never watched or diffed: churn without review value. */
-  WATCH_IGNORE: ["node_modules", ".git", "dist", "build", "target", ".next", ".turbo", "coverage"],
+  WATCH_IGNORE: [
+    "node_modules",
+    ".git",
+    "dist",
+    "build",
+    "target",
+    ".next",
+    ".turbo",
+    "coverage",
+  ],
 
   /**
    * Dir names skipped when found directly in the user's home. The installed
@@ -132,6 +141,19 @@ export const TUNING = {
 
   /** Kill a worktree-create command after this long; it may fetch or clone, which can be slow on big repos. */
   WORKTREE_CMD_TIMEOUT_MS: 120_000,
+
+  /** Kill a session-spawn command after this long; it should detach (tmux -d, kitty --detach) and return fast. */
+  SESSION_SPAWN_CMD_TIMEOUT_MS: 30_000,
+
+  /** After spawning a session, wait this long for its watcher to start polling before giving up (comments stay pending). */
+  SESSION_SPAWN_READY_TIMEOUT_MS: 120_000,
+
+  /**
+   * Agent activity (submitted-channel poll, delivery ack, agent reply) within
+   * this window counts the session as alive, so submit won't spawn a duplicate
+   * while the agent is between deliveries or busy addressing a batch.
+   */
+  AGENT_LIVE_WINDOW_MS: 5 * 60_000,
 
   /** SQLite location, under XDG data dir. */
   DB_PATH: "~/.local/share/rev/rev.db",

@@ -58,3 +58,41 @@ export const WORKTREE_REMOVE_PRESETS: CommandPreset[] = [
 ];
 
 export const DEFAULT_WORKTREE_REMOVE_CMD = WORKTREE_REMOVE_PRESETS[0]!.template;
+
+/** Placeholders available in the session-spawn template. */
+export const SESSION_SPAWN_PLACEHOLDERS: Record<string, string> = {
+  "{dir}": "absolute path of the checkout the comments target",
+  "{branch}": "the checkout's branch (empty when detached)",
+  "{repo}": "directory name of the repo's main checkout",
+};
+
+/**
+ * Every preset hands the agent an initial prompt: a session that boots idle
+ * never takes a turn, so it never arms the comment watcher and the held
+ * batch would time out.
+ */
+const SESSION_SPAWN_PROMPT = "Address the incoming rev review comments.";
+
+export const SESSION_SPAWN_PRESETS: CommandPreset[] = [
+  {
+    // aoe shlex-splits --extra-args into words appended after the agent
+    // binary, so the prompt needs its own embedded quotes to reach claude
+    // as one argument.
+    name: "aoe",
+    template: `aoe add {dir} -g {repo} --launch --extra-args '"${SESSION_SPAWN_PROMPT}"'`,
+    blurb: "agent-of-empires session, launched immediately",
+  },
+  {
+    name: "tmux",
+    template: `tmux new-session -d -c {dir} claude "${SESSION_SPAWN_PROMPT}"`,
+    blurb: "detached tmux session running claude",
+  },
+  {
+    name: "kitty",
+    template: `kitty --detach --directory {dir} claude "${SESSION_SPAWN_PROMPT}"`,
+    blurb: "new kitty OS window running claude",
+  },
+];
+
+/** Empty template = spawning disabled; submit just queues the batch. */
+export const DEFAULT_SESSION_SPAWN_CMD = "";

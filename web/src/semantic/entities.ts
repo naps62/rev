@@ -20,17 +20,10 @@ export const CHANGE_CLS: Record<EntityChange["change"], string> = {
   reordered: "text-agent",
 };
 
-export const CHANGE_LABEL: Record<EntityChange["change"], string> = {
-  added: "new",
-  modified: "modified",
-  deleted: "deleted",
-  renamed: "renamed",
-  moved: "moved",
-  reordered: "reordered",
-};
-
 /** Where a strip click should land: the new side while the entity exists. */
-export function entityAnchor(e: EntityChange): { side: "old" | "new"; line: number } | null {
+export function entityAnchor(
+  e: EntityChange,
+): { side: "old" | "new"; line: number } | null {
   if (e.startLine != null) return { side: "new", line: e.startLine };
   if (e.oldStartLine != null) return { side: "old", line: e.oldStartLine };
   return null;
@@ -38,5 +31,7 @@ export function entityAnchor(e: EntityChange): { side: "old" | "new"; line: numb
 
 /** Display label; renames read "before → after". */
 export function entityLabel(e: EntityChange): string {
-  return e.change === "renamed" && e.oldName ? `${e.oldName} → ${e.name}` : e.name;
+  return e.change === "renamed" && e.oldName
+    ? `${e.oldName} → ${e.name}`
+    : e.name;
 }

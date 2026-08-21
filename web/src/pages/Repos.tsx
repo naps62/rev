@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import type { PrInfo, RepoInfo } from "#shared/types";
 import { TUNING } from "#shared/tuning";
+import type { PrInfo, RepoInfo } from "#shared/types";
 import * as api from "../api";
 import { AppHeader } from "../components/AppHeader";
 import { DiffStat } from "../components/DiffStat";
@@ -63,7 +63,10 @@ function groupRepos(repos: RepoInfo[], now: number): Group[] {
   const tops: RepoInfo[] = [];
   for (const r of repos) {
     if (r.isWorktree && r.mainDir !== r.dir && byDir.has(r.mainDir)) {
-      worktreesByMain.set(r.mainDir, [...(worktreesByMain.get(r.mainDir) ?? []), r]);
+      worktreesByMain.set(r.mainDir, [
+        ...(worktreesByMain.get(r.mainDir) ?? []),
+        r,
+      ]);
     } else {
       tops.push(r);
     }
@@ -96,19 +99,25 @@ function groupRepos(repos: RepoInfo[], now: number): Group[] {
   const activityOf = (e: RepoEntry) =>
     Math.max(
       e.repo.lastActivity ?? 0,
-      ...[...e.activeWorktrees, ...e.idleWorktrees].map((w) => w.lastActivity ?? 0),
+      ...[...e.activeWorktrees, ...e.idleWorktrees].map(
+        (w) => w.lastActivity ?? 0,
+      ),
     );
   // Projects with nothing to review sort last regardless of recency.
   const rank = (e: RepoEntry) => (e.reviewable ? 1 : 0);
   return [...groups.entries()]
     .map(([label, entries]) => ({
       label,
-      entries: entries.sort((a, b) => rank(b) - rank(a) || activityOf(b) - activityOf(a)),
+      entries: entries.sort(
+        (a, b) => rank(b) - rank(a) || activityOf(b) - activityOf(a),
+      ),
     }))
     .sort(
       (a, b) =>
-        Math.max(...b.entries.map(rank), 0) - Math.max(...a.entries.map(rank), 0) ||
-        Math.max(...b.entries.map(activityOf), 0) - Math.max(...a.entries.map(activityOf), 0),
+        Math.max(...b.entries.map(rank), 0) -
+          Math.max(...a.entries.map(rank), 0) ||
+        Math.max(...b.entries.map(activityOf), 0) -
+          Math.max(...a.entries.map(activityOf), 0),
     );
 }
 
@@ -127,7 +136,8 @@ function scopeOrder(repos: RepoInfo[], now: number): string[] {
   }
   return [...stats.entries()]
     .sort(
-      ([, a], [, b]) => Number(b.active) - Number(a.active) || b.latest - a.latest,
+      ([, a], [, b]) =>
+        Number(b.active) - Number(a.active) || b.latest - a.latest,
     )
     .map(([s]) => s);
 }
@@ -148,8 +158,10 @@ function parseQuery(q: string): Term[] {
     .split(/\s+/)
     .filter(Boolean)
     .map((t) => {
-      if (t.startsWith("is:")) return { kind: "is" as const, value: t.slice(3) };
-      if (t.startsWith("has:")) return { kind: "has" as const, value: t.slice(4) };
+      if (t.startsWith("is:"))
+        return { kind: "is" as const, value: t.slice(3) };
+      if (t.startsWith("has:"))
+        return { kind: "has" as const, value: t.slice(4) };
       return { kind: "text" as const, value: t };
     });
 }
@@ -159,19 +171,28 @@ function matchRepo(r: RepoInfo, terms: Term[], now: number): boolean {
     switch (t.kind) {
       case "is":
         switch (t.value) {
-          case "dirty": return r.dirty;
-          case "clean": return !r.dirty;
-          case "behind": return (r.behindBase ?? 0) > 0;
-          case "ahead": return (r.aheadBase ?? 0) > 0;
-          case "active": return isActive(r, now);
-          case "stale": return !isActive(r, now);
-          case "worktree": return r.isWorktree;
-          default: return false;
+          case "dirty":
+            return r.dirty;
+          case "clean":
+            return !r.dirty;
+          case "behind":
+            return (r.behindBase ?? 0) > 0;
+          case "ahead":
+            return (r.aheadBase ?? 0) > 0;
+          case "active":
+            return isActive(r, now);
+          case "stale":
+            return !isActive(r, now);
+          case "worktree":
+            return r.isWorktree;
+          default:
+            return false;
         }
       case "has":
         return t.value === "comments" && r.openComments > 0;
-      case "text": {
-        const hay = `${r.name} ${r.branch ?? ""} ${r.dir} ${r.scope}`.toLowerCase();
+      default: {
+        const hay =
+          `${r.name} ${r.branch ?? ""} ${r.dir} ${r.scope}`.toLowerCase();
         return hay.includes(t.value);
       }
     }
@@ -217,10 +238,14 @@ function buildCards(
               dim: !e.active,
               rows: [
                 ...e.activeWorktrees.map((repo) => ({ repo, dim: false })),
-                ...(open ? e.idleWorktrees.map((repo) => ({ repo, dim: true })) : []),
+                ...(open
+                  ? e.idleWorktrees.map((repo) => ({ repo, dim: true }))
+                  : []),
               ],
               idleCount: e.idleWorktrees.length,
-              primary: hasDiff(e.repo) ? e.repo : e.activeWorktrees[0] ?? null,
+              primary: hasDiff(e.repo)
+                ? e.repo
+                : (e.activeWorktrees[0] ?? null),
             };
           }
           const repoMatch = matchRepo(e.repo, terms, now);
@@ -239,7 +264,7 @@ function buildCards(
             primary:
               repoMatch && hasDiff(e.repo)
                 ? e.repo
-                : shown.find(hasDiff) ?? (repoMatch ? null : matched[0]!),
+                : (shown.find(hasDiff) ?? (repoMatch ? null : matched[0]!)),
           };
         })
         .filter((c): c is Card => c !== null),
@@ -355,7 +380,8 @@ export function Repos() {
   const reposQ = useQuery({ queryKey: ["repos"], queryFn: api.getRepos });
 
   const status = useRevSocket(undefined, (msg) => {
-    if (msg.type === "repos-changed") qc.invalidateQueries({ queryKey: ["repos"] });
+    if (msg.type === "repos-changed")
+      qc.invalidateQueries({ queryKey: ["repos"] });
   });
 
   const rescan = useMutation({
@@ -367,9 +393,11 @@ export function Repos() {
   const repos = reposQ.data ?? [];
   const scopes = useMemo(() => scopeOrder(repos, now), [repos, now]);
 
-  const [scope, setScope] = useState<string | null>(() => localStorage.getItem(SCOPE_KEY));
+  const [scope, setScope] = useState<string | null>(() =>
+    localStorage.getItem(SCOPE_KEY),
+  );
   const [showInactive, setShowInactive] = useState(false);
-  const [staleOpen, setStaleOpen] = useState<Set<string>>(new Set);
+  const [staleOpen, setStaleOpen] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -377,7 +405,7 @@ export function Repos() {
 
   // Fall back to the busiest scope when nothing (or a vanished scope) is saved.
   const currentScope =
-    scope != null && scopes.includes(scope) ? scope : scopes[0] ?? null;
+    scope != null && scopes.includes(scope) ? scope : (scopes[0] ?? null);
 
   const selectScope = (s: string) => {
     setScope(s);
@@ -391,7 +419,13 @@ export function Repos() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.isContentEditable)
+      )
+        return;
       e.preventDefault();
       searchRef.current?.focus();
       searchRef.current?.select();
@@ -404,7 +438,10 @@ export function Repos() {
     if (terms.length === 0) return null;
     const counts = new Map<string, number>();
     for (const s of scopes) {
-      counts.set(s, repos.filter((r) => r.scope === s && matchRepo(r, terms, now)).length);
+      counts.set(
+        s,
+        repos.filter((r) => r.scope === s && matchRepo(r, terms, now)).length,
+      );
     }
     return counts;
   }, [repos, scopes, terms, now]);
@@ -412,18 +449,30 @@ export function Repos() {
   const activeCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const s of scopes) {
-      counts.set(s, groupRepos(repos.filter((r) => r.scope === s), now)
-        .flatMap((g) => g.entries)
-        .filter((e) => e.active).length);
+      counts.set(
+        s,
+        groupRepos(
+          repos.filter((r) => r.scope === s),
+          now,
+        )
+          .flatMap((g) => g.entries)
+          .filter((e) => e.active).length,
+      );
     }
     return counts;
   }, [repos, scopes, now]);
 
   const groups = useMemo(
-    () => groupRepos(repos.filter((r) => r.scope === currentScope), now),
+    () =>
+      groupRepos(
+        repos.filter((r) => r.scope === currentScope),
+        now,
+      ),
     [repos, currentScope, now],
   );
-  const inactiveCount = groups.flatMap((g) => g.entries).filter((e) => !e.active).length;
+  const inactiveCount = groups
+    .flatMap((g) => g.entries)
+    .filter((e) => !e.active).length;
 
   const visibleGroups = useMemo(
     () => buildCards(groups, terms, now, showInactive, staleOpen),
@@ -443,7 +492,9 @@ export function Repos() {
   const otherScopeMatches =
     matchCounts == null
       ? []
-      : scopes.filter((s) => s !== currentScope && (matchCounts.get(s) ?? 0) > 0);
+      : scopes.filter(
+          (s) => s !== currentScope && (matchCounts.get(s) ?? 0) > 0,
+        );
 
   return (
     <div className="min-h-screen">
@@ -470,7 +521,9 @@ export function Repos() {
             current={currentScope}
             counts={matchCounts ?? activeCounts}
             lit={(s) =>
-              matchCounts != null ? (matchCounts.get(s) ?? 0) > 0 : s === currentScope
+              matchCounts != null
+                ? (matchCounts.get(s) ?? 0) > 0
+                : s === currentScope
             }
             onSelect={selectScope}
           />
@@ -504,7 +557,10 @@ export function Repos() {
         {reposQ.isPending && (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(min(36rem,100%),1fr))] items-start gap-3">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="animate-pulse rounded-md border border-edge bg-panel px-3 py-3">
+              <div
+                key={i}
+                className="animate-pulse rounded-md border border-edge bg-panel px-3 py-3"
+              >
                 <div className="h-3.5 w-40 rounded-sm bg-raise" />
                 <div className="mt-2 h-2.5 w-56 rounded-sm bg-raise/70" />
                 <div className="mt-3 h-2.5 w-48 rounded-sm bg-raise/50" />
@@ -515,7 +571,9 @@ export function Repos() {
 
         {reposQ.error && (
           <div className="rounded-md border border-del/40 bg-panel px-4 py-3">
-            <p className="text-[13px] text-del">{(reposQ.error as Error).message}</p>
+            <p className="text-[13px] text-del">
+              {(reposQ.error as Error).message}
+            </p>
             <button
               type="button"
               onClick={() => reposQ.refetch()}
@@ -528,7 +586,9 @@ export function Repos() {
 
         {reposQ.data && groups.length === 0 && (
           <div className="rounded-md border border-edge bg-panel px-4 py-8 text-center">
-            <p className="text-[13px] text-mute">No git repos discovered under the configured roots.</p>
+            <p className="text-[13px] text-mute">
+              No git repos discovered under the configured roots.
+            </p>
             <p className="mt-1 text-[12px] text-faint">
               Set REV_ROOTS on the server, then rescan.
             </p>
@@ -540,8 +600,15 @@ export function Repos() {
             {terms.length > 0 ? (
               <>
                 <p className="text-[13px] text-mute">
-                  No matches for <span className="font-mono text-fg">{query.trim()}</span>
-                  {currentScope && <> in <span className="font-mono">{currentScope}</span></>}.
+                  No matches for{" "}
+                  <span className="font-mono text-fg">{query.trim()}</span>
+                  {currentScope && (
+                    <>
+                      {" "}
+                      in <span className="font-mono">{currentScope}</span>
+                    </>
+                  )}
+                  .
                 </p>
                 {otherScopeMatches.length > 0 && (
                   <p className="mt-2 flex items-center justify-center gap-2 text-[12px] text-faint">
@@ -559,7 +626,9 @@ export function Repos() {
                 )}
               </>
             ) : (
-              <p className="text-[12.5px] text-mute">Nothing in active development here right now.</p>
+              <p className="text-[12.5px] text-mute">
+                Nothing in active development here right now.
+              </p>
             )}
           </div>
         )}
@@ -567,7 +636,9 @@ export function Repos() {
         {visibleGroups.map((g) => (
           <section key={g.label || "(root)"} className="mb-4">
             {g.label && (
-              <p className="mb-1.5 font-mono text-[11px] text-faint">{g.label}/</p>
+              <p className="mb-1.5 font-mono text-[11px] text-faint">
+                {g.label}/
+              </p>
             )}
             <div className="grid grid-cols-[repeat(auto-fill,minmax(min(36rem,100%),1fr))] items-start gap-3">
               {g.cards.map((c) => (
@@ -602,7 +673,10 @@ function DirtyDot({ dirty }: { dirty: boolean }) {
   return (
     <span
       title={dirty ? "uncommitted changes" : "clean"}
-      className={cx("size-1.5 shrink-0 rounded-full", dirty ? "bg-accent" : "bg-edge")}
+      className={cx(
+        "size-1.5 shrink-0 rounded-full",
+        dirty ? "bg-accent" : "bg-edge",
+      )}
     />
   );
 }
@@ -662,7 +736,8 @@ function Meta({ repo: r }: { repo: RepoInfo }) {
             pct === 100 ? "text-add" : "text-faint",
           )}
         >
-          {pct === 100 ? "✓ " : ""}{pct}%
+          {pct === 100 ? "✓ " : ""}
+          {pct}%
         </span>
       )}
       {r.additions != null && total > 0 ? (
@@ -684,7 +759,11 @@ function Meta({ repo: r }: { repo: RepoInfo }) {
   );
 }
 
-const PR_STATE_RANK: Record<PrInfo["state"], number> = { open: 0, merged: 1, closed: 2 };
+const PR_STATE_RANK: Record<PrInfo["state"], number> = {
+  open: 0,
+  merged: 1,
+  closed: 2,
+};
 
 /**
  * Branch → its most relevant PR: an open PR always beats a finished one, and
@@ -697,7 +776,8 @@ function prsByBranch(prs: PrInfo[]): Map<string, PrInfo> {
     if (
       !prev ||
       PR_STATE_RANK[pr.state] < PR_STATE_RANK[prev.state] ||
-      (PR_STATE_RANK[pr.state] === PR_STATE_RANK[prev.state] && pr.number > prev.number)
+      (PR_STATE_RANK[pr.state] === PR_STATE_RANK[prev.state] &&
+        pr.number > prev.number)
     ) {
       map.set(pr.branch, pr);
     }
@@ -765,7 +845,10 @@ function ProjectCard({
     >
       {clickable ? (
         <Link
-          href={api.href("/review", { dir: r.dir, base: r.defaultBase ?? "main" })}
+          href={api.href("/review", {
+            dir: r.dir,
+            base: r.defaultBase ?? "main",
+          })}
           title={r.dir}
           className="block px-3 pb-2 pt-2.5 transition-colors duration-150 hover:bg-raise/60"
         >
@@ -833,7 +916,9 @@ function ProjectCard({
  */
 function RemotePrs({ dir, prs }: { dir: string; prs: PrInfo[] }) {
   const [open, setOpen] = useState(false);
-  const unattached = prs.filter((p) => p.state === "open" && p.checkoutDir === null);
+  const unattached = prs.filter(
+    (p) => p.state === "open" && p.checkoutDir === null,
+  );
   if (unattached.length === 0) return null;
   return (
     <>
@@ -869,13 +954,19 @@ function PrRow({ pr, dir }: { pr: PrInfo; dir: string }) {
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 opacity-70">
       <span className="size-1.5 shrink-0 rounded-full border border-edge" />
-      <span title={pr.title} className="min-w-0 truncate font-mono text-[12px] text-mute">
+      <span
+        title={pr.title}
+        className="min-w-0 truncate font-mono text-[12px] text-mute"
+      >
         {pr.branch}
       </span>
       <PrPill pr={pr} />
       <span className="ml-auto flex shrink-0 items-center gap-2">
         {create.isError && (
-          <span title={(create.error as Error).message} className="font-mono text-[10.5px] text-del">
+          <span
+            title={(create.error as Error).message}
+            className="font-mono text-[10.5px] text-del"
+          >
             failed
           </span>
         )}
@@ -994,13 +1085,18 @@ function WorktreeRow({
       )}
     >
       <Link
-        href={api.href("/review", { dir: r.dir, base: r.defaultBase ?? "main" })}
+        href={api.href("/review", {
+          dir: r.dir,
+          base: r.defaultBase ?? "main",
+        })}
         title={r.dir}
         aria-label={`review ${checkout}`}
         className="absolute inset-0"
       />
       <DirtyDot dirty={r.dirty} />
-      <span className="min-w-0 truncate font-mono text-[12px] text-fg">{checkout}</span>
+      <span className="min-w-0 truncate font-mono text-[12px] text-fg">
+        {checkout}
+      </span>
       {/* ahead/behind is noise once the branch's PR is finished */}
       {!removable && <Drift repo={r} />}
       <span className="ml-auto flex shrink-0 items-center gap-2">

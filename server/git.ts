@@ -8,9 +8,10 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { readFileSync, type Stats, statSync } from "node:fs";
 import { readFile as readFileBytes } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
+import { TUNING } from "#shared/tuning";
 import type {
   DiffLine,
   DiffResponse,
@@ -20,7 +21,6 @@ import type {
   FileStatus,
   FileSummary,
 } from "#shared/types";
-import { TUNING } from "#shared/tuning";
 import { parseUnifiedDiff } from "./diff-parser.ts";
 
 /** Thrown for git failures the API should surface as 400 (bad ref, not a repo). */
@@ -37,15 +37,27 @@ export class GitError extends Error {
 /** Run git in `dir`; throws GitError on non-zero exit. */
 export function run(dir: string, args: string[]): Promise<string> {
   return new Promise((res, rej) => {
-    const proc = spawn("git", args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn("git", args, {
+      cwd: dir,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let out = "";
     let err = "";
-    proc.stdout.setEncoding("utf8").on("data", (chunk: string) => (out += chunk));
-    proc.stderr.setEncoding("utf8").on("data", (chunk: string) => (err += chunk));
+    proc.stdout
+      .setEncoding("utf8")
+      .on("data", (chunk: string) => (out += chunk));
+    proc.stderr
+      .setEncoding("utf8")
+      .on("data", (chunk: string) => (err += chunk));
     proc.on("error", rej);
     proc.on("close", (code) => {
       if (code !== 0) {
-        rej(new GitError(err.trim() || `git ${args[0]} failed (exit ${code})`, `git ${args.join(" ")}`));
+        rej(
+          new GitError(
+            err.trim() || `git ${args[0]} failed (exit ${code})`,
+            `git ${args.join(" ")}`,
+          ),
+        );
       } else {
         res(out);
       }
@@ -56,15 +68,25 @@ export function run(dir: string, args: string[]): Promise<string> {
 /** Run git and preserve stdout byte-for-byte for binary blobs. */
 function runBytes(dir: string, args: string[]): Promise<Uint8Array> {
   return new Promise((res, rej) => {
-    const proc = spawn("git", args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn("git", args, {
+      cwd: dir,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     const out: Buffer[] = [];
     let err = "";
     proc.stdout.on("data", (chunk: Buffer) => out.push(chunk));
-    proc.stderr.setEncoding("utf8").on("data", (chunk: string) => (err += chunk));
+    proc.stderr
+      .setEncoding("utf8")
+      .on("data", (chunk: string) => (err += chunk));
     proc.on("error", rej);
     proc.on("close", (code) => {
       if (code !== 0) {
-        rej(new GitError(err.trim() || `git ${args[0]} failed (exit ${code})`, `git ${args.join(" ")}`));
+        rej(
+          new GitError(
+            err.trim() || `git ${args[0]} failed (exit ${code})`,
+            `git ${args.join(" ")}`,
+          ),
+        );
       } else {
         res(Buffer.concat(out));
       }
@@ -87,7 +109,7 @@ async function hashWorkingFile(dir: string, path: string): Promise<string> {
   }
 }
 
-export function isBinaryBytes(bytes: Uint8Array): boolean {
+function isBinaryBytes(bytes: Uint8Array): boolean {
   const n = Math.min(bytes.length, 8000);
   for (let i = 0; i < n; i++) if (bytes[i] === 0) return true;
   return false;
@@ -112,7 +134,11 @@ function untrackedFromStatusZ(z: string): string[] {
  * listed with no hunks and contentHash "" (hashing artifacts is wasted work);
  * binary files get binary: true and no hunks.
  */
-async function untrackedFileDiff(dir: string, path: string, withHunks: boolean): Promise<FileDiff> {
+async function untrackedFileDiff(
+  dir: string,
+  path: string,
+  withHunks: boolean,
+): Promise<FileDiff> {
   const base: FileDiff = {
     path,
     status: "untracked",
@@ -142,11 +168,24 @@ async function untrackedFileDiff(dir: string, path: string, withHunks: boolean):
   const textLines = decoder.decode(bytes).split("\n");
   if (textLines.at(-1) === "") textLines.pop(); // trailing newline artifact
   if (!withHunks) return { ...base, additions: textLines.length, contentHash };
-  const lines: DiffLine[] = textLines.map((text, i) => ({ kind: "add", newLine: i + 1, text }));
+  const lines: DiffLine[] = textLines.map((text, i) => ({
+    kind: "add",
+    newLine: i + 1,
+    text,
+  }));
   const hunks =
     lines.length === 0
       ? []
-      : [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: lines.length, header: "", lines }];
+      : [
+          {
+            oldStart: 0,
+            oldLines: 0,
+            newStart: 1,
+            newLines: lines.length,
+            header: "",
+            lines,
+          },
+        ];
   return { ...base, hunks, additions: lines.length, contentHash };
 }
 
@@ -159,19 +198,35 @@ async function untrackedFileDiff(dir: string, path: string, withHunks: boolean):
  *
  * Mode-only changes come through as status "modified" with zero hunks.
  */
-export async function computeDiff(dir: string, base: string): Promise<DiffResponse> {
+export async function computeDiff(
+  dir: string,
+  base: string,
+): Promise<DiffResponse> {
   const mergeBase = (await run(dir, ["merge-base", base, "HEAD"])).trim();
   const [diffText, statusZ, hi, behind] = await Promise.all([
     // no second rev: diff merge-base against the working tree, catching uncommitted edits
-    run(dir, ["diff", mergeBase, "--find-renames", "--no-color", `-U${TUNING.DIFF_CONTEXT_LINES}`]),
-    run(dir, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+    run(dir, [
+      "diff",
+      mergeBase,
+      "--find-renames",
+      "--no-color",
+      `-U${TUNING.DIFF_CONTEXT_LINES}`,
+    ]),
+    run(dir, [
+      "--no-optional-locks",
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+    ]),
     headInfo(dir),
     baseBehind(dir, base),
   ]);
 
   const files: FileDiff[] = [];
   for (const p of parseUnifiedDiff(diffText)) {
-    const contentHash = p.status === "deleted" ? "" : await hashWorkingFile(dir, p.path);
+    const contentHash =
+      p.status === "deleted" ? "" : await hashWorkingFile(dir, p.path);
     files.push({ ...p, contentHash, seen: false, stale: false });
   }
   for (const path of untrackedFromStatusZ(statusZ)) {
@@ -191,8 +246,20 @@ export async function computeDiff(dir: string, base: string): Promise<DiffRespon
 }
 
 /** `-z` numstat entry. Rename entries put "" in the inline slot and carry two path tokens after. */
-function parseNumstatZ(z: string): Array<{ additions: number; deletions: number; path: string; oldPath?: string; binary: boolean }> {
-  const out: Array<{ additions: number; deletions: number; path: string; oldPath?: string; binary: boolean }> = [];
+function parseNumstatZ(z: string): Array<{
+  additions: number;
+  deletions: number;
+  path: string;
+  oldPath?: string;
+  binary: boolean;
+}> {
+  const out: Array<{
+    additions: number;
+    deletions: number;
+    path: string;
+    oldPath?: string;
+    binary: boolean;
+  }> = [];
   const tokens = z.split("\0");
   for (let i = 0; i < tokens.length; i++) {
     const m = /^(\d+|-)\t(\d+|-)\t(.*)$/.exec(tokens[i]!);
@@ -229,7 +296,10 @@ function parseNameStatusZ(z: string): Map<string, string> {
   return out;
 }
 
-function statusFromLetter(letter: string | undefined, hasOldPath: boolean): FileStatus {
+function statusFromLetter(
+  letter: string | undefined,
+  hasOldPath: boolean,
+): FileStatus {
   if (hasOldPath || letter === "R") return "renamed";
   if (letter === "A") return "added";
   if (letter === "D") return "deleted";
@@ -242,12 +312,21 @@ function statusFromLetter(letter: string | undefined, hasOldPath: boolean): File
  * near-constant as the diff grows; hunks are served per file by
  * computeFileDiff. `seen`/`stale` are filled by routes.
  */
-export async function computeDiffSummary(dir: string, base: string): Promise<DiffSummaryResponse> {
+export async function computeDiffSummary(
+  dir: string,
+  base: string,
+): Promise<DiffSummaryResponse> {
   const mergeBase = (await run(dir, ["merge-base", base, "HEAD"])).trim();
   const [numstatZ, nameStatusZ, statusZ, hi, behind] = await Promise.all([
     run(dir, ["diff", mergeBase, "--find-renames", "--numstat", "-z"]),
     run(dir, ["diff", mergeBase, "--find-renames", "--name-status", "-z"]),
-    run(dir, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+    run(dir, [
+      "--no-optional-locks",
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+    ]),
     headInfo(dir),
     baseBehind(dir, base),
   ]);
@@ -255,11 +334,17 @@ export async function computeDiffSummary(dir: string, base: string): Promise<Dif
   const letters = parseNameStatusZ(nameStatusZ);
   const files: FileSummary[] = [];
   for (const e of parseNumstatZ(numstatZ)) {
-    const status = statusFromLetter(letters.get(e.path), e.oldPath !== undefined);
-    const contentHash = status === "deleted" ? "" : await hashWorkingFile(dir, e.path);
+    const status = statusFromLetter(
+      letters.get(e.path),
+      e.oldPath !== undefined,
+    );
+    const contentHash =
+      status === "deleted" ? "" : await hashWorkingFile(dir, e.path);
     files.push({
       path: e.path,
-      ...(e.oldPath !== undefined && e.oldPath !== e.path ? { oldPath: e.oldPath } : {}),
+      ...(e.oldPath !== undefined && e.oldPath !== e.path
+        ? { oldPath: e.oldPath }
+        : {}),
       status,
       binary: e.binary,
       additions: e.additions,
@@ -270,7 +355,11 @@ export async function computeDiffSummary(dir: string, base: string): Promise<Dif
     });
   }
   for (const path of untrackedFromStatusZ(statusZ)) {
-    const { hunks: _hunks, ...summary } = await untrackedFileDiff(dir, path, false);
+    const { hunks: _hunks, ...summary } = await untrackedFileDiff(
+      dir,
+      path,
+      false,
+    );
     files.push(summary);
   }
 
@@ -299,7 +388,14 @@ export async function computeFileDiff(
   oldPath?: string,
 ): Promise<FileDiff | null> {
   const untracked = (
-    await run(dir, ["ls-files", "--others", "--exclude-standard", "-z", "--", path])
+    await run(dir, [
+      "ls-files",
+      "--others",
+      "--exclude-standard",
+      "-z",
+      "--",
+      path,
+    ])
   )
     .split("\0")
     .includes(path);
@@ -318,63 +414,17 @@ export async function computeFileDiff(
   ]);
   const parsed = parseUnifiedDiff(diffText).find((p) => p.path === path);
   if (!parsed) return null;
-  const contentHash = parsed.status === "deleted" ? "" : await hashWorkingFile(dir, path);
+  const contentHash =
+    parsed.status === "deleted" ? "" : await hashWorkingFile(dir, path);
   return { ...parsed, contentHash, seen: false, stale: false };
 }
 
-/**
- * Diff arbitrary old content against the working-tree file at `path`
- * (missing file diffs against /dev/null). Only hunks/counts are taken from
- * git; identity fields are filled by the caller's knowledge of the file.
- */
-export async function diffBlobVsWorkingFile(
+/** Read a file at a rev (null → working tree). 404s become GitError. */
+export async function readFile(
   dir: string,
   path: string,
-  oldContent: string,
-): Promise<{ hunks: FileDiff["hunks"]; additions: number; deletions: number; binary: boolean }> {
-  const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
-  const tmp = await mkdtemp(join(tmpdir(), "rev-interdiff-"));
-  const oldFile = join(tmp, "old");
-  await writeFile(oldFile, oldContent);
-  try {
-    const current = join(dir, path);
-    const newFile = existsSync(current) ? current : "/dev/null";
-    const out = await new Promise<string>((res, rej) => {
-      const proc = spawn(
-        "git",
-        ["diff", "--no-index", "--no-color", `-U${TUNING.DIFF_CONTEXT_LINES}`, "--", oldFile, newFile],
-        { cwd: dir, stdio: ["ignore", "pipe", "pipe"] },
-      );
-      let stdout = "";
-      let stderr = "";
-      proc.stdout.setEncoding("utf8").on("data", (c: string) => (stdout += c));
-      proc.stderr.setEncoding("utf8").on("data", (c: string) => (stderr += c));
-      proc.on("error", rej);
-      // --no-index exits 1 when the files differ; only >1 is an error
-      proc.on("close", (code) => {
-        if (code !== null && code > 1) {
-          rej(new GitError(stderr.trim() || `git diff --no-index failed (exit ${code})`, "diff --no-index"));
-        } else {
-          res(stdout);
-        }
-      });
-    });
-    const parsed = parseUnifiedDiff(out)[0];
-    if (!parsed) return { hunks: [], additions: 0, deletions: 0, binary: false };
-    return {
-      hunks: parsed.hunks,
-      additions: parsed.additions,
-      deletions: parsed.deletions,
-      binary: parsed.binary,
-    };
-  } finally {
-    await rm(tmp, { recursive: true, force: true });
-  }
-}
-
-/** Read a file at a rev (null → working tree). 404s become GitError. */
-export async function readFile(dir: string, path: string, rev: string | null): Promise<FileContentResponse> {
+  rev: string | null,
+): Promise<FileContentResponse> {
   if (rev === null) {
     let bytes: Uint8Array;
     try {
@@ -382,7 +432,13 @@ export async function readFile(dir: string, path: string, rev: string | null): P
     } catch {
       throw new GitError(`no such file in working tree: ${path}`, "read");
     }
-    return { dir, path, rev, content: decoder.decode(bytes), contentHash: hashContent(bytes) };
+    return {
+      dir,
+      path,
+      rev,
+      content: decoder.decode(bytes),
+      contentHash: hashContent(bytes),
+    };
   }
   const content = await run(dir, ["show", `${rev}:${path}`]);
   return { dir, path, rev, content, contentHash: hashContent(content) };
@@ -405,7 +461,9 @@ export async function readRawFile(
 }
 
 /** Current branch (null when detached) and short HEAD sha ("" before first commit). */
-export async function headInfo(dir: string): Promise<{ branch: string | null; head: string }> {
+export async function headInfo(
+  dir: string,
+): Promise<{ branch: string | null; head: string }> {
   const branch = (await run(dir, ["branch", "--show-current"])).trim() || null;
   let head = "";
   try {
@@ -420,7 +478,11 @@ export async function headInfo(dir: string): Promise<{ branch: string | null; he
 export async function isDirty(dir: string): Promise<boolean> {
   // --no-optional-locks: status must not rewrite the index — discovery reads
   // its mtime as lastActivity, and a plain status would bump it on every scan.
-  return (await run(dir, ["--no-optional-locks", "status", "--porcelain", "-uno"])).trim().length > 0;
+  return (
+    (
+      await run(dir, ["--no-optional-locks", "status", "--porcelain", "-uno"])
+    ).trim().length > 0
+  );
 }
 
 /**
@@ -447,7 +509,9 @@ export async function defaultBase(dir: string): Promise<string | null> {
   for (const ref of existing) {
     try {
       const mb = (await run(dir, ["merge-base", ref, "HEAD"])).trim();
-      const t = Number((await run(dir, ["show", "-s", "--format=%ct", mb])).trim());
+      const t = Number(
+        (await run(dir, ["show", "-s", "--format=%ct", mb])).trim(),
+      );
       if (t > bestTime) {
         bestTime = t;
         best = ref;
@@ -465,7 +529,14 @@ export async function defaultBase(dir: string): Promise<string | null> {
  */
 async function baseUpstream(dir: string, base: string): Promise<string | null> {
   try {
-    return (await run(dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", `${base}@{upstream}`])).trim();
+    return (
+      await run(dir, [
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        `${base}@{upstream}`,
+      ])
+    ).trim();
   } catch {
     // no upstream configured
   }
@@ -474,7 +545,12 @@ async function baseUpstream(dir: string, base: string): Promise<string | null> {
   if (prefix && remotes.includes(prefix)) return base;
   for (const r of remotes) {
     try {
-      await run(dir, ["rev-parse", "--verify", "--quiet", `${r}/${base}^{commit}`]);
+      await run(dir, [
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        `${r}/${base}^{commit}`,
+      ]);
       return `${r}/${base}`;
     } catch {
       // try next remote
@@ -484,11 +560,16 @@ async function baseUpstream(dir: string, base: string): Promise<string | null> {
 }
 
 /** Commits `base` is behind its upstream; null when no upstream / count fails; 0 when current. */
-export async function baseBehind(dir: string, base: string): Promise<number | null> {
+export async function baseBehind(
+  dir: string,
+  base: string,
+): Promise<number | null> {
   const up = await baseUpstream(dir, base);
   if (up === null || up === base) return up === base ? 0 : null;
   try {
-    return Number((await run(dir, ["rev-list", "--count", `${base}..${up}`])).trim());
+    return Number(
+      (await run(dir, ["rev-list", "--count", `${base}..${up}`])).trim(),
+    );
   } catch {
     return null;
   }
@@ -513,9 +594,16 @@ export async function divergence(
   base: string,
 ): Promise<{ ahead: number; behind: number } | null> {
   try {
-    const out = (await run(dir, ["rev-list", "--left-right", "--count", `${base}...HEAD`])).trim();
+    const out = (
+      await run(dir, ["rev-list", "--left-right", "--count", `${base}...HEAD`])
+    ).trim();
     const [behind, ahead] = out.split(/\s+/).map(Number);
-    if (behind === undefined || ahead === undefined || Number.isNaN(behind) || Number.isNaN(ahead)) {
+    if (
+      behind === undefined ||
+      ahead === undefined ||
+      Number.isNaN(behind) ||
+      Number.isNaN(ahead)
+    ) {
       return null;
     }
     return { ahead, behind };
@@ -527,7 +615,8 @@ export async function divergence(
 /** `git fetch` the remote behind `base`'s upstream. Throws GitError when base has no remote. */
 export async function fetchBase(dir: string, base: string): Promise<void> {
   const up = await baseUpstream(dir, base);
-  if (up === null) throw new GitError(`base ${base} has no upstream remote to fetch`, "fetch");
+  if (up === null)
+    throw new GitError(`base ${base} has no upstream remote to fetch`, "fetch");
   const remote = up.split("/")[0]!;
   await run(dir, ["fetch", remote]);
 }
@@ -562,7 +651,13 @@ export async function changedFileStats(
     const mb = (await run(dir, ["merge-base", base, "HEAD"])).trim();
     const [numstatZ, statusZ] = await Promise.all([
       run(dir, ["diff", mb, "--find-renames", "--numstat", "-z"]),
-      run(dir, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+      run(dir, [
+        "--no-optional-locks",
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+      ]),
     ]);
     const out: ChangedFileStat[] = [];
     for (const e of parseNumstatZ(numstatZ)) {
@@ -575,7 +670,12 @@ export async function changedFileStats(
     }
     for (const path of untrackedFromStatusZ(statusZ)) {
       const f = await untrackedFileDiff(dir, path, false);
-      out.push({ path, additions: f.additions, deletions: 0, contentHash: f.contentHash });
+      out.push({
+        path,
+        additions: f.additions,
+        deletions: 0,
+        contentHash: f.contentHash,
+      });
     }
     return out;
   } catch {
@@ -619,7 +719,7 @@ export async function watchableFileCount(dir: string): Promise<number> {
  */
 export function resolveGitDir(dir: string): string | null {
   const dotGit = join(dir, ".git");
-  let st;
+  let st: Stats;
   try {
     st = statSync(dotGit);
   } catch {

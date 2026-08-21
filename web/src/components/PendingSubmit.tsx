@@ -1,12 +1,14 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import type { Comment } from "#shared/types";
 import { TUNING } from "#shared/tuning";
+import type { Comment } from "#shared/types";
 import * as api from "../api";
 
 function countdown(ms: number): string {
   const s = Math.max(0, Math.ceil(ms / 1000));
-  return s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : `${s}s`;
+  return s >= 60
+    ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
+    : `${s}s`;
 }
 
 /**
@@ -16,7 +18,13 @@ function countdown(ms: number): string {
  * shorter fuse after the page is hidden — so an active review pass lands as
  * one batch without the user having to remember to send it.
  */
-export function PendingSubmit({ dir, comments }: { dir: string; comments: Comment[] }) {
+export function PendingSubmit({
+  dir,
+  comments,
+}: {
+  dir: string;
+  comments: Comment[];
+}) {
   const qc = useQueryClient();
   const pending = comments.filter((c) => c.status === "pending");
   const count = pending.length;
@@ -29,6 +37,19 @@ export function PendingSubmit({ dir, comments }: { dir: string; comments: Commen
 
   const [deadline, setDeadline] = useState<number | null>(null);
   const armed = count > 0;
+
+  // Whether an agent session is listening — when not and spawning is
+  // configured, Send will start one first (the server holds the batch).
+  const agentQ = useQuery({
+    queryKey: ["agent", dir],
+    queryFn: () => api.getAgentStatus(dir),
+    enabled: armed,
+    refetchInterval: 15_000,
+  });
+  const willSpawn =
+    agentQ.data != null &&
+    !agentQ.data.listening &&
+    agentQ.data.spawnConfigured;
 
   // A new pending comment (maxSeq moves) restarts the idle window.
   useEffect(() => {
@@ -69,7 +90,10 @@ export function PendingSubmit({ dir, comments }: { dir: string; comments: Commen
   };
   useEffect(() => {
     if (deadline == null) return;
-    const t = setTimeout(() => fireRef.current(), Math.max(0, deadline - Date.now()));
+    const t = setTimeout(
+      () => fireRef.current(),
+      Math.max(0, deadline - Date.now()),
+    );
     return () => clearTimeout(t);
   }, [deadline]);
 
@@ -79,7 +103,12 @@ export function PendingSubmit({ dir, comments }: { dir: string; comments: Commen
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "a" || e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
-      if (t?.tagName === "INPUT" || t?.tagName === "TEXTAREA" || t?.isContentEditable) return;
+      if (
+        t?.tagName === "INPUT" ||
+        t?.tagName === "TEXTAREA" ||
+        t?.isContentEditable
+      )
+        return;
       e.preventDefault();
       fireRef.current();
     };
@@ -100,23 +129,53 @@ export function PendingSubmit({ dir, comments }: { dir: string; comments: Commen
 
   return (
     <div className="fixed bottom-4 right-4 z-40 flex items-center gap-2.5 rounded-md border border-edge bg-panel py-1.5 pl-3 pr-1.5 shadow-pop">
-      <span className="inline-block size-[7px] rounded-[1px] bg-accent" aria-hidden />
+      <span
+        className="inline-block size-[7px] rounded-[1px] bg-accent"
+        aria-hidden
+      />
       <span className="text-[12px] text-fg">
         {count} pending comment{count === 1 ? "" : "s"}
       </span>
       {deadline != null && count > 0 && (
-        <span className="font-mono text-[11px] tabular-nums text-faint" title="Auto-sends to the agent when you go idle or leave the page">
+        <span
+          className="font-mono text-[11px] tabular-nums text-faint"
+          title="Auto-sends to the agent when you go idle or leave the page"
+        >
           sends in {countdown(deadline - now)}
+        </span>
+      )}
+      {submitMut.isError && (
+        <span
+          className="max-w-56 truncate text-[11px] text-del"
+          title={(submitMut.error as Error).message}
+        >
+          {(submitMut.error as Error).message}
+        </span>
+      )}
+      {willSpawn && !submitMut.isPending && (
+        <span
+          className="text-[11px] text-faint"
+          title="No agent session is listening on this checkout — sending starts one first"
+        >
+          no session — send starts one
         </span>
       )}
       <button
         type="button"
         disabled={submitMut.isPending}
-        title="Send the batch to the agent now (a)"
+        title={
+          willSpawn
+            ? "Start an agent session and send the batch to it (a)"
+            : "Send the batch to the agent now (a)"
+        }
         onClick={() => fireRef.current()}
         className="rounded-sm border border-accent/40 px-2 py-0.5 text-[12px] text-accent transition-colors duration-150 hover:bg-accent hover:text-bg disabled:cursor-default disabled:border-edge disabled:text-faint"
       >
-        {submitMut.isPending ? "sending…" : "Send now"}
+        {submitMut.isPending
+          ? willSpawn
+            ? "starting session…"
+            : "sending…"
+          : "Send now"}
       </button>
     </div>
   );

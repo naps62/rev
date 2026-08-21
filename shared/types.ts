@@ -128,6 +128,27 @@ export interface CommandsResponse {
   worktreeCreate: string;
   /** Argv template run by DELETE /api/worktrees ({dir}, {mainDir}, {branch}). */
   worktreeRemove: string;
+  /**
+   * Argv template run by POST /api/comments/submit when no agent session is
+   * listening on the dir ({dir}, {branch}). Empty string = never spawn.
+   */
+  sessionSpawn: string;
+}
+
+/** PUT /api/commands body: only the present fields are updated. */
+export interface CommandsUpdateRequest {
+  worktreeCreate?: string;
+  worktreeRemove?: string;
+  sessionSpawn?: string;
+}
+
+/** Whether an agent session is listening for submitted comments on a dir. */
+export interface AgentStatusResponse {
+  dir: string;
+  /** A watcher is long-polling the submitted channel, or agent activity was seen recently. */
+  listening: boolean;
+  /** The session-spawn template is non-empty, so submit can start a session. */
+  spawnConfigured: boolean;
 }
 
 /**
@@ -249,20 +270,6 @@ export interface PresenceResponse {
   lastSeen: number;
 }
 
-/**
- * Delta between the content snapshotted when a file was marked seen and the
- * current working tree — what still needs re-review on a stale file. New-side
- * line numbers are working-tree lines (same axis as the full diff's new side).
- */
-export interface InterdiffResponse {
-  dir: string;
-  base: string;
-  path: string;
-  /** contentHash the snapshot was taken at (what the user last reviewed). */
-  sinceHash: string;
-  file: FileDiff;
-}
-
 // ---------------------------------------------------------------------------
 // Branch stacks
 // ---------------------------------------------------------------------------
@@ -378,14 +385,14 @@ export interface FileWriteRequest {
 // Comments
 // ---------------------------------------------------------------------------
 
-export type Author = "user" | "agent" | "reviewer";
+type Author = "user" | "agent" | "reviewer";
 
 /**
  * Delivery lifecycle toward the agent: "pending" = invisible to agent polling
  * until submitted; "submitted" = visible, not yet delivered; "picked_up" = a
  * watcher acked delivery.
  */
-export type CommentStatus = "pending" | "submitted" | "picked_up";
+type CommentStatus = "pending" | "submitted" | "picked_up";
 
 export interface CommentAnchor {
   /** Repo-relative path the comment is attached to. */
@@ -473,6 +480,13 @@ export interface CommentsSubmitRequest {
   dir: string;
 }
 
+export interface CommentsSubmitResponse {
+  submitted: number;
+  cursor: number;
+  /** true when submit started an agent session first (session-spawn command). */
+  spawned: boolean;
+}
+
 /** Watcher delivery ack: marks submitted comments ≤ upTo as picked up. */
 export interface CommentsAckRequest {
   dir: string;
@@ -536,7 +550,11 @@ export interface GithubThread {
   comments: GithubComment[];
 }
 
-export type GithubUnavailableReason = "gh-missing" | "not-github" | "no-pr" | "gh-failed";
+export type GithubUnavailableReason =
+  | "gh-missing"
+  | "not-github"
+  | "no-pr"
+  | "gh-failed";
 
 /**
  * GitHub conversations for dir's checked-out branch. `available: false` —
@@ -625,8 +643,6 @@ export type ServerMessage =
 // GET    /api/diff/file?dir&base&path[&oldPath] → FileDiffResponse (one file's hunks)
 // GET    /api/refs?dir                       → RefsResponse   (base-ref candidates)
 // GET    /api/stack?dir&base                 → StackResponse  (branch-stack detection)
-// GET    /api/diff/interdiff?dir&base&path   → InterdiffResponse (delta since the
-//        seen snapshot; 404 when the path has no snapshot)
 // GET    /api/semantic?dir&base              → SemanticDiffResponse (entity-level
 //        diff via the optional sem CLI; available:false when sem can't deliver)
 // GET    /api/file?dir&path[&rev]            → FileContentResponse
@@ -639,7 +655,11 @@ export type ServerMessage =
 //        to LONG_POLL_MS when nothing is newer than `since`.
 // POST   /api/comments                       ← CommentCreateRequest → Comment
 // POST   /api/comments/submit                ← CommentsSubmitRequest
-//        → { submitted: number; cursor: number }
+//        → CommentsSubmitResponse. When no agent session is listening on the
+//        dir and the session-spawn command is configured, runs it and waits
+//        for the new session's watcher before releasing the batch (504 and
+//        comments stay pending if it never arrives).
+// GET    /api/agent?dir                      → AgentStatusResponse
 // POST   /api/comments/ack                   ← CommentsAckRequest → { acked: number }
 // PATCH  /api/comments/:id                   ← CommentPatchRequest  → Comment
 // GET    /api/github?dir[&refresh=1]         → GithubConvosResponse (open-PR review
@@ -660,8 +680,8 @@ export type ServerMessage =
 //        registered afterwards (e.g. the command only closed a session),
 //        falls back to `git worktree remove`. Then re-scans discovery.
 // GET    /api/commands                       → CommandsResponse
-// PUT    /api/commands                       ← Partial<CommandsResponse> → CommandsResponse
-//        Persists the given command templates (settings table).
+// PUT    /api/commands                       ← CommandsUpdateRequest → CommandsResponse
+//        Persists the command templates (settings table).
 // GET    /api/settings                       → UiSettings
 // PUT    /api/settings                       ← UiSettings → UiSettings
 //        Persists shared UI preferences (settings table); unknown fields
