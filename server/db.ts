@@ -292,6 +292,15 @@ export function submitPending(dir: string): { submitted: number; cursor: number 
   });
 }
 
+/** True when dir has comments not yet submitted. */
+export function hasPending(dir: string): boolean {
+  return (
+    must()
+      .prepare("SELECT 1 FROM comments WHERE dir = ? AND submitted_seq IS NULL LIMIT 1")
+      .get(dir) !== undefined
+  );
+}
+
 /** Mark submitted comments with submitted_seq ≤ upTo as picked up. Returns count newly marked. */
 export function ackPickedUp(dir: string, upTo: number): number {
   const result = must()

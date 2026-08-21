@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
 import {
   CommandError,
+  sessionSpawnCommand,
+  setSessionSpawnCommand,
   setWorktreeCommand,
   splitTemplate,
   substitute,
@@ -61,5 +63,18 @@ describe("worktreeCommand setting", () => {
     expect(() => setWorktreeCommand("echo no-branch")).toThrow(CommandError);
     expect(() => setWorktreeCommand(`echo "oops {branch}`)).toThrow(CommandError);
     expect(worktreeCommand()).toBe("aoe add {dir} --worktree {branch}");
+  });
+});
+
+describe("sessionSpawnCommand setting", () => {
+  test("defaults empty, persists, validates, empty disables", () => {
+    expect(sessionSpawnCommand()).toBe("");
+    setSessionSpawnCommand("tmux new-session -d -c {dir} claude");
+    expect(sessionSpawnCommand()).toBe("tmux new-session -d -c {dir} claude");
+    expect(() => setSessionSpawnCommand("echo no-dir")).toThrow(CommandError);
+    expect(() => setSessionSpawnCommand(`echo "oops {dir}`)).toThrow(CommandError);
+    expect(sessionSpawnCommand()).toBe("tmux new-session -d -c {dir} claude");
+    setSessionSpawnCommand("  ");
+    expect(sessionSpawnCommand()).toBe("");
   });
 });

@@ -5,7 +5,9 @@
  */
 
 import type {
+  AgentStatusResponse,
   CommandsResponse,
+  CommandsUpdateRequest,
   Comment,
   CommentCreateRequest,
   CommentListResponse,
@@ -19,6 +21,7 @@ import type {
   GithubConvosResponse,
   GithubReplyRequest,
   GithubResolveRequest,
+  CommentsSubmitResponse,
   InterdiffResponse,
   PrListResponse,
   RefsResponse,
@@ -101,9 +104,15 @@ export async function getCommands(): Promise<CommandsResponse> {
   return request("/api/commands");
 }
 
-export async function putCommands(req: CommandsResponse): Promise<CommandsResponse> {
+export async function putCommands(req: CommandsUpdateRequest): Promise<CommandsResponse> {
   if (isFixture()) return tick((await fx()).fxPutCommands(req));
   return request("/api/commands", { method: "PUT", body: JSON.stringify(req) });
+}
+
+export async function getAgentStatus(dir: string): Promise<AgentStatusResponse> {
+  if (isFixture()) return tick((await fx()).fxGetAgentStatus(dir));
+  const q = new URLSearchParams({ dir });
+  return request(`/api/agent?${q}`);
 }
 
 export async function getSettings(): Promise<UiSettings> {
@@ -209,7 +218,7 @@ export async function postComment(req: CommentCreateRequest): Promise<Comment> {
   return request("/api/comments", { method: "POST", body: JSON.stringify(req) });
 }
 
-export async function submitComments(dir: string): Promise<{ submitted: number; cursor: number }> {
+export async function submitComments(dir: string): Promise<CommentsSubmitResponse> {
   if (isFixture()) return tick((await fx()).fxSubmitComments(dir));
   return request("/api/comments/submit", { method: "POST", body: JSON.stringify({ dir }) });
 }

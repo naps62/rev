@@ -17,6 +17,7 @@ import type {
   CommentCreateRequest,
   CommentListResponse,
   CommentPatchRequest,
+  CommandsUpdateRequest,
   CommentsAckRequest,
   CommentsSubmitRequest,
   FileWriteRequest,
@@ -38,6 +39,7 @@ import {
   getSeenSnapshot,
   getSetting,
   setSetting,
+  hasPending,
   listComments,
   patchComment,
   putSeenSnapshot,
@@ -51,7 +53,10 @@ import { computeSemanticDiff } from "./semantic.ts";
 import { computeStack } from "./stack.ts";
 import {
   CommandError,
+  runSessionSpawnCommand,
   runWorktreeCommand,
+  sessionSpawnCommand,
+  setSessionSpawnCommand,
   setWorktreeCommand,
   validBranch,
   worktreeCommand,
@@ -172,6 +177,53 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   const app = new Hono();
   const waiters = new Set<Waiter>();
 
+  // Agent-session liveness per dir: last submitted-channel poll / delivery
+  // ack / agent-authored comment, plus callbacks parked by submit waiting for
+  // a spawned session's watcher to arrive. In-memory, like presence.
+  const agentSeen = new Map<string, number>();
+  const agentArrivals = new Map<string, Array<() => void>>();
+
+  function agentActivity(dir: string): void {
+    agentSeen.set(dir, Date.now());
+  }
+
+  /** A watcher parked a submitted-channel long-poll on dir. */
+  function agentArrived(dir: string): void {
+    agentActivity(dir);
+    const parked = agentArrivals.get(dir);
+    if (parked) {
+      agentArrivals.delete(dir);
+      for (const cb of parked) cb();
+    }
+  }
+
+  function agentListening(dir: string): boolean {
+    for (const w of waiters) {
+      if (w.dir === dir && w.submittedOnly) return true;
+    }
+    return Date.now() - (agentSeen.get(dir) ?? 0) < TUNING.AGENT_LIVE_WINDOW_MS;
+  }
+
+  /** Resolves true when a watcher arrives for dir, false on timeout. */
+  function waitForAgent(dir: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const cb = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        const parked = agentArrivals.get(dir)?.filter((c) => c !== cb);
+        if (parked?.length) agentArrivals.set(dir, parked);
+        else agentArrivals.delete(dir);
+        resolve(false);
+      }, TUNING.SESSION_SPAWN_READY_TIMEOUT_MS);
+      agentArrivals.set(dir, [...(agentArrivals.get(dir) ?? []), cb]);
+    });
+  }
+
+  // One spawn in flight per dir; concurrent submits share the same wait.
+  const spawns = new Map<string, Promise<boolean>>();
+
   // Mirrored GitHub comments enter the submitted axis outside any request
   // that watchers long-poll on — wake them and the UI up.
   onGithubMirrored((dir) => {
@@ -211,6 +263,9 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
         TUNING.LONG_POLL_MS,
       );
       waiters.add(w);
+      // Signal after the waiter is parked, so a submit released by this
+      // arrival notifies a waiter that is already there to take the batch.
+      if (submittedOnly) agentArrived(dir);
     });
   }
 
@@ -276,20 +331,28 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     return c.json({ dir: created.dir, branch: b.branch }, 201);
   });
 
-  app.get("/commands", (c) => c.json({ worktreeCreate: worktreeCommand() }));
+  app.get("/commands", (c) =>
+    c.json({ worktreeCreate: worktreeCommand(), sessionSpawn: sessionSpawnCommand() }),
+  );
 
   app.put("/commands", async (c) => {
-    const b = (await c.req.json().catch(() => null)) as { worktreeCreate?: unknown } | null;
-    if (!b || typeof b.worktreeCreate !== "string") {
-      return c.json({ error: "worktreeCreate is required" }, 400);
+    const b = (await c.req.json().catch(() => null)) as CommandsUpdateRequest | null;
+    if (
+      !b ||
+      (b.worktreeCreate === undefined && b.sessionSpawn === undefined) ||
+      (b.worktreeCreate !== undefined && typeof b.worktreeCreate !== "string") ||
+      (b.sessionSpawn !== undefined && typeof b.sessionSpawn !== "string")
+    ) {
+      return c.json({ error: "worktreeCreate and/or sessionSpawn (strings) required" }, 400);
     }
     try {
-      setWorktreeCommand(b.worktreeCreate);
+      if (b.worktreeCreate !== undefined) setWorktreeCommand(b.worktreeCreate);
+      if (b.sessionSpawn !== undefined) setSessionSpawnCommand(b.sessionSpawn);
     } catch (err) {
       if (err instanceof CommandError) return c.json({ error: err.message }, 400);
       throw err;
     }
-    return c.json({ worktreeCreate: worktreeCommand() });
+    return c.json({ worktreeCreate: worktreeCommand(), sessionSpawn: sessionSpawnCommand() });
   });
 
   app.get("/settings", (c) => c.json(uiSettings()));
@@ -488,6 +551,7 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     const since = sinceRaw === undefined ? undefined : Number(sinceRaw);
     if (since !== undefined && !Number.isFinite(since)) return c.json({ error: "bad since" }, 400);
     const submittedOnly = c.req.query("submitted") === "1";
+    if (submittedOnly) agentActivity(dir);
     let res = listComments(dir, base, since, submittedOnly);
     if (c.req.query("wait") === "1" && res.comments.length === 0) {
       res = await waitForComments(dir, base, since ?? res.cursor, submittedOnly);
@@ -526,6 +590,7 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       return c.json({ error: "malformed anchor" }, 400);
     }
     if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    if (b.author === "agent") agentActivity(b.dir);
     const comment = createComment(b);
     // Agent replies on mirrored GitHub threads go back to GitHub too, so the
     // conversation stays whole on both sides. Fire-and-forget: the local copy
@@ -547,12 +612,45 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     const b = (await c.req.json().catch(() => null)) as CommentsSubmitRequest | null;
     if (!b || typeof b.dir !== "string") return c.json({ error: "dir is required" }, 400);
     if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    // No session listening: start one first and hold the batch until its
+    // watcher arrives, so a fresh watcher's cursor init can't skip it.
+    let spawned = false;
+    if (sessionSpawnCommand() !== "" && hasPending(b.dir) && !agentListening(b.dir)) {
+      let spawn = spawns.get(b.dir);
+      if (!spawn) {
+        spawn = (async () => {
+          const repos = await listRepos();
+          await runSessionSpawnCommand(b.dir, repos.find((r) => r.dir === b.dir)?.branch ?? null);
+          return waitForAgent(b.dir);
+        })();
+        spawn.finally(() => spawns.delete(b.dir)).catch(() => {});
+        spawns.set(b.dir, spawn);
+      }
+      spawned = true;
+      let ready: boolean;
+      try {
+        ready = await spawn;
+      } catch (err) {
+        if (err instanceof CommandError) return c.json({ error: err.message }, 400);
+        throw err;
+      }
+      if (!ready) {
+        return c.json({ error: "spawned session never started listening; comments left pending" }, 504);
+      }
+    }
     const res = submitPending(b.dir);
     if (res.submitted > 0) {
       broadcast({ type: "comments-changed", dir: b.dir, seq: res.cursor });
       notifyWaiters(b.dir);
     }
-    return c.json(res);
+    return c.json({ ...res, spawned });
+  });
+
+  app.get("/agent", async (c) => {
+    const dir = c.req.query("dir");
+    if (!dir) return c.json({ error: "dir is required" }, 400);
+    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    return c.json({ dir, listening: agentListening(dir), spawnConfigured: sessionSpawnCommand() !== "" });
   });
 
   app.post("/comments/ack", async (c) => {
@@ -561,6 +659,7 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       return c.json({ error: "dir and numeric upTo are required" }, 400);
     }
     if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    agentActivity(b.dir);
     const acked = ackPickedUp(b.dir, b.upTo);
     if (acked > 0) broadcast({ type: "comments-changed", dir: b.dir, seq: b.upTo });
     return c.json({ acked });

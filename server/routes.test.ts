@@ -1,6 +1,6 @@
 import { before as beforeAll, describe, test } from "node:test";
 import { expect } from "expect";
-import { rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -14,6 +14,7 @@ import type {
   ServerMessage,
 } from "#shared/types";
 import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
+import { TUNING } from "#shared/tuning";
 import { config } from "./config.ts";
 import { closeDb, openDb } from "./db.ts";
 import { hashContent } from "./git.ts";
@@ -480,16 +481,110 @@ describe("PRs and worktree creation", () => {
 });
 
 describe("commands", () => {
-  test("GET returns the default, PUT validates and persists", async () => {
-    const before = (await (await app.request("/commands")).json()) as { worktreeCreate: string };
+  test("GET returns the defaults, PUT validates and persists per field", async () => {
+    const before = (await (await app.request("/commands")).json()) as {
+      worktreeCreate: string;
+      sessionSpawn: string;
+    };
     expect(typeof before.worktreeCreate).toBe("string");
+    expect(before.sessionSpawn).toBe("");
     expect((await json("PUT", "/commands", { worktreeCreate: "echo no-branch" })).status).toBe(400);
     expect((await json("PUT", "/commands", {})).status).toBe(400);
+    expect((await json("PUT", "/commands", { sessionSpawn: "echo no-dir" })).status).toBe(400);
     const res = await json("PUT", "/commands", { worktreeCreate: "aoe add {dir} --worktree {branch}" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ worktreeCreate: "aoe add {dir} --worktree {branch}" });
-    const after = (await (await app.request("/commands")).json()) as { worktreeCreate: string };
-    expect(after.worktreeCreate).toBe("aoe add {dir} --worktree {branch}");
+    expect(await res.json()).toEqual({
+      worktreeCreate: "aoe add {dir} --worktree {branch}",
+      sessionSpawn: "",
+    });
+    const spawn = await json("PUT", "/commands", { sessionSpawn: "tmux new-session -d -c {dir} claude" });
+    expect(spawn.status).toBe(200);
+    expect(await spawn.json()).toEqual({
+      worktreeCreate: "aoe add {dir} --worktree {branch}",
+      sessionSpawn: "tmux new-session -d -c {dir} claude",
+    });
+    await json("PUT", "/commands", { sessionSpawn: "" }); // empty disables again
+    const after = (await (await app.request("/commands")).json()) as { sessionSpawn: string };
+    expect(after.sessionSpawn).toBe("");
+  });
+});
+
+describe("session spawn on submit", () => {
+  test("GET /agent reflects watcher polling and spawn config", async () => {
+    const dir = makeRepo("agent-status");
+    const status = async () =>
+      (await (await app.request(`/agent?dir=${encodeURIComponent(dir)}`)).json()) as {
+        listening: boolean;
+        spawnConfigured: boolean;
+      };
+    expect((await app.request("/agent")).status).toBe(400);
+    expect(await status()).toEqual({ dir, listening: false, spawnConfigured: false });
+    await app.request(`/comments?dir=${encodeURIComponent(dir)}&submitted=1`);
+    expect((await status()).listening).toBe(true);
+    await json("PUT", "/commands", { sessionSpawn: "true {dir}" });
+    expect((await status()).spawnConfigured).toBe(true);
+    await json("PUT", "/commands", { sessionSpawn: "" });
+  });
+
+  test("submit spawns a session and holds the batch until its watcher arrives", async () => {
+    const dir = makeRepo("spawn-e2e");
+    await json("PUT", "/commands", { sessionSpawn: "touch {dir}/spawned" });
+    await json("POST", "/comments", { dir, base: "main", author: "user", body: "fix this", pending: true });
+
+    const submitting = json("POST", "/comments/submit", { dir });
+    // Simulate the spawned session's watcher arriving after a beat.
+    const watcher = (async () => {
+      await new Promise((r) => setTimeout(r, 150));
+      return app.request(`/comments?dir=${encodeURIComponent(dir)}&since=0&wait=1&submitted=1`);
+    })();
+
+    const submit = await submitting;
+    expect(submit.status).toBe(200);
+    expect(await submit.json()).toEqual({ submitted: 1, cursor: expect.any(Number), spawned: true });
+    expect(existsSync(join(dir, "spawned"))).toBe(true);
+    const delivered = (await (await watcher).json()) as CommentListResponse;
+    expect(delivered.comments.map((c) => c.body)).toEqual(["fix this"]);
+    await json("PUT", "/commands", { sessionSpawn: "" });
+  });
+
+  test("submit does not spawn when a session is already live", async () => {
+    const dir = makeRepo("spawn-live");
+    await json("PUT", "/commands", { sessionSpawn: "touch {dir}/spawned" });
+    await app.request(`/comments?dir=${encodeURIComponent(dir)}&submitted=1`); // recent agent poll
+    await json("POST", "/comments", { dir, base: "main", author: "user", body: "quick", pending: true });
+    const submit = await json("POST", "/comments/submit", { dir });
+    expect(await submit.json()).toEqual({ submitted: 1, cursor: expect.any(Number), spawned: false });
+    expect(existsSync(join(dir, "spawned"))).toBe(false);
+    await json("PUT", "/commands", { sessionSpawn: "" });
+  });
+
+  test("watcher never arrives: 504 and comments stay pending", async () => {
+    const tuning = TUNING as { SESSION_SPAWN_READY_TIMEOUT_MS: number };
+    const orig = tuning.SESSION_SPAWN_READY_TIMEOUT_MS;
+    tuning.SESSION_SPAWN_READY_TIMEOUT_MS = 100;
+    try {
+      const dir = makeRepo("spawn-timeout");
+      await json("PUT", "/commands", { sessionSpawn: "true {dir}" });
+      await json("POST", "/comments", { dir, base: "main", author: "user", body: "lost?", pending: true });
+      const submit = await json("POST", "/comments/submit", { dir });
+      expect(submit.status).toBe(504);
+      const list = (await (
+        await app.request(`/comments?dir=${encodeURIComponent(dir)}`)
+      ).json()) as CommentListResponse;
+      expect(list.comments.map((c) => c.status)).toEqual(["pending"]);
+    } finally {
+      tuning.SESSION_SPAWN_READY_TIMEOUT_MS = orig;
+      await json("PUT", "/commands", { sessionSpawn: "" });
+    }
+  });
+
+  test("failing spawn command surfaces as 400", async () => {
+    const dir = makeRepo("spawn-fail");
+    await json("PUT", "/commands", { sessionSpawn: "false {dir}" });
+    await json("POST", "/comments", { dir, base: "main", author: "user", body: "oops", pending: true });
+    const submit = await json("POST", "/comments/submit", { dir });
+    expect(submit.status).toBe(400);
+    await json("PUT", "/commands", { sessionSpawn: "" });
   });
 });
 
