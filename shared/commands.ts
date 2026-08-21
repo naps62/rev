@@ -45,6 +45,11 @@ export const SESSION_SPAWN_PLACEHOLDERS: Record<string, string> = {
 
 export const SESSION_SPAWN_PRESETS: CommandPreset[] = [
   {
+    name: "aoe",
+    template: "aoe add {dir} --launch",
+    blurb: "agent-of-empires session, launched immediately",
+  },
+  {
     name: "tmux",
     template: "tmux new-session -d -c {dir} claude",
     blurb: "detached tmux session running claude",
