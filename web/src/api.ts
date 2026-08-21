@@ -5,6 +5,7 @@
  */
 
 import type {
+  CommandsResponse,
   Comment,
   CommentCreateRequest,
   CommentListResponse,
@@ -88,6 +89,16 @@ export async function getPrs(dir: string): Promise<PrListResponse> {
 export async function createWorktree(req: WorktreeCreateRequest): Promise<WorktreeCreateResponse> {
   if (isFixture()) return tick((await fx()).fxCreateWorktree(req));
   return request("/api/worktrees", { method: "POST", body: JSON.stringify(req) });
+}
+
+export async function getCommands(): Promise<CommandsResponse> {
+  if (isFixture()) return tick((await fx()).fxGetCommands());
+  return request("/api/commands");
+}
+
+export async function putCommands(req: CommandsResponse): Promise<CommandsResponse> {
+  if (isFixture()) return tick((await fx()).fxPutCommands(req));
+  return request("/api/commands", { method: "PUT", body: JSON.stringify(req) });
 }
 
 export async function getDiff(dir: string, base: string): Promise<DiffResponse> {

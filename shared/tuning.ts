@@ -117,8 +117,8 @@ export const TUNING = {
   /** Open-PR lists fetched from a forge API are reused this long per remote. */
   PR_CACHE_TTL_MS: 60_000,
 
-  /** Kill an `aoe add` after this long; worktree creation includes a git fetch, which can be slow on big repos. */
-  AOE_TIMEOUT_MS: 120_000,
+  /** Kill a worktree-create command after this long; it may fetch or clone, which can be slow on big repos. */
+  WORKTREE_CMD_TIMEOUT_MS: 120_000,
 
   /** SQLite location, under XDG data dir. */
   DB_PATH: "~/.local/share/rev/rev.db",

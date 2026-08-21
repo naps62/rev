@@ -43,7 +43,13 @@ import { resolveComments } from "./anchor.ts";
 import { presence } from "./presence.ts";
 import { computeSemanticDiff } from "./semantic.ts";
 import { computeStack } from "./stack.ts";
-import { AoeError, createWorktreeSession, validBranch } from "./aoe.ts";
+import {
+  CommandError,
+  runWorktreeCommand,
+  setWorktreeCommand,
+  validBranch,
+  worktreeCommand,
+} from "./commands.ts";
 import { invalidateRepoList, isKnownRepo, listRepos, rescan } from "./discovery.ts";
 import { listOpenPrs } from "./forge.ts";
 import {
@@ -198,17 +204,35 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
     if (!validBranch(b.branch)) return c.json({ error: `invalid branch name: ${b.branch}` }, 400);
     const repos = await listRepos();
-    const mainDir = repos.find((r) => r.dir === b.dir)?.mainDir ?? b.dir;
+    const me = repos.find((r) => r.dir === b.dir);
+    const mainDir = me?.mainDir ?? b.dir;
+    const remote = repos.find((r) => r.dir === mainDir)?.remoteUrl ?? me?.remoteUrl ?? null;
     let created;
     try {
-      created = await createWorktreeSession(mainDir, b.branch);
+      created = await runWorktreeCommand(mainDir, b.branch, remote);
     } catch (err) {
-      if (err instanceof AoeError) return c.json({ error: err.message }, 400);
+      if (err instanceof CommandError) return c.json({ error: err.message }, 400);
       throw err;
     }
     await rescan(true);
     broadcast({ type: "repos-changed" });
-    return c.json({ dir: created.dir, branch: b.branch, session: created.session }, 201);
+    return c.json({ dir: created.dir, branch: b.branch }, 201);
+  });
+
+  app.get("/commands", (c) => c.json({ worktreeCreate: worktreeCommand() }));
+
+  app.put("/commands", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as { worktreeCreate?: unknown } | null;
+    if (!b || typeof b.worktreeCreate !== "string") {
+      return c.json({ error: "worktreeCreate is required" }, 400);
+    }
+    try {
+      setWorktreeCommand(b.worktreeCreate);
+    } catch (err) {
+      if (err instanceof CommandError) return c.json({ error: err.message }, 400);
+      throw err;
+    }
+    return c.json({ worktreeCreate: worktreeCommand() });
   });
 
   app.get("/diff", async (c) => {

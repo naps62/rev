@@ -19,12 +19,14 @@ import type {
   FileWriteRequest,
   RepoInfo,
   SeenRequest,
+  CommandsResponse,
   PrListResponse,
   SemanticDiffResponse,
   StackResponse,
   WorktreeCreateRequest,
   WorktreeCreateResponse,
 } from "#shared/types";
+import { DEFAULT_WORKTREE_CMD } from "#shared/commands";
 
 const now = Date.now();
 const min = 60_000;
@@ -840,7 +842,18 @@ export function fxGetPrs(dir: string): PrListResponse {
 }
 
 export function fxCreateWorktree(req: WorktreeCreateRequest): WorktreeCreateResponse {
-  return { dir: `${req.dir}/worktrees/${req.branch}`, branch: req.branch, session: req.branch };
+  return { dir: `${req.dir}/worktrees/${req.branch}`, branch: req.branch };
+}
+
+let fxWorktreeCmd = DEFAULT_WORKTREE_CMD;
+
+export function fxGetCommands(): CommandsResponse {
+  return { worktreeCreate: fxWorktreeCmd };
+}
+
+export function fxPutCommands(req: CommandsResponse): CommandsResponse {
+  fxWorktreeCmd = req.worktreeCreate;
+  return { worktreeCreate: fxWorktreeCmd };
 }
 
 export function fxGetDiff(dir: string, base: string): DiffResponse {

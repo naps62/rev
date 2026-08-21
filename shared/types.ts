@@ -97,11 +97,19 @@ export interface WorktreeCreateRequest {
 }
 
 export interface WorktreeCreateResponse {
-  /** Absolute path of the created worktree. */
-  dir: string;
+  /**
+   * Checkout now on the branch, null when the configured command created
+   * something outside `git worktree list` (e.g. a separate clone) — those
+   * appear in /api/repos after the rescan this endpoint triggers.
+   */
+  dir: string | null;
   branch: string;
-  /** Title of the agent-of-empires session created for it. */
-  session: string;
+}
+
+/** The UI-configurable command templates the server runs; see shared/commands.ts. */
+export interface CommandsResponse {
+  /** Argv template run by POST /api/worktrees ({dir}, {branch}, {remoteUrl}). */
+  worktreeCreate: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -513,8 +521,11 @@ export type ServerMessage =
 //        repo's origin forge, annotated with the local checkout on each
 //        branch; prs:null when the forge can't be queried)
 // POST   /api/worktrees                      ← WorktreeCreateRequest
-//        → WorktreeCreateResponse (201). Creates an agent-of-empires
-//        worktree + session for the branch via `aoe add`, then re-scans.
+//        → WorktreeCreateResponse (201). Runs the configured worktree-create
+//        command for the branch, then re-scans discovery.
+// GET    /api/commands                       → CommandsResponse
+// PUT    /api/commands                       ← CommandsResponse → CommandsResponse
+//        Persists the worktree-create template (settings table).
 // POST   /api/fetch                          ← { dir, base } → { ok, baseBehind }
 //        Runs `git fetch` for base's upstream remote so the review can be
 //        re-based against origin's truth without leaving the page.

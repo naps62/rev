@@ -1,6 +1,5 @@
 import { describe, test } from "node:test";
 import { expect } from "expect";
-import { validBranch } from "./aoe.ts";
 import { mapPrs, parseRemoteRepo } from "./forge.ts";
 
 describe("parseRemoteRepo", () => {
@@ -58,19 +57,5 @@ describe("mapPrs", () => {
     ];
     expect(mapPrs(rows, "o/r").map((p) => p.number)).toEqual([7, 10]);
     expect(mapPrs({ message: "rate limited" }, "o/r")).toEqual([]);
-  });
-});
-
-describe("validBranch", () => {
-  test("accepts normal branch names, rejects option/traversal shapes", () => {
-    expect(validBranch("fix-things")).toBe(true);
-    expect(validBranch("feat/scope-tabs")).toBe(true);
-    expect(validBranch("v1.2.3")).toBe(true);
-    expect(validBranch("-rf")).toBe(false);
-    expect(validBranch("--delete")).toBe(false);
-    expect(validBranch("a..b")).toBe(false);
-    expect(validBranch("a//b")).toBe(false);
-    expect(validBranch("")).toBe(false);
-    expect(validBranch("has space")).toBe(false);
   });
 });

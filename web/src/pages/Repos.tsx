@@ -761,7 +761,7 @@ function ProjectCard({
 /**
  * Open PRs on origin whose branch has no local checkout, collapsed by
  * default — on shared repos most open PRs are other people's. Each row can
- * create an aoe worktree + agent session for the branch.
+ * create a checkout via the configurable worktree command (settings).
  */
 function RemotePrs({ repo: r }: { repo: RepoInfo }) {
   const [open, setOpen] = useState(false);
@@ -835,7 +835,7 @@ function PrRow({ pr, dir }: { pr: PrInfo; dir: string }) {
           type="button"
           onClick={() => create.mutate()}
           disabled={create.isPending}
-          title="create a worktree and an agent-of-empires session for this branch"
+          title="check out this branch — runs the worktree command from settings → commands"
           className="rounded-sm border border-edge px-1.5 py-0.5 font-mono text-[10.5px] text-mute transition-colors duration-150 hover:border-accent/50 hover:text-fg disabled:text-faint"
         >
           {create.isPending ? "creating…" : "+ worktree"}
