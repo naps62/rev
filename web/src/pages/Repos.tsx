@@ -725,6 +725,12 @@ function ProjectCard({
   // dim rows are idle worktrees; open-PR rows slot between the two groups
   const activeRows = c.rows.filter((row) => !row.dim);
   const idleRows = c.rows.filter((row) => row.dim);
+  const prOf = (row: CardRow) =>
+    row.repo.branch ? byBranch.get(row.repo.branch) : undefined;
+  const reserveRm = c.rows.some((row) => {
+    const pr = prOf(row);
+    return pr !== undefined && pr.state !== "open";
+  });
   const header = (
     <>
       <span className="flex items-center gap-2">
@@ -773,8 +779,9 @@ function ProjectCard({
               key={row.repo.dir}
               repo={row.repo}
               dim={row.dim}
-              pr={row.repo.branch ? byBranch.get(row.repo.branch) : undefined}
+              pr={prOf(row)}
               cardDir={r.dir}
+              reserveRm={reserveRm}
             />
           ))}
         </div>
@@ -789,8 +796,9 @@ function ProjectCard({
               key={row.repo.dir}
               repo={row.repo}
               dim={row.dim}
-              pr={row.repo.branch ? byBranch.get(row.repo.branch) : undefined}
+              pr={prOf(row)}
               cardDir={r.dir}
+              reserveRm={reserveRm}
             />
           ))}
         </div>
@@ -906,31 +914,28 @@ function RemoveWorktree({ dir, cardDir }: { dir: string; cardDir: string }) {
     },
   });
   return (
-    <>
-      {remove.isError && (
-        <span title={(remove.error as Error).message} className="relative z-10 shrink-0 font-mono text-[10.5px] text-del">
-          failed
-        </span>
+    <button
+      type="button"
+      onClick={() => {
+        if (!armed) setArmed(true);
+        else remove.mutate();
+      }}
+      onBlur={() => setArmed(false)}
+      disabled={remove.isPending}
+      title={
+        remove.isError
+          ? `removal failed: ${(remove.error as Error).message}`
+          : "remove this worktree — runs the remove command from settings → commands"
+      }
+      className={cx(
+        "relative z-10 shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[10.5px] transition-colors duration-150 disabled:text-faint",
+        armed || remove.isError
+          ? "border-del/60 text-del hover:border-del"
+          : "border-edge text-mute hover:border-del/50 hover:text-del",
       )}
-      <button
-        type="button"
-        onClick={() => {
-          if (!armed) setArmed(true);
-          else remove.mutate();
-        }}
-        onBlur={() => setArmed(false)}
-        disabled={remove.isPending}
-        title="remove this worktree — runs the remove command from settings → commands"
-        className={cx(
-          "relative z-10 shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[10.5px] transition-colors duration-150 disabled:text-faint",
-          armed
-            ? "border-del/60 text-del hover:border-del"
-            : "border-edge text-mute hover:border-del/50 hover:text-del",
-        )}
-      >
-        {remove.isPending ? "…" : armed ? "sure?" : "rm"}
-      </button>
-    </>
+    >
+      {remove.isPending ? "…" : armed ? "rm?" : remove.isError ? "rm!" : "rm"}
+    </button>
   );
 }
 
@@ -965,14 +970,18 @@ function WorktreeRow({
   dim,
   pr,
   cardDir,
+  reserveRm,
 }: {
   repo: RepoInfo;
   dim: boolean;
   pr?: PrInfo;
   cardDir: string;
+  /** Some sibling row shows the rm button — hold its column so times align. */
+  reserveRm: boolean;
 }) {
   // A worktree's dir name repeats its branch — the branch IS its identity.
   const checkout = r.branch ?? `detached @ ${r.head}`;
+  const removable = pr !== undefined && pr.state !== "open";
   return (
     // The whole row navigates via the cover link; real controls (PR link,
     // remove button) sit above it on z-10 — anchors can't nest.
@@ -989,12 +998,16 @@ function WorktreeRow({
         className="absolute inset-0"
       />
       <DirtyDot dirty={r.dirty} />
-      <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg">{checkout}</span>
+      <span className="min-w-0 truncate font-mono text-[12px] text-fg">{checkout}</span>
       {pr && <PrBadge pr={pr} />}
       {/* ahead/behind is noise once the branch's PR is finished */}
-      {(!pr || pr.state === "open") && <Drift repo={r} />}
+      {!removable && <Drift repo={r} />}
       <Meta repo={r} />
-      {pr && pr.state !== "open" && <RemoveWorktree dir={r.dir} cardDir={cardDir} />}
+      {reserveRm && (
+        <span className="flex w-8 shrink-0 justify-end">
+          {removable && <RemoveWorktree dir={r.dir} cardDir={cardDir} />}
+        </span>
+      )}
     </div>
   );
 }
