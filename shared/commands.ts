@@ -64,6 +64,7 @@ export const SESSION_SPAWN_PLACEHOLDERS: Record<string, string> = {
   "{dir}": "absolute path of the checkout the comments target",
   "{branch}": "the checkout's branch (empty when detached)",
   "{repo}": "directory name of the repo's main checkout",
+  "{mainDir}": "absolute path of the repo's main checkout",
 };
 
 /**
@@ -75,12 +76,14 @@ const SESSION_SPAWN_PROMPT = "Address the incoming rev review comments.";
 
 export const SESSION_SPAWN_PRESETS: CommandPreset[] = [
   {
-    // aoe shlex-splits --extra-args into words appended after the agent
-    // binary, so the prompt needs its own embedded quotes to reach claude
-    // as one argument.
+    // The --worktree flow (not a plain `aoe add {dir}`) so aoe attaches to
+    // the existing worktree and records its main repo — plain adds group
+    // the session under the worktree's own folder name. aoe shlex-splits
+    // --extra-args into words appended after the agent binary, so the
+    // prompt needs its own embedded quotes to reach claude as one argument.
     name: "aoe",
-    template: `aoe add {dir} -g {repo} --launch --extra-args '"${SESSION_SPAWN_PROMPT}"'`,
-    blurb: "agent-of-empires session, launched immediately",
+    template: `aoe add {mainDir} --worktree {branch} --launch --extra-args '"${SESSION_SPAWN_PROMPT}"'`,
+    blurb: "agent-of-empires session on the worktree, launched immediately",
   },
   {
     name: "tmux",

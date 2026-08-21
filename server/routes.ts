@@ -723,6 +723,7 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
             b.dir,
             me?.branch ?? null,
             basename(me?.mainDir ?? b.dir),
+            me?.mainDir ?? b.dir,
           );
           return waitForAgent(b.dir);
         })();
