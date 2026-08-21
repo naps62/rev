@@ -352,7 +352,9 @@ export function submitPending(dir: string): {
 export function hasPending(dir: string): boolean {
   return (
     must()
-      .prepare("SELECT 1 FROM comments WHERE dir = ? AND submitted_seq IS NULL LIMIT 1")
+      .prepare(
+        "SELECT 1 FROM comments WHERE dir = ? AND submitted_seq IS NULL LIMIT 1",
+      )
       .get(dir) !== undefined
   );
 }

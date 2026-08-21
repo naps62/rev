@@ -41,7 +41,7 @@ export const DEFAULT_WORKTREE_CMD = WORKTREE_CMD_PRESETS[0]!.template;
 export const SESSION_SPAWN_PLACEHOLDERS: Record<string, string> = {
   "{dir}": "absolute path of the checkout the comments target",
   "{branch}": "the checkout's branch (empty when detached)",
-  "{repo}": "the repo's name (basename of its main checkout)",
+  "{repo}": "directory name of the repo's main checkout",
 };
 
 /**
@@ -49,7 +49,7 @@ export const SESSION_SPAWN_PLACEHOLDERS: Record<string, string> = {
  * never takes a turn, so it never arms the comment watcher and the held
  * batch would time out.
  */
-export const SESSION_SPAWN_PROMPT = "Address the incoming rev review comments.";
+const SESSION_SPAWN_PROMPT = "Address the incoming rev review comments.";
 
 export const SESSION_SPAWN_PRESETS: CommandPreset[] = [
   {

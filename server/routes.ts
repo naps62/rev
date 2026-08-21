@@ -11,15 +11,22 @@
 
 import { existsSync, realpathSync } from "node:fs";
 import { readFile as readFileBytes, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  resolve,
+  sep,
+} from "node:path";
 import { Hono } from "hono";
 import { TUNING } from "#shared/tuning";
 import type {
+  CommandsUpdateRequest,
   Comment,
   CommentCreateRequest,
   CommentListResponse,
   CommentPatchRequest,
-  CommandsUpdateRequest,
   CommentsAckRequest,
   CommentsSubmitRequest,
   FileWriteRequest,
@@ -347,18 +354,27 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   });
 
   app.get("/commands", (c) =>
-    c.json({ worktreeCreate: worktreeCommand(), sessionSpawn: sessionSpawnCommand() }),
+    c.json({
+      worktreeCreate: worktreeCommand(),
+      sessionSpawn: sessionSpawnCommand(),
+    }),
   );
 
   app.put("/commands", async (c) => {
-    const b = (await c.req.json().catch(() => null)) as CommandsUpdateRequest | null;
+    const b = (await c.req
+      .json()
+      .catch(() => null)) as CommandsUpdateRequest | null;
     if (
       !b ||
       (b.worktreeCreate === undefined && b.sessionSpawn === undefined) ||
-      (b.worktreeCreate !== undefined && typeof b.worktreeCreate !== "string") ||
+      (b.worktreeCreate !== undefined &&
+        typeof b.worktreeCreate !== "string") ||
       (b.sessionSpawn !== undefined && typeof b.sessionSpawn !== "string")
     ) {
-      return c.json({ error: "worktreeCreate and/or sessionSpawn (strings) required" }, 400);
+      return c.json(
+        { error: "worktreeCreate and/or sessionSpawn (strings) required" },
+        400,
+      );
     }
     try {
       if (b.worktreeCreate !== undefined) setWorktreeCommand(b.worktreeCreate);
@@ -368,7 +384,10 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
         return c.json({ error: err.message }, 400);
       throw err;
     }
-    return c.json({ worktreeCreate: worktreeCommand(), sessionSpawn: sessionSpawnCommand() });
+    return c.json({
+      worktreeCreate: worktreeCommand(),
+      sessionSpawn: sessionSpawnCommand(),
+    });
   });
 
   app.get("/settings", (c) => c.json(uiSettings()));
@@ -667,13 +686,21 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     // No session listening: start one first and hold the batch until its
     // watcher arrives, so a fresh watcher's cursor init can't skip it.
     let spawned = false;
-    if (sessionSpawnCommand() !== "" && hasPending(b.dir) && !agentListening(b.dir)) {
+    if (
+      sessionSpawnCommand() !== "" &&
+      hasPending(b.dir) &&
+      !agentListening(b.dir)
+    ) {
       let spawn = spawns.get(b.dir);
       if (!spawn) {
         spawn = (async () => {
           const repos = await listRepos();
           const me = repos.find((r) => r.dir === b.dir);
-          await runSessionSpawnCommand(b.dir, me?.branch ?? null, basename(me?.mainDir ?? b.dir));
+          await runSessionSpawnCommand(
+            b.dir,
+            me?.branch ?? null,
+            basename(me?.mainDir ?? b.dir),
+          );
           return waitForAgent(b.dir);
         })();
         spawn.finally(() => spawns.delete(b.dir)).catch(() => {});
@@ -684,11 +711,18 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       try {
         ready = await spawn;
       } catch (err) {
-        if (err instanceof CommandError) return c.json({ error: err.message }, 400);
+        if (err instanceof CommandError)
+          return c.json({ error: err.message }, 400);
         throw err;
       }
       if (!ready) {
-        return c.json({ error: "spawned session never started listening; comments left pending" }, 504);
+        return c.json(
+          {
+            error:
+              "spawned session never started listening; comments left pending",
+          },
+          504,
+        );
       }
     }
     const res = submitPending(b.dir);
@@ -702,8 +736,13 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   app.get("/agent", async (c) => {
     const dir = c.req.query("dir");
     if (!dir) return c.json({ error: "dir is required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
-    return c.json({ dir, listening: agentListening(dir), spawnConfigured: sessionSpawnCommand() !== "" });
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
+    return c.json({
+      dir,
+      listening: agentListening(dir),
+      spawnConfigured: sessionSpawnCommand() !== "",
+    });
   });
 
   app.post("/comments/ack", async (c) => {

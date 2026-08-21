@@ -12,6 +12,7 @@ import type {
   CommentCreateRequest,
   CommentListResponse,
   CommentPatchRequest,
+  CommentsSubmitResponse,
   DiffSummaryResponse,
   FileContentResponse,
   FileDiffResponse,
@@ -20,7 +21,6 @@ import type {
   GithubConvosResponse,
   GithubReplyRequest,
   GithubResolveRequest,
-  CommentsSubmitResponse,
   PrListResponse,
   RefsResponse,
   RepoInfo,
@@ -117,7 +117,9 @@ export async function putCommands(
   return request("/api/commands", { method: "PUT", body: JSON.stringify(req) });
 }
 
-export async function getAgentStatus(dir: string): Promise<AgentStatusResponse> {
+export async function getAgentStatus(
+  dir: string,
+): Promise<AgentStatusResponse> {
   if (isFixture()) return tick((await fx()).fxGetAgentStatus(dir));
   const q = new URLSearchParams({ dir });
   return request(`/api/agent?${q}`);

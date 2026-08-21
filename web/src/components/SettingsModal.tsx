@@ -764,7 +764,9 @@ function CommandEditor({
         </button>
       </div>
       {save.isError && (
-        <p className="mt-1.5 text-[11.5px] text-del">{(save.error as Error).message}</p>
+        <p className="mt-1.5 text-[11.5px] text-del">
+          {(save.error as Error).message}
+        </p>
       )}
       <dl className="mt-3 space-y-1">
         {Object.entries(placeholders).map(([ph, desc]) => (
@@ -981,7 +983,7 @@ export function SettingsControl({ review }: { review?: ReviewSettings }) {
             ref={panelRef}
             tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
-            className="modal-in flex max-h-[min(600px,100%)] w-full max-w-[680px] flex-col overflow-hidden rounded-md border border-edge bg-panel shadow-pop outline-none sm:h-[min(560px,100%)] sm:flex-row"
+            className="modal-in flex max-h-[min(760px,100%)] w-full max-w-[860px] flex-col overflow-hidden rounded-md border border-edge bg-panel shadow-pop outline-none sm:h-[min(700px,100%)] sm:flex-row"
           >
             <nav
               aria-label="Settings sections"

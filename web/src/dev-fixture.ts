@@ -5,11 +5,18 @@
  * review flow is exercisable offline.
  */
 
-import { DEFAULT_SESSION_SPAWN_CMD, DEFAULT_WORKTREE_CMD } from "#shared/commands";
+import {
+  DEFAULT_SESSION_SPAWN_CMD,
+  DEFAULT_WORKTREE_CMD,
+} from "#shared/commands";
 import type {
+  AgentStatusResponse,
+  CommandsResponse,
+  CommandsUpdateRequest,
   Comment,
   CommentCreateRequest,
   CommentPatchRequest,
+  CommentsSubmitResponse,
   DiffLine,
   DiffResponse,
   DiffSummaryResponse,
@@ -26,10 +33,6 @@ import type {
   PrListResponse,
   RepoInfo,
   SeenRequest,
-  AgentStatusResponse,
-  CommandsResponse,
-  CommandsUpdateRequest,
-  CommentsSubmitResponse,
   SemanticDiffResponse,
   StackResponse,
   UiSettings,
