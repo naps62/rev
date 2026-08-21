@@ -34,7 +34,6 @@ CURSOR_FILE="$REV_STATE/$KEY.cursor"
 LOCK_FILE="$REV_STATE/$KEY.lock"
 PID_FILE="$REV_STATE/$KEY.pid"
 
-printf '%s %s\n' "$$" "$DIR" >"$PID_FILE"
 HELD_LOCK=""
 cleanup() {
   [[ -n "$HELD_LOCK" ]] && rev_unlock "$HELD_LOCK" || true
@@ -42,6 +41,17 @@ cleanup() {
 }
 release_lock() { [[ -n "$HELD_LOCK" ]] && { rev_unlock "$HELD_LOCK"; HELD_LOCK=""; } || true; }
 trap cleanup EXIT
+
+# One live watcher per dir: duplicates share the cursor, so each delivers
+# the same batch into a different session. Newest armer wins.
+rev_lock "$LOCK_FILE" && HELD_LOCK="$LOCK_FILE" || true
+OLD=$(cut -d' ' -f1 "$PID_FILE" 2>/dev/null || true)
+if [[ -n "$OLD" && "$OLD" != "$$" ]] && kill -0 "$OLD" 2>/dev/null &&
+   ps -o command= -p "$OLD" 2>/dev/null | grep -q rev-watch; then
+  kill "$OLD" 2>/dev/null || true
+fi
+printf '%s %s\n' "$$" "$DIR" >"$PID_FILE"
+release_lock
 
 # Arming session gone = advancing the cursor would eat comments meant for
 # the next session. The PPID fallback breaks when the harness detaches
