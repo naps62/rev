@@ -86,8 +86,8 @@ export function setSessionSpawnCommand(template: string): void {
   if (trimmed !== "") {
     if (splitTemplate(trimmed).length === 0)
       throw new CommandError("empty command");
-    if (!trimmed.includes("{dir}"))
-      throw new CommandError("template must use {dir}");
+    if (!trimmed.includes("{dir}") && !trimmed.includes("{mainDir}"))
+      throw new CommandError("template must use {dir} or {mainDir}");
   }
   setSetting(SESSION_SPAWN_CMD_KEY, trimmed);
 }
@@ -97,6 +97,7 @@ export async function runSessionSpawnCommand(
   dir: string,
   branch: string | null,
   repo: string,
+  mainDir: string,
 ): Promise<void> {
   const template = sessionSpawnCommand();
   if (template === "")
@@ -105,6 +106,7 @@ export async function runSessionSpawnCommand(
     dir,
     branch: branch ?? "",
     repo,
+    mainDir,
   });
   await exec(argv, dir, TUNING.SESSION_SPAWN_CMD_TIMEOUT_MS);
 }
