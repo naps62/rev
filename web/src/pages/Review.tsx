@@ -526,10 +526,7 @@ export function Review() {
     const attempt = () => {
       const el = document.querySelector<HTMLElement>(sel);
       if (el) {
-        cancelGlide();
-        window.scrollTo({
-          top: el.getBoundingClientRect().top + window.scrollY - eyeAnchorY(),
-        });
+        glideTo(el);
         el.classList.remove("el-flash");
         void el.offsetWidth;
         el.classList.add("el-flash");
