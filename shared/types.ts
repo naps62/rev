@@ -231,20 +231,6 @@ export interface PresenceResponse {
   lastSeen: number;
 }
 
-/**
- * Delta between the content snapshotted when a file was marked seen and the
- * current working tree — what still needs re-review on a stale file. New-side
- * line numbers are working-tree lines (same axis as the full diff's new side).
- */
-export interface InterdiffResponse {
-  dir: string;
-  base: string;
-  path: string;
-  /** contentHash the snapshot was taken at (what the user last reviewed). */
-  sinceHash: string;
-  file: FileDiff;
-}
-
 // ---------------------------------------------------------------------------
 // Branch stacks
 // ---------------------------------------------------------------------------
@@ -607,8 +593,6 @@ export type ServerMessage =
 // GET    /api/diff/file?dir&base&path[&oldPath] → FileDiffResponse (one file's hunks)
 // GET    /api/refs?dir                       → RefsResponse   (base-ref candidates)
 // GET    /api/stack?dir&base                 → StackResponse  (branch-stack detection)
-// GET    /api/diff/interdiff?dir&base&path   → InterdiffResponse (delta since the
-//        seen snapshot; 404 when the path has no snapshot)
 // GET    /api/semantic?dir&base              → SemanticDiffResponse (entity-level
 //        diff via the optional sem CLI; available:false when sem can't deliver)
 // GET    /api/file?dir&path[&rev]            → FileContentResponse

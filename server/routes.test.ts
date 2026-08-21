@@ -1,6 +1,6 @@
 import { before as beforeAll, describe, test } from "node:test";
 import { expect } from "expect";
-import { rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { symlinkSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -9,7 +9,6 @@ import type {
   DiffResponse,
   DiffSummaryResponse,
   FileDiffResponse,
-  InterdiffResponse,
   PresenceResponse,
   ServerMessage,
 } from "#shared/types";
@@ -398,62 +397,6 @@ describe("GET /presence", () => {
 
     const bad = await app.request("/presence?dir=/etc");
     expect(bad.status).toBe(400);
-  });
-});
-
-describe("interdiff", () => {
-  test("seen snapshots the file; interdiff returns only the delta since", async () => {
-    const dir = makeRepo("routes-interdiff", { "a.txt": "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n" });
-    git(dir, "checkout", "-b", "f");
-    // first round of changes, reviewed and marked seen
-    write(dir, "a.txt", "l1\nCHANGED\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n");
-    const q = `dir=${encodeURIComponent(dir)}&base=main`;
-    const hash1 = hashContent("l1\nCHANGED\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n");
-    await json("PUT", "/seen", { dir, base: "main", path: "a.txt", contentHash: hash1, seen: true });
-
-    // nothing changed since → interdiff exists, zero hunks
-    const clean = (await (await app.request(`/diff/interdiff?${q}&path=a.txt`)).json()) as InterdiffResponse;
-    expect(clean.sinceHash).toBe(hash1);
-    expect(clean.file.hunks).toEqual([]);
-
-    // second round of changes at the END of the file
-    write(dir, "a.txt", "l1\nCHANGED\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nAFTER\n");
-    const inter = (await (await app.request(`/diff/interdiff?${q}&path=a.txt`)).json()) as InterdiffResponse;
-    // the delta shows ONLY round two: one hunk touching AFTER, not CHANGED
-    expect(inter.file.hunks).toHaveLength(1);
-    const text = inter.file.hunks[0]!.lines.map((l) => `${l.kind}:${l.text}`).join("|");
-    expect(text).toContain("add:AFTER");
-    expect(text).toContain("del:l10");
-    expect(text).not.toContain("add:CHANGED");
-    // while the full per-file diff still shows both rounds
-    const full = (await (await app.request(`/diff/file?${q}&path=a.txt`)).json()) as FileDiffResponse;
-    const fullText = full.file.hunks.flatMap((h) => h.lines).map((l) => `${l.kind}:${l.text}`).join("|");
-    expect(fullText).toContain("add:CHANGED");
-    expect(fullText).toContain("add:AFTER");
-
-    // un-marking seen drops the snapshot
-    await json("PUT", "/seen", { dir, base: "main", path: "a.txt", contentHash: hash1, seen: false });
-    const gone = await app.request(`/diff/interdiff?${q}&path=a.txt`);
-    expect(gone.status).toBe(404);
-  });
-
-  test("hash-mismatched seen stores no snapshot; deleted file diffs to all-del", async () => {
-    const dir = makeRepo("routes-interdiff2", { "b.txt": "x1\nx2\n" });
-    git(dir, "checkout", "-b", "f");
-    write(dir, "b.txt", "x1\nx2\nx3\n");
-    const q = `dir=${encodeURIComponent(dir)}&base=main`;
-
-    // stale contentHash (file moved on) → seen recorded but no snapshot
-    await json("PUT", "/seen", { dir, base: "main", path: "b.txt", contentHash: "0123456789abcdef", seen: true });
-    expect((await app.request(`/diff/interdiff?${q}&path=b.txt`)).status).toBe(404);
-
-    // proper snapshot, then delete the file → interdiff is all deletions
-    const h = hashContent("x1\nx2\nx3\n");
-    await json("PUT", "/seen", { dir, base: "main", path: "b.txt", contentHash: h, seen: true });
-    rmSync(join(dir, "b.txt"));
-    const inter = (await (await app.request(`/diff/interdiff?${q}&path=b.txt`)).json()) as InterdiffResponse;
-    expect(inter.file.hunks[0]!.lines.every((l) => l.kind === "del")).toBe(true);
-    expect(inter.file.contentHash).toBe("");
   });
 });
 
