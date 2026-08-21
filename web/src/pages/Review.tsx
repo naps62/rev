@@ -66,6 +66,8 @@ import { useRevSocket } from "../ws";
 
 const DEST_KEY = "rev.commentDest";
 
+const NARROW_PANE_PX = 820;
+
 function initialMode(params: URLSearchParams): DiffMode {
   const p = params.get("mode");
   if (p === "split" || p === "unified" || p === "mixed") return p;
@@ -296,6 +298,12 @@ export function Review() {
     setModeState(m);
     saveDiffMode(m);
   };
+  // Below this pane width each split side is too cramped to read; force
+  // unified for display without touching the saved preference.
+  const [narrowPane, setNarrowPane] = useState(
+    () => window.innerWidth < NARROW_PANE_PX,
+  );
+  const effectiveMode: DiffMode = narrowPane ? "unified" : mode;
   const [features, setFeaturesState] = useState<FeatureFlags>(() =>
     loadFeatures(params),
   );
@@ -708,6 +716,19 @@ export function Review() {
     if (!features.crosshair || !el) return;
     return attachCrosshair(el);
   }, [features.crosshair, diffQ.data]);
+
+  // Track the diff pane's width so narrowPane follows window resizes and
+  // side-panel open/close alike.
+  useEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const measure = () =>
+      setNarrowPane(main.clientWidth > 0 && main.clientWidth < NARROW_PANE_PX);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(main);
+    return () => ro.disconnect();
+  }, [diffQ.data]);
 
   // The panel's resting position tracks the current file's section top;
   // sticky top still caps it once the file scrolls past. Re-measured on
@@ -1205,7 +1226,7 @@ export function Review() {
                       currentBase={base}
                       mergeBase={diffQ.data.mergeBase}
                       file={f}
-                      mode={mode}
+                      mode={effectiveMode}
                       threads={threadsByFile.get(f.path) ?? []}
                       isCurrent={currentPath === f.path}
                       foldImports={features.importFolds}
