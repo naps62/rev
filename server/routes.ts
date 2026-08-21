@@ -35,14 +35,11 @@ import {
   ackPickedUp,
   createComment,
   DbError,
-  deleteSeenSnapshot,
-  getSeenSnapshot,
   getSetting,
   setSetting,
   hasPending,
   listComments,
   patchComment,
-  putSeenSnapshot,
   seenHashes,
   setSeen,
   submitPending,
@@ -79,11 +76,9 @@ import {
   computeDiff,
   computeDiffSummary,
   computeFileDiff,
-  diffBlobVsWorkingFile,
   fetchBase,
   GitError,
   hashContent,
-  isBinaryBytes,
   listRefs,
   readFile,
   readRawFile,
@@ -418,32 +413,6 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     return c.json({ dir, base, file, computedAt: Date.now() });
   });
 
-  app.get("/diff/interdiff", async (c) => {
-    const dir = c.req.query("dir");
-    const base = c.req.query("base");
-    const path = c.req.query("path");
-    if (!dir || !base || !path) return c.json({ error: "dir, base and path are required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
-    const target = resolveInRepo(dir, path);
-    if (target === null) return c.json({ error: `path escapes repo: ${path}` }, 400);
-    const snap = getSeenSnapshot(dir, base, path);
-    if (snap === null) return c.json({ error: `no seen snapshot for ${path}` }, 404);
-    const delta = await diffBlobVsWorkingFile(dir, path, snap.content);
-    const contentHash = existsSync(target) ? hashContent(await readFileBytes(target)) : "";
-    const file = {
-      path,
-      status: "modified" as const,
-      binary: delta.binary,
-      hunks: delta.hunks,
-      additions: delta.additions,
-      deletions: delta.deletions,
-      contentHash,
-      seen: false,
-      stale: true,
-    };
-    return c.json({ dir, base, path, sinceHash: snap.contentHash, file });
-  });
-
   app.get("/semantic", async (c) => {
     const dir = c.req.query("dir");
     const base = c.req.query("base");
@@ -773,35 +742,6 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     const target = resolveInRepo(b.dir, b.path);
     if (target === null) return c.json({ error: `path escapes repo: ${b.path}` }, 400);
     setSeen(b.dir, b.base, b.path, b.contentHash, b.seen);
-    // Snapshot the reviewed content as the future interdiff baseline. Only
-    // when the on-disk content still matches what the client marked seen —
-    // and never for binaries or oversized files. Otherwise drop any old
-    // snapshot so a stale baseline can't produce a wrong delta.
-    let snapshotted = false;
-    if (b.seen) {
-      try {
-        const bytes = await readFileBytes(target);
-        if (
-          bytes.length <= TUNING.MAX_UNTRACKED_BYTES &&
-          hashContent(bytes) === b.contentHash &&
-          !isBinaryBytes(bytes)
-        ) {
-          // fatal decoder: an invalid-UTF-8 snapshot would diff its U+FFFD
-          // replacements against the real bytes forever after
-          putSeenSnapshot(
-            b.dir,
-            b.base,
-            b.path,
-            b.contentHash,
-            new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-          );
-          snapshotted = true;
-        }
-      } catch {
-        // vanished mid-read or undecodable: seen is recorded, baseline isn't
-      }
-    }
-    if (!snapshotted) deleteSeenSnapshot(b.dir, b.base, b.path);
     // Review progress on the projects page counts seen lines; make it refetch.
     invalidateRepoList();
     broadcast({ type: "repos-changed" });

@@ -39,9 +39,16 @@ function deploy() {
     "git reset --hard origin/main",
     "./scripts/deploy.sh",
   ].join(" && ");
+  // The transient unit does NOT inherit this listener's environment; without
+  // forwarding, deploy.sh misses REV_SKIP_UNIT_INSTALL and clobbers (or fails
+  // on) unit files a config manager owns. The webhook secret stays behind —
+  // transient-unit env is readable via `systemctl --user show`.
+  const passEnv = Object.entries(process.env)
+    .filter(([k, v]) => k.startsWith("REV_") && k !== "REV_WEBHOOK_SECRET" && v !== undefined)
+    .map(([k, v]) => `--setenv=${k}=${v}`);
   const child = spawn(
     "systemd-run",
-    ["--user", "--collect", "flock", LOCK_FILE, "bash", "-c", cmd],
+    ["--user", "--collect", ...passEnv, "flock", LOCK_FILE, "bash", "-c", cmd],
     { detached: true, stdio: "ignore" },
   );
   child.unref();

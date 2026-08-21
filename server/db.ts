@@ -44,16 +44,8 @@ export function openDb(path: string = config.dbPath): void {
       content_hash TEXT NOT NULL,
       PRIMARY KEY (dir, base, path)
     );
-    CREATE TABLE IF NOT EXISTS seen_snapshots (
-      dir          TEXT NOT NULL,
-      base         TEXT NOT NULL,
-      path         TEXT NOT NULL,
-      content_hash TEXT NOT NULL,
-      content      TEXT NOT NULL,
-      created_at   INTEGER NOT NULL,
-      PRIMARY KEY (dir, base, path)
-    );
     DROP TABLE IF EXISTS seen_segments;
+    DROP TABLE IF EXISTS seen_snapshots;
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -401,44 +393,6 @@ export function setSeen(dir: string, base: string, path: string, contentHash: st
   } else {
     d.prepare("DELETE FROM seen WHERE dir = ? AND base = ? AND path = ?").run(dir, base, path);
   }
-}
-
-/**
- * Store the reviewed content for (dir, base, path) — the interdiff baseline.
- * One row per key; re-marking seen overwrites.
- */
-export function putSeenSnapshot(
-  dir: string,
-  base: string,
-  path: string,
-  contentHash: string,
-  content: string,
-): void {
-  must()
-    .prepare(
-      `INSERT INTO seen_snapshots (dir, base, path, content_hash, content, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT (dir, base, path) DO UPDATE
-         SET content_hash = excluded.content_hash,
-             content = excluded.content,
-             created_at = excluded.created_at`,
-    )
-    .run(dir, base, path, contentHash, content, Date.now());
-}
-
-export function deleteSeenSnapshot(dir: string, base: string, path: string): void {
-  must().prepare("DELETE FROM seen_snapshots WHERE dir = ? AND base = ? AND path = ?").run(dir, base, path);
-}
-
-export function getSeenSnapshot(
-  dir: string,
-  base: string,
-  path: string,
-): { contentHash: string; content: string } | null {
-  const row = must()
-    .prepare("SELECT content_hash, content FROM seen_snapshots WHERE dir = ? AND base = ? AND path = ?")
-    .get(dir, base, path) as { content_hash: string; content: string } | undefined;
-  return row ? { contentHash: row.content_hash, content: row.content } : null;
 }
 
 /** contentHash each path was marked seen at, for (dir, base). */

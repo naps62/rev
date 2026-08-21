@@ -22,7 +22,6 @@ import type {
   GithubReplyRequest,
   GithubResolveRequest,
   CommentsSubmitResponse,
-  InterdiffResponse,
   PrListResponse,
   RefsResponse,
   RepoInfo,
@@ -165,16 +164,6 @@ export async function getStack(dir: string, base: string): Promise<StackResponse
   if (isFixture()) return tick((await fx()).fxGetStack(dir, base));
   const q = new URLSearchParams({ dir, base });
   return request(`/api/stack?${q}`);
-}
-
-export async function getInterdiff(
-  dir: string,
-  base: string,
-  path: string,
-): Promise<InterdiffResponse> {
-  if (isFixture()) return tick((await fx()).fxGetInterdiff(dir, base, path));
-  const q = new URLSearchParams({ dir, base, path });
-  return request(`/api/diff/interdiff?${q}`);
 }
 
 export async function getFile(dir: string, path: string, rev?: string): Promise<FileContentResponse> {

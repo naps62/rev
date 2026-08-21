@@ -69,7 +69,7 @@ export const TUNING = {
   LONG_POLL_MS: 25_000,
 
   /** Pending comments auto-submit after this long without a new comment (page focused). */
-  PENDING_IDLE_SUBMIT_MS: 2 * 60_000,
+  PENDING_IDLE_SUBMIT_MS: 30_000,
 
   /**
    * Pending comments auto-submit this long after the page loses visibility.
