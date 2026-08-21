@@ -727,6 +727,21 @@ describe("session spawn on submit", () => {
     expect((await status()).listening).toBe(true);
   });
 
+  test("parked long-poll from a dead owner does not count as listening", async () => {
+    const dir = makeRepo("spawn-dead-waiter");
+    const dead = spawnSync("true").pid!;
+    const parked = app.request(
+      `/comments?dir=${encodeURIComponent(dir)}&since=0&wait=1&submitted=1&owner=${dead}`,
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    const status = (await (
+      await app.request(`/agent?dir=${encodeURIComponent(dir)}`)
+    ).json()) as { listening: boolean };
+    expect(status.listening).toBe(false);
+    await json("POST", "/comments", { dir, base: "main", author: "user", body: "wake" });
+    await parked;
+  });
+
   test("watcher never arrives: 504 and comments stay pending", async () => {
     const tuning = TUNING as { SESSION_SPAWN_READY_TIMEOUT_MS: number };
     const orig = tuning.SESSION_SPAWN_READY_TIMEOUT_MS;
