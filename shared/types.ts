@@ -112,6 +112,18 @@ export interface CommandsResponse {
   worktreeCreate: string;
 }
 
+/**
+ * UI preferences, stored server-side (settings table) and shared by every
+ * browser that uses this rev instance. All fields optional: absent = the
+ * client's default. `features` keys are the web FeatureFlags names; unknown
+ * keys are dropped on write.
+ */
+export interface UiSettings {
+  features?: Record<string, boolean>;
+  diffMode?: "unified" | "split" | "mixed";
+  theme?: "light" | "dark" | "auto";
+}
+
 // ---------------------------------------------------------------------------
 // Diffs
 // ---------------------------------------------------------------------------
@@ -526,6 +538,10 @@ export type ServerMessage =
 // GET    /api/commands                       → CommandsResponse
 // PUT    /api/commands                       ← CommandsResponse → CommandsResponse
 //        Persists the worktree-create template (settings table).
+// GET    /api/settings                       → UiSettings
+// PUT    /api/settings                       ← UiSettings → UiSettings
+//        Persists shared UI preferences (settings table); unknown fields
+//        and wrongly-typed values are dropped, not rejected.
 // POST   /api/fetch                          ← { dir, base } → { ok, baseBehind }
 //        Runs `git fetch` for base's upstream remote so the review can be
 //        re-based against origin's truth without leaving the page.

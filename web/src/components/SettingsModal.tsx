@@ -487,9 +487,8 @@ function KeyboardSection({ onReviewPage }: { onReviewPage: boolean }) {
 }
 
 /**
- * Server-side setting (unlike the rest of the modal): the command POST
- * /api/worktrees runs to check out a PR branch. Presets autofill the input;
- * nothing is saved until the save button.
+ * The command POST /api/worktrees runs to check out a PR branch. Presets
+ * autofill the input; nothing is saved until the save button.
  */
 function CommandsSection() {
   const qc = useQueryClient();
@@ -566,8 +565,8 @@ function CommandsSection() {
           ))}
         </dl>
         <p className="mt-3 text-[11px] leading-snug text-faint">
-          Saved on the server, applies to everyone using it. Anyone who can
-          reach rev can change it — trusted networks only.
+          Anyone who can reach rev can change this command — trusted networks
+          only.
         </p>
       </section>
     </div>
@@ -595,7 +594,7 @@ export function SettingsControl({ review }: { review?: ReviewSettings }) {
   const [section, setSection] = useState<SectionId>("features");
 
   // Off the review page there is no live state to bind to, so the modal
-  // edits the same localStorage store the next review will load from.
+  // edits the same server-backed store the next review will load from.
   const [stored, setStored] = useState(() => ({
     features: loadFeatures(new URLSearchParams()),
     mode: loadDiffMode(),
@@ -785,7 +784,9 @@ export function SettingsControl({ review }: { review?: ReviewSettings }) {
                     </span>
                   </span>
                 ) : (
-                  <span className="text-[11px] text-faint">settings apply to this browser</span>
+                  <span className="text-[11px] text-faint">
+                    saved on the server — shared by every browser
+                  </span>
                 )}
                 <span className="shrink-0 font-mono text-[10.5px] text-faint">
                   ? keyboard · esc close

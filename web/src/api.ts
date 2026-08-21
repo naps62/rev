@@ -22,6 +22,7 @@ import type {
   SeenRequest,
   SemanticDiffResponse,
   StackResponse,
+  UiSettings,
   WorktreeCreateRequest,
   WorktreeCreateResponse,
 } from "#shared/types";
@@ -99,6 +100,16 @@ export async function getCommands(): Promise<CommandsResponse> {
 export async function putCommands(req: CommandsResponse): Promise<CommandsResponse> {
   if (isFixture()) return tick((await fx()).fxPutCommands(req));
   return request("/api/commands", { method: "PUT", body: JSON.stringify(req) });
+}
+
+export async function getSettings(): Promise<UiSettings> {
+  if (isFixture()) return tick((await fx()).fxGetSettings());
+  return request("/api/settings");
+}
+
+export async function putSettings(req: UiSettings): Promise<UiSettings> {
+  if (isFixture()) return tick((await fx()).fxPutSettings(req));
+  return request("/api/settings", { method: "PUT", body: JSON.stringify(req) });
 }
 
 export async function getDiff(dir: string, base: string): Promise<DiffResponse> {

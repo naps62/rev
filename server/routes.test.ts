@@ -470,6 +470,24 @@ describe("commands", () => {
   });
 });
 
+describe("settings", () => {
+  test("GET starts empty, PUT sanitizes and persists", async () => {
+    expect(await (await app.request("/settings")).json()).toEqual({});
+    expect((await json("PUT", "/settings", null)).status).toBe(400);
+    expect((await json("PUT", "/settings", [1])).status).toBe(400);
+    const res = await json("PUT", "/settings", {
+      features: { grouping: true, symbols: false, junk: "yes" },
+      diffMode: "split",
+      theme: "sepia",
+      extra: 1,
+    });
+    expect(res.status).toBe(200);
+    const clean = { features: { grouping: true, symbols: false }, diffMode: "split" };
+    expect(await res.json()).toEqual(clean);
+    expect(await (await app.request("/settings")).json()).toEqual(clean);
+  });
+});
+
 describe("POST /worktrees end-to-end (default command)", () => {
   test("creates a worktree for a branch that only exists on origin", async () => {
     await json("PUT", "/commands", { worktreeCreate: DEFAULT_WORKTREE_CMD });

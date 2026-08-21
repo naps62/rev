@@ -23,6 +23,7 @@ import type {
   PrListResponse,
   SemanticDiffResponse,
   StackResponse,
+  UiSettings,
   WorktreeCreateRequest,
   WorktreeCreateResponse,
 } from "#shared/types";
@@ -854,6 +855,17 @@ export function fxGetCommands(): CommandsResponse {
 export function fxPutCommands(req: CommandsResponse): CommandsResponse {
   fxWorktreeCmd = req.worktreeCreate;
   return { worktreeCreate: fxWorktreeCmd };
+}
+
+let fxUiSettings: UiSettings = {};
+
+export function fxGetSettings(): UiSettings {
+  return fxUiSettings;
+}
+
+export function fxPutSettings(req: UiSettings): UiSettings {
+  fxUiSettings = req;
+  return fxUiSettings;
 }
 
 export function fxGetDiff(dir: string, base: string): DiffResponse {

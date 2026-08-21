@@ -23,6 +23,7 @@ import type {
   PresenceResponse,
   SeenRequest,
   ServerMessage,
+  UiSettings,
   WorktreeCreateRequest,
 } from "#shared/types";
 import { TUNING } from "#shared/tuning";
@@ -32,6 +33,8 @@ import {
   DbError,
   deleteSeenSnapshot,
   getSeenSnapshot,
+  getSetting,
+  setSetting,
   listComments,
   patchComment,
   putSeenSnapshot,
@@ -79,6 +82,37 @@ const IMAGE_CONTENT_TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".webp": "image/webp",
 };
+
+const UI_SETTINGS_KEY = "ui.settings";
+const DIFF_MODES = ["unified", "split", "mixed"] as const;
+const THEMES = ["light", "dark", "auto"] as const;
+
+function uiSettings(): UiSettings {
+  try {
+    return JSON.parse(getSetting(UI_SETTINGS_KEY) ?? "{}") as UiSettings;
+  } catch {
+    return {};
+  }
+}
+
+/** Whitelist fields and value types; anything else is dropped, not an error. */
+function sanitizeUiSettings(b: unknown): UiSettings | null {
+  if (typeof b !== "object" || b === null || Array.isArray(b)) return null;
+  const src = b as Record<string, unknown>;
+  const out: UiSettings = {};
+  if (typeof src.features === "object" && src.features !== null) {
+    const features: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(src.features)) {
+      if (typeof v === "boolean") features[k] = v;
+    }
+    out.features = features;
+  }
+  if (DIFF_MODES.includes(src.diffMode as never)) {
+    out.diffMode = src.diffMode as UiSettings["diffMode"];
+  }
+  if (THEMES.includes(src.theme as never)) out.theme = src.theme as UiSettings["theme"];
+  return out;
+}
 
 /**
  * Resolve a repo-relative path inside `dir`, or null when it escapes
@@ -233,6 +267,16 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       throw err;
     }
     return c.json({ worktreeCreate: worktreeCommand() });
+  });
+
+  app.get("/settings", (c) => c.json(uiSettings()));
+
+  app.put("/settings", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as unknown;
+    const clean = sanitizeUiSettings(b);
+    if (clean === null) return c.json({ error: "settings object required" }, 400);
+    setSetting(UI_SETTINGS_KEY, JSON.stringify(clean));
+    return c.json(clean);
   });
 
   app.get("/diff", async (c) => {
