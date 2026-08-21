@@ -764,7 +764,9 @@ function CommandEditor({
         </button>
       </div>
       {save.isError && (
-        <p className="mt-1.5 text-[11.5px] text-del">{(save.error as Error).message}</p>
+        <p className="mt-1.5 text-[11.5px] text-del">
+          {(save.error as Error).message}
+        </p>
       )}
       <dl className="mt-3 space-y-1">
         {Object.entries(placeholders).map(([ph, desc]) => (

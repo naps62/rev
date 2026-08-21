@@ -48,7 +48,7 @@ export const SESSION_SPAWN_PLACEHOLDERS: Record<string, string> = {
  * never takes a turn, so it never arms the comment watcher and the held
  * batch would time out.
  */
-export const SESSION_SPAWN_PROMPT = "Address the incoming rev review comments.";
+const SESSION_SPAWN_PROMPT = "Address the incoming rev review comments.";
 
 export const SESSION_SPAWN_PRESETS: CommandPreset[] = [
   {

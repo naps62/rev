@@ -47,7 +47,9 @@ export function PendingSubmit({
     refetchInterval: 15_000,
   });
   const willSpawn =
-    agentQ.data != null && !agentQ.data.listening && agentQ.data.spawnConfigured;
+    agentQ.data != null &&
+    !agentQ.data.listening &&
+    agentQ.data.spawnConfigured;
 
   // A new pending comment (maxSeq moves) restarts the idle window.
   useEffect(() => {
@@ -169,7 +171,11 @@ export function PendingSubmit({
         onClick={() => fireRef.current()}
         className="rounded-sm border border-accent/40 px-2 py-0.5 text-[12px] text-accent transition-colors duration-150 hover:bg-accent hover:text-bg disabled:cursor-default disabled:border-edge disabled:text-faint"
       >
-        {submitMut.isPending ? (willSpawn ? "starting session…" : "sending…") : "Send now"}
+        {submitMut.isPending
+          ? willSpawn
+            ? "starting session…"
+            : "sending…"
+          : "Send now"}
       </button>
     </div>
   );

@@ -95,7 +95,9 @@ describe("sessionSpawnCommand setting", () => {
     setSessionSpawnCommand("tmux new-session -d -c {dir} claude");
     expect(sessionSpawnCommand()).toBe("tmux new-session -d -c {dir} claude");
     expect(() => setSessionSpawnCommand("echo no-dir")).toThrow(CommandError);
-    expect(() => setSessionSpawnCommand(`echo "oops {dir}`)).toThrow(CommandError);
+    expect(() => setSessionSpawnCommand(`echo "oops {dir}`)).toThrow(
+      CommandError,
+    );
     expect(sessionSpawnCommand()).toBe("tmux new-session -d -c {dir} claude");
     setSessionSpawnCommand("  ");
     expect(sessionSpawnCommand()).toBe("");

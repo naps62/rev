@@ -6,7 +6,10 @@
  */
 
 import { execFile } from "node:child_process";
-import { DEFAULT_SESSION_SPAWN_CMD, DEFAULT_WORKTREE_CMD } from "#shared/commands";
+import {
+  DEFAULT_SESSION_SPAWN_CMD,
+  DEFAULT_WORKTREE_CMD,
+} from "#shared/commands";
 import { TUNING } from "#shared/tuning";
 import { getSetting, setSetting } from "./db.ts";
 import { run } from "./git.ts";
@@ -81,21 +84,34 @@ export function sessionSpawnCommand(): string {
 export function setSessionSpawnCommand(template: string): void {
   const trimmed = template.trim();
   if (trimmed !== "") {
-    if (splitTemplate(trimmed).length === 0) throw new CommandError("empty command");
-    if (!trimmed.includes("{dir}")) throw new CommandError("template must use {dir}");
+    if (splitTemplate(trimmed).length === 0)
+      throw new CommandError("empty command");
+    if (!trimmed.includes("{dir}"))
+      throw new CommandError("template must use {dir}");
   }
   setSetting(SESSION_SPAWN_CMD_KEY, trimmed);
 }
 
 /** Run the configured session-spawn command for a checkout; cwd = the checkout. */
-export async function runSessionSpawnCommand(dir: string, branch: string | null): Promise<void> {
+export async function runSessionSpawnCommand(
+  dir: string,
+  branch: string | null,
+): Promise<void> {
   const template = sessionSpawnCommand();
-  if (template === "") throw new CommandError("no session-spawn command configured");
-  const argv = substitute(splitTemplate(template), { dir, branch: branch ?? "" });
+  if (template === "")
+    throw new CommandError("no session-spawn command configured");
+  const argv = substitute(splitTemplate(template), {
+    dir,
+    branch: branch ?? "",
+  });
   await exec(argv, dir, TUNING.SESSION_SPAWN_CMD_TIMEOUT_MS);
 }
 
-function exec(argv: string[], cwd: string, timeout: number = TUNING.WORKTREE_CMD_TIMEOUT_MS): Promise<void> {
+function exec(
+  argv: string[],
+  cwd: string,
+  timeout: number = TUNING.WORKTREE_CMD_TIMEOUT_MS,
+): Promise<void> {
   return new Promise((res, rej) => {
     execFile(
       argv[0]!,
