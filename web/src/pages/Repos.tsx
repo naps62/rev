@@ -692,6 +692,9 @@ function ProjectCard({
   const r = c.entry.repo;
   const checkout = r.branch ?? `detached @ ${r.head}`;
   const clickable = hasDiff(r);
+  // dim rows are idle worktrees; open-PR rows slot between the two groups
+  const activeRows = c.rows.filter((row) => !row.dim);
+  const idleRows = c.rows.filter((row) => row.dim);
   const header = (
     <>
       <span className="flex items-center gap-2">
@@ -733,9 +736,19 @@ function ProjectCard({
         </div>
       )}
 
-      {c.rows.length > 0 && (
+      {activeRows.length > 0 && (
         <div className="divide-y divide-edge-soft border-t border-edge-soft">
-          {c.rows.map((row) => (
+          {activeRows.map((row) => (
+            <WorktreeRow key={row.repo.dir} repo={row.repo} dim={row.dim} />
+          ))}
+        </div>
+      )}
+
+      <RemotePrs repo={r} />
+
+      {idleRows.length > 0 && (
+        <div className="divide-y divide-edge-soft border-t border-edge-soft">
+          {idleRows.map((row) => (
             <WorktreeRow key={row.repo.dir} repo={row.repo} dim={row.dim} />
           ))}
         </div>
@@ -752,8 +765,6 @@ function ProjectCard({
             : `show ${c.idleCount} idle worktree${c.idleCount === 1 ? "" : "s"}`}
         </button>
       )}
-
-      <RemotePrs repo={r} />
     </section>
   );
 }
@@ -776,6 +787,13 @@ function RemotePrs({ repo: r }: { repo: RepoInfo }) {
   if (unattached.length === 0) return null;
   return (
     <>
+      {open && (
+        <div className="divide-y divide-edge-soft border-t border-edge-soft">
+          {unattached.map((pr) => (
+            <PrRow key={pr.number} pr={pr} dir={r.dir} />
+          ))}
+        </div>
+      )}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -785,13 +803,6 @@ function RemotePrs({ repo: r }: { repo: RepoInfo }) {
           ? "hide open PRs"
           : `show ${unattached.length} open PR${unattached.length === 1 ? "" : "s"} without a worktree`}
       </button>
-      {open && (
-        <div className="divide-y divide-edge-soft border-t border-edge-soft">
-          {unattached.map((pr) => (
-            <PrRow key={pr.number} pr={pr} dir={r.dir} />
-          ))}
-        </div>
-      )}
     </>
   );
 }
