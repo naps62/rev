@@ -564,7 +564,8 @@ const MODE_OPTIONS: { value: DiffMode; blurb: string }[] = [
   },
   {
     value: "mixed",
-    blurb: "Split, but fully added or deleted files render as one column.",
+    blurb:
+      "Split, but files with only additions or only deletions render as one column.",
   },
 ];
 
