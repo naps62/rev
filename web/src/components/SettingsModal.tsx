@@ -374,7 +374,7 @@ function OptionCard({
 const MODE_OPTIONS: { value: DiffMode; blurb: string }[] = [
   { value: "unified", blurb: "One column — removed and added lines interleaved in order." },
   { value: "split", blurb: "Two columns — old version on the left, new on the right." },
-  { value: "mixed", blurb: "Split, but fully added or deleted files render as one column." },
+  { value: "mixed", blurb: "Split, but files with only additions or only deletions render as one column." },
 ];
 
 const THEME_OPTIONS: { value: ThemePref; blurb: string }[] = [

@@ -480,12 +480,13 @@ export function DiffFile({
 
   // Rows are built imperatively so comment threads and the composer can be
   // spliced in directly under their anchored line (in the right pane when split).
-  // "mixed" is split, except fully one-sided files (new/deleted: every line
-  // an add, or every line a del) drop to unified — split wastes half the width.
+  // "mixed" is split, except one-sided files (only adds or only dels, context
+  // aside — new, deleted, or append/remove-only) drop to unified — split
+  // wastes half the width.
+  const changedLines = hunks.flatMap((h) => h.lines.filter((l) => l.kind !== "context"));
   const oneSided =
-    hunks.length > 0 &&
-    (hunks.every((h) => h.lines.every((l) => l.kind === "add")) ||
-      hunks.every((h) => h.lines.every((l) => l.kind === "del")));
+    changedLines.length > 0 &&
+    (changedLines.every((l) => l.kind === "add") || changedLines.every((l) => l.kind === "del"));
   const split = mode === "split" || (mode === "mixed" && !oneSided);
   const rows: ReactNode[] = [];
   if ((expanded || lingering) && !editing) {
