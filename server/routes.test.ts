@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, symlinkSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -685,6 +686,19 @@ describe("session spawn on submit", () => {
     });
     expect(existsSync(join(dir, "spawned"))).toBe(false);
     await json("PUT", "/commands", { sessionSpawn: "" });
+  });
+
+  test("recent poll from a killed session does not count as listening", async () => {
+    const dir = makeRepo("spawn-dead-owner");
+    const status = async () =>
+      (await (await app.request(`/agent?dir=${encodeURIComponent(dir)}`)).json()) as {
+        listening: boolean;
+      };
+    const dead = spawnSync("true").pid!;
+    await app.request(`/comments?dir=${encodeURIComponent(dir)}&submitted=1&owner=${dead}`);
+    expect((await status()).listening).toBe(false);
+    await app.request(`/comments?dir=${encodeURIComponent(dir)}&submitted=1&owner=${process.pid}`);
+    expect((await status()).listening).toBe(true);
   });
 
   test("watcher never arrives: 504 and comments stay pending", async () => {
