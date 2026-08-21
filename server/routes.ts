@@ -179,6 +179,8 @@ interface Waiter {
   base?: string;
   since: number;
   submittedOnly: boolean;
+  /** Owning agent session's pid (watchers pass it); null when unknown. */
+  owner: number | null;
   resolve: (r: CommentListResponse) => void;
 }
 
@@ -222,7 +224,9 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
 
   function agentListening(dir: string): boolean {
     for (const w of waiters) {
-      if (w.dir === dir && w.submittedOnly) return true;
+      if (w.dir === dir && w.submittedOnly && (w.owner === null || pidAlive(w.owner))) {
+        return true;
+      }
     }
     const seen = agentSeen.get(dir);
     if (seen === undefined || Date.now() - seen.at >= TUNING.AGENT_LIVE_WINDOW_MS) return false;
@@ -270,6 +274,7 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     base: string | undefined,
     since: number,
     submittedOnly: boolean,
+    owner: number | null,
   ): Promise<CommentListResponse> {
     return new Promise((resolvePromise) => {
       const w: Waiter = {
@@ -277,6 +282,7 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
         base,
         since,
         submittedOnly,
+        owner,
         resolve: (r) => {
           waiters.delete(w);
           clearTimeout(timer);
@@ -612,10 +618,9 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     if (since !== undefined && !Number.isFinite(since))
       return c.json({ error: "bad since" }, 400);
     const submittedOnly = c.req.query("submitted") === "1";
-    if (submittedOnly) {
-      const owner = Number(c.req.query("owner"));
-      agentActivity(dir, Number.isInteger(owner) && owner > 0 ? owner : undefined);
-    }
+    const ownerRaw = Number(c.req.query("owner"));
+    const owner = Number.isInteger(ownerRaw) && ownerRaw > 0 ? ownerRaw : null;
+    if (submittedOnly) agentActivity(dir, owner ?? undefined);
     let res = listComments(dir, base, since, submittedOnly);
     if (c.req.query("wait") === "1" && res.comments.length === 0) {
       res = await waitForComments(
@@ -623,6 +628,7 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
         base,
         since ?? res.cursor,
         submittedOnly,
+        owner,
       );
     }
     await resolveComments(dir, res.comments);
