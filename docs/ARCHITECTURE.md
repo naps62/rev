@@ -53,6 +53,17 @@ Prod: `pnpm build && pnpm start` — server serves `web/dist` statically.
   and the web UI falls back to its text heuristics. No rev-side cache —
   sem keeps its own and runs in ~20ms. Override the binary with
   `REV_SEM_BIN` (systemd PATH usually lacks `~/.local/bin`).
+- **github.ts** — GitHub PR conversations via the `gh` CLI (no tokens in
+  rev). Only for github.com remotes whose branch has an open PR; everything
+  else degrades to `available: false` like semantic.ts. One GraphQL query
+  fetches review threads + conversation comments; each thread's
+  path/line/diffHunk is turned into a rev `CommentAnchor` and re-anchored
+  against the working tree, so GitHub threads place like local ones even
+  when the local tree drifted from the PR head. Cached per dir
+  (`GITHUB_TTL_MS`), busted by mutations (reply, new comment, resolve via
+  GraphQL). With `REV_GITHUB_TO_AGENT=1` synced comments are also mirrored
+  into the comment store (deduped by `github_id`) for watcher delivery, and
+  agent replies on those threads are forwarded back to GitHub.
 - **discovery.ts** — scans configured roots (default `~/tea`, `REV_ROOTS`)
   for `.git` dirs, then `git worktree list` from each to catch worktrees
   living outside the roots. Cached, re-scanned on demand and on a slow timer.

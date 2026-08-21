@@ -103,8 +103,16 @@ interface ComposerProps {
   autoFocus?: boolean;
   busy?: boolean;
   compact?: boolean;
-  onSubmit: (body: string) => void;
+  /**
+   * A returned promise makes the submit transactional: the draft is kept and
+   * an error shown on rejection (GitHub posts can fail), cleared on success.
+   * A void return clears immediately (local comments are fire-and-forget).
+   */
+  onSubmit: (body: string) => void | Promise<unknown>;
   onCancel?: () => void;
+  /** When set (with onDestination), a local/GitHub destination toggle renders. */
+  destination?: "local" | "github";
+  onDestination?: (d: "local" | "github") => void;
 }
 
 export function Composer({
@@ -115,15 +123,19 @@ export function Composer({
   compact,
   onSubmit,
   onCancel,
+  destination,
+  onDestination,
 }: ComposerProps) {
   const [body, setBody] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const [tab, setTab] = useState<"write" | "preview">("write");
   const taRef = useRef<HTMLTextAreaElement>(null);
   // Preview keeps the editor's height so tab toggling doesn't shift layout.
   const [previewMinH, setPreviewMinH] = useState<number>();
   const selRef = useRef<[number, number]>([0, 0]);
   const pointerIn = useRef(false);
-  const canSubmit = body.trim().length > 0 && !busy;
+  const canSubmit = body.trim().length > 0 && !busy && !sending;
 
   const minH = compact ? "min-h-[50px]" : "min-h-[68px]";
 
@@ -143,9 +155,20 @@ export function Composer({
 
   const submit = () => {
     if (!canSubmit) return;
-    onSubmit(body.trim());
-    setBody("");
-    setTab("write");
+    const done = () => {
+      setBody("");
+      setTab("write");
+    };
+    const r = onSubmit(body.trim());
+    if (r instanceof Promise) {
+      setError(null);
+      setSending(true);
+      r.then(done, (e: unknown) => setError((e as Error)?.message ?? "failed to post")).finally(
+        () => setSending(false),
+      );
+    } else {
+      done();
+    }
   };
 
   const runFormat = (fmt: Format) => {
@@ -323,6 +346,11 @@ export function Composer({
           )}
         </div>
       )}
+      {error != null && (
+        <p className="text-[11.5px] text-del" title={error}>
+          {error}
+        </p>
+      )}
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -330,7 +358,7 @@ export function Composer({
           disabled={!canSubmit}
           className="rounded-sm bg-accent px-2.5 py-1 text-[12px] font-medium text-bg transition-colors duration-150 hover:bg-accent/85 disabled:cursor-default disabled:bg-raise disabled:text-faint"
         >
-          {busy ? "Saving…" : submitLabel}
+          {busy || sending ? "Saving…" : destination === "github" ? `${submitLabel} on GitHub` : submitLabel}
         </button>
         {onCancel && (
           <button
@@ -339,6 +367,25 @@ export function Composer({
             className="rounded-sm px-2 py-1 text-[12px] text-mute transition-colors duration-150 hover:text-fg"
           >
             Cancel
+          </button>
+        )}
+        {destination !== undefined && onDestination !== undefined && (
+          <button
+            type="button"
+            onClick={() => onDestination(destination === "local" ? "github" : "local")}
+            title={
+              destination === "local"
+                ? "Posting locally (to the agent) — click to post to the GitHub PR instead"
+                : "Posting to the GitHub PR — click to post locally (to the agent) instead"
+            }
+            className={cx(
+              "rounded-sm border px-1.5 py-0.5 font-mono text-[11px] transition-colors duration-150",
+              destination === "github"
+                ? "border-reviewer/50 text-reviewer"
+                : "border-edge text-faint hover:text-mute",
+            )}
+          >
+            → {destination === "github" ? "GitHub PR" : "local"}
           </button>
         )}
         <span className="ml-auto text-[11px] text-faint">{MOD_KEY}↵ to send</span>

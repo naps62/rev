@@ -114,6 +114,19 @@ export const TUNING = {
   /** Kill a sem invocation after this long; the client falls back to text heuristics. Measured ~20ms on medium repos — this is a hang guard, not a budget. */
   SEM_TIMEOUT_MS: 10_000,
 
+  /**
+   * GitHub conversation responses are cached per dir this long. GitHub's API
+   * is slow (~0.5-2s via gh) and rate-limited; the UI polls, so staleness is
+   * bounded by the poll interval anyway. Mutations bust the cache instantly.
+   */
+  GITHUB_TTL_MS: 45_000,
+
+  /** Kill a gh invocation after this long; the endpoint degrades to available:false. */
+  GITHUB_TIMEOUT_MS: 15_000,
+
+  /** Review-page refetch interval for GitHub conversations. */
+  GITHUB_POLL_MS: 60_000,
+
   /** SQLite location, under XDG data dir. */
   DB_PATH: "~/.local/share/rev/rev.db",
 

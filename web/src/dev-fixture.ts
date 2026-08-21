@@ -15,6 +15,12 @@ import type {
   FileContentResponse,
   FileDiff,
   FileDiffResponse,
+  GithubCommentRequest,
+  GithubComment,
+  GithubConvosResponse,
+  GithubReplyRequest,
+  GithubResolveRequest,
+  GithubThread,
   InterdiffResponse,
   FileWriteRequest,
   RepoInfo,
@@ -985,6 +991,117 @@ export function fxPutSeen(req: SeenRequest): { ok: true } {
     f.seen = req.seen;
     f.stale = false;
   }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// GitHub PR conversations
+// ---------------------------------------------------------------------------
+
+let ghId = 9000;
+
+function ghComment(login: string, body: string, createdAt: number): GithubComment {
+  const id = ++ghId;
+  return { id, login, body, createdAt, url: `https://github.com/naps62/rev/pull/42#discussion_r${id}` };
+}
+
+const ghState: GithubConvosResponse = {
+  dir: state.diff.dir,
+  available: true,
+  pr: {
+    number: 42,
+    title: "Always-on review server",
+    url: "https://github.com/naps62/rev/pull/42",
+    isDraft: false,
+    headRefOid: "9c2f41a0b1c2d3e4f5061728394a5b6c7d8e9f00",
+    baseRefName: "main",
+  },
+  threads: [
+    {
+      id: "PRRT_fx1",
+      isResolved: false,
+      isOutdated: false,
+      anchor: {
+        file: "server/routes.ts",
+        side: "new",
+        line: 44,
+        snippet: "const body = await c.req.json<{ content: string; baseHash: string }>();",
+      },
+      resolvedLine: 44,
+      comments: [
+        ghComment(
+          "octocat",
+          "`c.req.json` throws on an empty body — wrap it or the route 500s on a bad client.",
+          now - 3 * 60 * min,
+        ),
+        ghComment("naps62", "Good point, will guard it like the other routes.", now - 2 * 60 * min),
+      ],
+    },
+    {
+      id: "PRRT_fx2",
+      isResolved: true,
+      isOutdated: true,
+      anchor: {
+        file: "server/watcher.ts",
+        side: "new",
+        line: 3,
+        snippet: "import chokidar from \"chokidar\";",
+      },
+      resolvedLine: null,
+      comments: [
+        ghComment("octocat", "chokidar 4 dropped glob support — double-check the ignore patterns.", now - 5 * 60 * min),
+      ],
+    },
+  ],
+  discussion: [
+    ghComment(
+      "octocat",
+      "Overall direction looks right. One pass over error handling before merge?",
+      now - 4 * 60 * min,
+    ),
+  ],
+  truncated: false,
+  computedAt: now,
+};
+
+export function fxGetGithub(dir: string): GithubConvosResponse {
+  return { ...clone(ghState), dir, computedAt: Date.now() };
+}
+
+export function fxPostGithubReply(req: GithubReplyRequest): { ok: true } {
+  const reply = ghComment("naps62", req.body, Date.now());
+  if (req.rootId !== undefined) {
+    const t = ghState.threads.find((x) => x.comments[0]?.id === req.rootId);
+    if (!t) throw Object.assign(new Error(`no such thread root: ${req.rootId}`), { status: 502 });
+    t.comments.push(reply);
+  } else {
+    ghState.discussion.push(reply);
+  }
+  return { ok: true };
+}
+
+export function fxPostGithubComment(req: GithubCommentRequest): { ok: true } {
+  const c = ghComment("naps62", req.body, Date.now());
+  if (req.anchor === undefined) {
+    ghState.discussion.push(c);
+    return { ok: true };
+  }
+  const t: GithubThread = {
+    id: `PRRT_fx${ghId}`,
+    isResolved: false,
+    isOutdated: false,
+    anchor: req.anchor,
+    resolvedLine: req.anchor.line,
+    comments: [c],
+  };
+  ghState.threads.push(t);
+  return { ok: true };
+}
+
+export function fxPostGithubResolve(req: GithubResolveRequest): { ok: true } {
+  const t = ghState.threads.find((x) => x.id === req.threadId);
+  if (!t) throw Object.assign(new Error(`no such thread: ${req.threadId}`), { status: 502 });
+  t.isResolved = req.resolved;
   return { ok: true };
 }
 

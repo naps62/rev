@@ -1,6 +1,32 @@
 import { describe, test } from "node:test";
 import { expect } from "expect";
-import { scopeFor } from "./discovery.ts";
+import { parseRemote, scopeFor } from "./discovery.ts";
+
+describe("parseRemote", () => {
+  test("captures host, owner and repo across url shapes", () => {
+    expect(parseRemote("git@github.com:acme/widget.git")).toEqual({
+      host: "github.com",
+      owner: "acme",
+      repo: "widget",
+    });
+    expect(parseRemote("https://github.com/acme/widget")).toEqual({
+      host: "github.com",
+      owner: "acme",
+      repo: "widget",
+    });
+    expect(parseRemote("ssh://git@github.com/acme/widget.git/")).toEqual({
+      host: "github.com",
+      owner: "acme",
+      repo: "widget",
+    });
+    expect(parseRemote("https://user:token@git.naps.pt/yolo/rev.git")).toEqual({
+      host: "git.naps.pt",
+      owner: "yolo",
+      repo: "rev",
+    });
+    expect(parseRemote("not a url")).toBeNull();
+  });
+});
 
 // Default REV_PERSONAL_HOSTS: git.naps.pt (shared/tuning.ts).
 describe("scopeFor", () => {

@@ -73,9 +73,13 @@ interface DiffFileProps {
   onToggleSeen: (file: FileSummary, seen: boolean) => void;
   /** Click on an identifier — open/retarget the symbol panel. */
   onSymbolClick?: (symbol: string) => void;
-  onCreateComment: (anchor: CommentAnchor, body: string) => void;
-  onReply: (root: Comment, body: string) => void;
+  /** May return a promise (GitHub destination): the composer stays open until it settles. */
+  onCreateComment: (anchor: CommentAnchor, body: string) => void | Promise<unknown>;
+  onReply: (root: Comment, body: string) => void | Promise<unknown>;
   onResolve: (root: Comment, resolved: boolean) => void;
+  /** Composer destination toggle (rendered only when both are set — a PR exists). */
+  commentDest?: "local" | "github";
+  onCommentDest?: (d: "local" | "github") => void;
   sectionRef: (el: HTMLElement | null) => void;
   /** Registers hunk-header rows and fold strips for n/p navigation. */
   hunkRef?: (hunkId: number | string, el: HTMLTableRowElement | null) => void;
@@ -100,6 +104,8 @@ export function DiffFile({
   onCreateComment,
   onReply,
   onResolve,
+  commentDest,
+  onCommentDest,
   sectionRef,
   hunkRef,
 }: DiffFileProps) {
@@ -471,8 +477,11 @@ export function DiffFile({
           <Composer
             placeholder="Write a comment…"
             autoFocus
+            destination={commentDest}
+            onDestination={onCommentDest}
             onSubmit={(body) => {
-              onCreateComment(composerAt.anchor, body);
+              const r = onCreateComment(composerAt.anchor, body);
+              if (r instanceof Promise) return r.then(() => setComposerAt(null));
               setComposerAt(null);
             }}
             onCancel={closeComposer}

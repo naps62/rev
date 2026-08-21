@@ -198,9 +198,10 @@ describe("computeDiff", () => {
 
   test("oversize untracked file listed without hunks or hash", async () => {
     const dir = makeRepo("bigfile");
-    write(dir, "big.log", "x".repeat(TUNING.MAX_UNTRACKED_BYTES + 1));
+    // not .log: a global gitignore with *.log would hide the fixture entirely
+    write(dir, "big.dat", "x".repeat(TUNING.MAX_UNTRACKED_BYTES + 1));
     const diff = await computeDiff(dir, "main");
-    const f = byPath(diff.files, "big.log")!;
+    const f = byPath(diff.files, "big.dat")!;
     expect(f.status).toBe("untracked");
     expect(f.hunks).toEqual([]);
     expect(f.contentHash).toBe("");

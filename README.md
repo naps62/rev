@@ -104,6 +104,8 @@ survives. A real environment variable still wins over it.
 | `REV_DB` | `~/.local/share/rev/rev.db` | SQLite (comments, seen-state) |
 | `REV_PERSONAL_HOSTS` | `git.naps.pt` | Comma-separated remote hosts whose repos land in the "personal" scope tab; any other remote is scoped by its owner org |
 | `REV_PERSONAL_OWNERS` | `naps62` | Comma-separated remote owners treated as personal on any host |
+| `REV_GH_BIN` | `gh` | GitHub CLI binary used to sync PR conversations (github.com remotes with an open PR for the reviewed branch). Missing binary just disables the feature |
+| `REV_GITHUB_TO_AGENT` | off | `1` mirrors synced GitHub PR comments into the comment store for agent delivery, and forwards the agent's replies on those threads back to GitHub. Sync runs when `/api/github` is polled (i.e. while a review page is open) |
 
 All other knobs: `shared/tuning.ts`.
 

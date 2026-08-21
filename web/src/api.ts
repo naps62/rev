@@ -14,6 +14,10 @@ import type {
   FileContentResponse,
   FileDiffResponse,
   FileWriteRequest,
+  GithubCommentRequest,
+  GithubConvosResponse,
+  GithubReplyRequest,
+  GithubResolveRequest,
   InterdiffResponse,
   RefsResponse,
   RepoInfo,
@@ -180,6 +184,28 @@ export async function patchComment(id: string, patch: CommentPatchRequest): Prom
     method: "PATCH",
     body: JSON.stringify(patch),
   });
+}
+
+export async function getGithubConvos(dir: string, refresh = false): Promise<GithubConvosResponse> {
+  if (isFixture()) return tick((await fx()).fxGetGithub(dir));
+  const q = new URLSearchParams({ dir });
+  if (refresh) q.set("refresh", "1");
+  return request(`/api/github?${q}`);
+}
+
+export async function postGithubReply(req: GithubReplyRequest): Promise<{ ok: true }> {
+  if (isFixture()) return tick((await fx()).fxPostGithubReply(req));
+  return request("/api/github/reply", { method: "POST", body: JSON.stringify(req) });
+}
+
+export async function postGithubComment(req: GithubCommentRequest): Promise<{ ok: true }> {
+  if (isFixture()) return tick((await fx()).fxPostGithubComment(req));
+  return request("/api/github/comment", { method: "POST", body: JSON.stringify(req) });
+}
+
+export async function postGithubResolve(req: GithubResolveRequest): Promise<{ ok: true }> {
+  if (isFixture()) return tick((await fx()).fxPostGithubResolve(req));
+  return request("/api/github/resolve", { method: "POST", body: JSON.stringify(req) });
 }
 
 export async function putSeen(req: SeenRequest): Promise<{ ok: true }> {

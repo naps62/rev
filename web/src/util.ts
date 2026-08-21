@@ -1,4 +1,4 @@
-import type { Comment } from "#shared/types";
+import type { Comment, GithubComment, GithubConvosResponse } from "#shared/types";
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -50,3 +50,53 @@ export function buildThreads(comments: Comment[]): Thread[] {
 }
 
 export const lineKey = (side: "old" | "new", line: number) => `${side}:${line}`;
+
+/**
+ * Flatten a GithubConvosResponse into synthetic Comments so GitHub threads
+ * ride the exact same thread plumbing (buildThreads, line placement, panel
+ * ordering) as local ones. Ids are prefixed "gh:" and never hit local
+ * comment endpoints — reply/resolve are routed by `source`.
+ */
+export function githubToComments(res: GithubConvosResponse, base: string): Comment[] {
+  const out: Comment[] = [];
+  const common = {
+    dir: res.dir,
+    base,
+    seq: 0,
+    status: "picked_up" as const,
+    submittedSeq: null,
+  };
+  const mapOne = (
+    c: GithubComment,
+    extra: Partial<Comment> & { parentId: string | null },
+  ): Comment => ({
+    ...common,
+    id: `gh:${c.id}`,
+    anchor: null,
+    author: "reviewer",
+    body: c.body,
+    createdAt: c.createdAt,
+    resolvedAt: null,
+    source: "github",
+    ghLogin: c.login,
+    ghUrl: c.url,
+    ...extra,
+  });
+  for (const t of res.threads) {
+    const [root, ...replies] = t.comments;
+    if (!root) continue;
+    out.push(
+      mapOne(root, {
+        parentId: null,
+        anchor: t.anchor,
+        resolvedAt: t.isResolved ? res.computedAt : null,
+        resolvedLine: t.resolvedLine,
+        ghThreadId: t.id,
+        ghRootId: root.id,
+      }),
+    );
+    for (const r of replies) out.push(mapOne(r, { parentId: `gh:${root.id}` }));
+  }
+  for (const c of res.discussion) out.push(mapOne(c, { parentId: null }));
+  return out;
+}

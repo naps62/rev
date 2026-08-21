@@ -6,7 +6,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Comment, CommentCreateRequest } from "#shared/types";
+import type { Comment, CommentAnchor, CommentCreateRequest } from "#shared/types";
 import { config } from "./config.ts";
 
 /** Thrown for caller errors (unknown id, bad parent) the API maps to 4xx. */
@@ -33,7 +33,8 @@ export function openDb(path: string = config.dbPath): void {
       resolved_at   INTEGER,
       seq           INTEGER NOT NULL UNIQUE,
       submitted_seq INTEGER,
-      picked_up_at  INTEGER
+      picked_up_at  INTEGER,
+      github_id     TEXT
     );
     CREATE INDEX IF NOT EXISTS comments_dir_seq ON comments (dir, seq);
     CREATE TABLE IF NOT EXISTS seen (
@@ -64,6 +65,12 @@ export function openDb(path: string = config.dbPath): void {
       UPDATE comments SET submitted_seq = seq;
     `);
   }
+  if (!cols.some((c) => c.name === "github_id")) {
+    db.exec("ALTER TABLE comments ADD COLUMN github_id TEXT;");
+  }
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS comments_github_id ON comments (github_id) WHERE github_id IS NOT NULL;",
+  );
 }
 
 export function closeDb(): void {
@@ -102,6 +109,7 @@ interface CommentRow {
   seq: number;
   submitted_seq: number | null;
   picked_up_at: number | null;
+  github_id: string | null;
 }
 
 function rowToComment(r: CommentRow): Comment {
@@ -158,6 +166,87 @@ export function createComment(req: CommentCreateRequest): Comment {
     ).run(id, req.dir, req.base, anchor, parentId, req.author, req.body, createdAt, seq, submittedSeq);
   });
   return rowToComment(getRow(d, id)!);
+}
+
+/**
+ * Mirror one GitHub comment into the store for agent delivery
+ * (REV_GITHUB_TO_AGENT). Keyed by github_id: an existing row just gets its
+ * body and (roots) resolved state refreshed — never re-delivered. Mirrored
+ * rows are author "reviewer", submitted immediately, and hidden from the UI
+ * listing (the review page renders GitHub threads live instead).
+ * Returns true when a new row was inserted.
+ */
+export function mirrorGithubComment(req: {
+  dir: string;
+  base: string;
+  githubId: string;
+  body: string;
+  createdAt: number;
+  anchor?: CommentAnchor;
+  /** github_id of the thread root; resolved locally to parent_id. */
+  parentGithubId?: string;
+  resolved?: boolean;
+}): boolean {
+  const d = must();
+  return transaction(d, () => {
+    const existing = d
+      .prepare("SELECT id, parent_id, body, resolved_at FROM comments WHERE github_id = ?")
+      .get(req.githubId) as
+      | { id: string; parent_id: string | null; body: string; resolved_at: number | null }
+      | undefined;
+    if (existing) {
+      if (existing.body !== req.body) {
+        d.prepare("UPDATE comments SET body = ? WHERE id = ?").run(req.body, existing.id);
+      }
+      if (req.resolved !== undefined && existing.parent_id === null) {
+        const want = req.resolved ? existing.resolved_at ?? Date.now() : null;
+        if (want !== existing.resolved_at) {
+          d.prepare("UPDATE comments SET resolved_at = ? WHERE id = ?").run(want, existing.id);
+        }
+      }
+      return false;
+    }
+    let parentId: string | null = null;
+    if (req.parentGithubId !== undefined) {
+      const parent = d
+        .prepare("SELECT id, parent_id FROM comments WHERE github_id = ?")
+        .get(req.parentGithubId) as { id: string; parent_id: string | null } | undefined;
+      if (!parent) return false; // root not mirrored (yet); the next sync retries
+      parentId = parent.parent_id ?? parent.id;
+    }
+    const seq = (d.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS s FROM comments").get() as { s: number }).s;
+    d.prepare(
+      `INSERT INTO comments (id, dir, base, anchor, parent_id, author, body, created_at, resolved_at, seq, submitted_seq, github_id)
+       VALUES (?, ?, ?, ?, ?, 'reviewer', ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      crypto.randomUUID(),
+      req.dir,
+      req.base,
+      req.anchor && parentId === null ? JSON.stringify(req.anchor) : null,
+      parentId,
+      req.body,
+      req.createdAt,
+      req.resolved && parentId === null ? Date.now() : null,
+      seq,
+      nextSubmittedSeq(d),
+      req.githubId,
+    );
+    return true;
+  });
+}
+
+/** github_id of `id`'s thread root (null when the thread isn't a GitHub mirror). */
+export function rootGithubId(id: string): string | null {
+  const d = must();
+  const row = getRow(d, id);
+  if (!row) return null;
+  const root = row.parent_id ? getRow(d, row.parent_id) : row;
+  return root?.github_id ?? null;
+}
+
+/** Stamp a local comment as existing on GitHub (after forwarding it there). */
+export function stampGithubId(id: string, githubId: string): void {
+  must().prepare("UPDATE comments SET github_id = ? WHERE id = ?").run(githubId, id);
 }
 
 /**
@@ -234,6 +323,9 @@ export function listComments(
   let sql = "SELECT * FROM comments WHERE dir = ?";
   const params: (string | number)[] = [dir];
   if (submittedOnly) sql += " AND submitted_seq IS NOT NULL";
+  // The UI renders GitHub threads live from /api/github; mirrored rows exist
+  // only for agent delivery and would duplicate them.
+  else sql += " AND github_id IS NULL";
   if (base !== undefined) {
     sql += " AND base = ?";
     params.push(base);

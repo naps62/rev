@@ -20,6 +20,9 @@ import type {
   CommentsAckRequest,
   CommentsSubmitRequest,
   FileWriteRequest,
+  GithubCommentRequest,
+  GithubReplyRequest,
+  GithubResolveRequest,
   PresenceResponse,
   SeenRequest,
   ServerMessage,
@@ -43,6 +46,17 @@ import { presence } from "./presence.ts";
 import { computeSemanticDiff } from "./semantic.ts";
 import { computeStack } from "./stack.ts";
 import { invalidateRepoList, isKnownRepo, listRepos, rescan } from "./discovery.ts";
+import {
+  forwardAgentReply,
+  GhError,
+  githubComment,
+  githubConvos,
+  githubReply,
+  githubResolve,
+  onGithubMirrored,
+} from "./github.ts";
+import { config } from "./config.ts";
+import { rootGithubId } from "./db.ts";
 import {
   baseBehind,
   computeDiff,
@@ -115,6 +129,14 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   const app = new Hono();
   const waiters = new Set<Waiter>();
 
+  // Mirrored GitHub comments enter the submitted axis outside any request
+  // that watchers long-poll on — wake them and the UI up.
+  onGithubMirrored((dir) => {
+    const { cursor } = listComments(dir);
+    broadcast({ type: "comments-changed", dir, seq: cursor });
+    notifyWaiters(dir);
+  });
+
   function notifyWaiters(dir: string): void {
     for (const w of [...waiters]) {
       if (w.dir !== dir) continue;
@@ -152,6 +174,7 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   app.onError((err, c) => {
     if (err instanceof GitError) return c.json({ error: err.message }, 400);
     if (err instanceof DbError) return c.json({ error: err.message }, 400);
+    if (err instanceof GhError) return c.json({ error: err.message }, 502);
     console.error(err);
     return c.json({ error: "internal error" }, 500);
   });
@@ -391,6 +414,17 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     }
     if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
     const comment = createComment(b);
+    // Agent replies on mirrored GitHub threads go back to GitHub too, so the
+    // conversation stays whole on both sides. Fire-and-forget: the local copy
+    // is already saved either way.
+    if (config.githubToAgent && comment.author === "agent" && comment.parentId != null) {
+      const gid = rootGithubId(comment.parentId);
+      if (gid != null) {
+        forwardAgentReply(comment.dir, comment.id, gid, comment.body).catch((err) =>
+          console.error(`github forward failed for ${comment.id}: ${(err as Error).message}`),
+        );
+      }
+    }
     broadcast({ type: "comments-changed", dir: comment.dir, seq: comment.seq });
     notifyWaiters(comment.dir);
     return c.json(comment, 201);
@@ -441,6 +475,64 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
     broadcast({ type: "comments-changed", dir: comment.dir, seq: comment.seq });
     notifyWaiters(comment.dir);
     return c.json(comment);
+  });
+
+  app.get("/github", async (c) => {
+    const dir = c.req.query("dir");
+    if (!dir) return c.json({ error: "dir is required" }, 400);
+    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    return c.json(await githubConvos(dir, c.req.query("refresh") === "1"));
+  });
+
+  app.post("/github/reply", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as GithubReplyRequest | null;
+    if (!b || typeof b.dir !== "string" || typeof b.body !== "string" || b.body.trim() === "") {
+      return c.json({ error: "dir and non-empty body are required" }, 400);
+    }
+    if (b.rootId !== undefined && !Number.isInteger(b.rootId)) {
+      return c.json({ error: "rootId must be an integer" }, 400);
+    }
+    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    await githubReply(b.dir, b.rootId, b.body);
+    return c.json({ ok: true });
+  });
+
+  app.post("/github/comment", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as GithubCommentRequest | null;
+    if (!b || typeof b.dir !== "string" || typeof b.body !== "string" || b.body.trim() === "") {
+      return c.json({ error: "dir and non-empty body are required" }, 400);
+    }
+    if (
+      b.anchor !== undefined &&
+      (typeof b.anchor !== "object" ||
+        b.anchor === null ||
+        typeof b.anchor.file !== "string" ||
+        (b.anchor.side !== "old" && b.anchor.side !== "new") ||
+        typeof b.anchor.line !== "number")
+    ) {
+      return c.json({ error: "malformed anchor" }, 400);
+    }
+    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    if (b.anchor !== undefined && resolveInRepo(b.dir, b.anchor.file) === null) {
+      return c.json({ error: `path escapes repo: ${b.anchor.file}` }, 400);
+    }
+    await githubComment(b.dir, b.anchor, b.body);
+    return c.json({ ok: true });
+  });
+
+  app.post("/github/resolve", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as GithubResolveRequest | null;
+    if (
+      !b ||
+      typeof b.dir !== "string" ||
+      typeof b.threadId !== "string" ||
+      typeof b.resolved !== "boolean"
+    ) {
+      return c.json({ error: "dir, threadId, resolved are required" }, 400);
+    }
+    if (!(await isKnownRepo(b.dir))) return c.json({ error: `not a known repo: ${b.dir}` }, 400);
+    await githubResolve(b.dir, b.threadId, b.resolved);
+    return c.json({ ok: true });
   });
 
   app.post("/fetch", async (c) => {

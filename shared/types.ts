@@ -356,6 +356,20 @@ export interface Comment {
    * review-level notes; "old"-side anchors echo anchor.line.
    */
   resolvedLine?: number | null;
+  /**
+   * Set on comments synthesized from a GitHub PR (web-side adapter; never
+   * stored server-side). Such comments ride the same thread plumbing but
+   * reply/resolve through the /api/github routes.
+   */
+  source?: "github";
+  /** GitHub login of the comment's author. */
+  ghLogin?: string;
+  /** Link to this comment on github.com. */
+  ghUrl?: string;
+  /** Review-thread GraphQL id (roots only) — resolve target. Absent on conversation comments. */
+  ghThreadId?: string;
+  /** Root review comment databaseId (roots only) — reply target. */
+  ghRootId?: number;
 }
 
 export interface CommentCreateRequest {
@@ -398,6 +412,88 @@ export interface CommentListResponse {
    * back as `since` and to ack after delivering.
    */
   cursor: number;
+}
+
+// ---------------------------------------------------------------------------
+// GitHub PR conversations
+// ---------------------------------------------------------------------------
+
+/** The open PR whose head is dir's checked-out branch. */
+export interface GithubPrInfo {
+  number: number;
+  title: string;
+  url: string;
+  isDraft: boolean;
+  /** PR head sha — the commit new review comments are attached to. */
+  headRefOid: string;
+  baseRefName: string;
+}
+
+/** One comment in a GitHub review thread or the PR conversation tab. */
+export interface GithubComment {
+  /** REST databaseId — what reply calls reference. */
+  id: number;
+  login: string;
+  body: string;
+  createdAt: number;
+  url: string;
+}
+
+export interface GithubThread {
+  /** GraphQL node id, used by resolve/unresolve. */
+  id: string;
+  isResolved: boolean;
+  /** True when the PR head moved past the commented diff. */
+  isOutdated: boolean;
+  /**
+   * Synthesized from the thread's path/line/diffHunk so GitHub threads ride
+   * the same placement machinery as local comments; null when unmappable.
+   */
+  anchor: CommentAnchor | null;
+  /** Same semantics as Comment.resolvedLine: anchor re-located in the working tree. */
+  resolvedLine?: number | null;
+  comments: GithubComment[];
+}
+
+export type GithubUnavailableReason = "gh-missing" | "not-github" | "no-pr" | "gh-failed";
+
+/**
+ * GitHub conversations for dir's checked-out branch. `available: false` —
+ * gh missing, non-GitHub remote, no open PR, API failure — is a normal
+ * response, never an error: the review simply shows local comments only.
+ */
+export interface GithubConvosResponse {
+  dir: string;
+  available: boolean;
+  reason?: GithubUnavailableReason;
+  pr: GithubPrInfo | null;
+  threads: GithubThread[];
+  /** Conversation-tab (issue) comments. */
+  discussion: GithubComment[];
+  /** True when a first page came back full — more may exist on GitHub. */
+  truncated: boolean;
+  computedAt: number;
+}
+
+export interface GithubReplyRequest {
+  dir: string;
+  /** Root review comment id (GithubComment.id); omit to post a conversation comment. */
+  rootId?: number;
+  body: string;
+}
+
+/** Opt-in "comment on GitHub instead of locally" from the composer. */
+export interface GithubCommentRequest {
+  dir: string;
+  /** Line-anchored review comment; omit for a conversation (issue) comment. */
+  anchor?: CommentAnchor;
+  body: string;
+}
+
+export interface GithubResolveRequest {
+  dir: string;
+  threadId: string;
+  resolved: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -465,6 +561,12 @@ export type ServerMessage =
 //        → { submitted: number; cursor: number }
 // POST   /api/comments/ack                   ← CommentsAckRequest → { acked: number }
 // PATCH  /api/comments/:id                   ← CommentPatchRequest  → Comment
+// GET    /api/github?dir[&refresh=1]         → GithubConvosResponse (open-PR review
+//        threads + conversation for dir's branch; available:false when gh, a
+//        GitHub remote, or an open PR is absent. refresh=1 busts the cache.)
+// POST   /api/github/reply                   ← GithubReplyRequest → { ok: true }
+// POST   /api/github/comment                 ← GithubCommentRequest → { ok: true }
+// POST   /api/github/resolve                 ← GithubResolveRequest → { ok: true }
 // PUT    /api/seen                           ← SeenRequest → { ok: true }
 // POST   /api/fetch                          ← { dir, base } → { ok, baseBehind }
 //        Runs `git fetch` for base's upstream remote so the review can be

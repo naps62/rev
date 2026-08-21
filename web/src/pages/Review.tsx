@@ -14,11 +14,12 @@ import type {
   EntityChange,
   FileDiffResponse,
   FileSummary,
+  GithubConvosResponse,
 } from "#shared/types";
 import * as api from "../api";
 import { AppHeader, HEADER_PX } from "../components/AppHeader";
 import { CommentsPanel } from "../components/CommentsPanel";
-import { CommentThread } from "../components/CommentThread";
+import { CommentThread, GithubMark } from "../components/CommentThread";
 import { Composer } from "../components/Composer";
 import { PendingSubmit } from "../components/PendingSubmit";
 import { DiffStat } from "../components/DiffStat";
@@ -43,10 +44,11 @@ import { startHints } from "../hints";
 import { type FeatureFlags, loadFeatures, saveFeatures } from "../features";
 import { TUNING } from "#shared/tuning";
 import { buildFileTree, flattenTree } from "../tree";
-import { basename, buildThreads, cx, shortSha, type Thread } from "../util";
+import { basename, buildThreads, cx, githubToComments, shortSha, type Thread } from "../util";
 import { useRevSocket } from "../ws";
 
 const MODE_KEY = "rev.diffMode";
+const DEST_KEY = "rev.commentDest";
 
 function initialMode(params: URLSearchParams): DiffMode {
   const p = params.get("mode");
@@ -90,6 +92,16 @@ export function Review() {
     queryFn: () => api.getStack(dir, base),
     enabled: !!dir && !!base,
   });
+  // GitHub PR conversations for dir's branch; available:false (no gh, no PR,
+  // non-GitHub remote) simply leaves the review local-only. Polled — GitHub
+  // can't push at us.
+  const githubQ = useQuery({
+    queryKey: ["github", dir],
+    queryFn: () => api.getGithubConvos(dir),
+    enabled: !!dir,
+    refetchInterval: TUNING.GITHUB_POLL_MS,
+  });
+  const ghPr = githubQ.data?.available ? githubQ.data.pr : null;
 
   const wsStatus = useRevSocket(dir || undefined, (msg) => {
     if (msg.type === "diff-invalidated" && msg.dir === dir) {
@@ -155,6 +167,37 @@ export function Review() {
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["comments", dir] }),
   });
+  const ghReplyMut = useMutation({
+    mutationFn: api.postGithubReply,
+    onSettled: () => qc.invalidateQueries({ queryKey: ["github", dir] }),
+  });
+  const ghCommentMut = useMutation({
+    mutationFn: api.postGithubComment,
+    onSettled: () => qc.invalidateQueries({ queryKey: ["github", dir] }),
+  });
+  const ghResolveMut = useMutation({
+    mutationFn: api.postGithubResolve,
+    // Same optimistic collapse as local resolves, on the github cache.
+    onMutate: async ({ threadId, resolved }) => {
+      await qc.cancelQueries({ queryKey: ["github", dir] });
+      const prev = qc.getQueryData<GithubConvosResponse>(["github", dir]);
+      qc.setQueryData<GithubConvosResponse>(["github", dir], (old) =>
+        old
+          ? {
+              ...old,
+              threads: old.threads.map((t) =>
+                t.id === threadId ? { ...t, isResolved: resolved } : t,
+              ),
+            }
+          : old,
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["github", dir], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["github", dir] }),
+  });
   const fetchMut = useMutation({
     mutationFn: () => api.postFetch({ dir, base }),
     onSuccess: () => {
@@ -167,13 +210,37 @@ export function Review() {
 
   const toggleSeen = (file: FileSummary, seen: boolean) =>
     seenMut.mutate({ dir, base, path: file.path, contentHash: file.contentHash, seen });
+  // New-comment destination; only effective while an open PR exists.
+  const [destState, setDestState] = useState<"local" | "github">(() =>
+    localStorage.getItem(DEST_KEY) === "github" ? "github" : "local",
+  );
+  const setDest = (d: "local" | "github") => {
+    setDestState(d);
+    localStorage.setItem(DEST_KEY, d);
+  };
+  const dest = ghPr ? destState : "local";
   // User comments start pending; PendingSubmit ships the batch to the agent.
-  const createComment = (anchor: CommentAnchor | null, body: string) =>
+  // GitHub-destined ones post immediately (returned promise keeps the draft
+  // in the composer on failure — e.g. 422 for a line outside the PR diff).
+  const createComment = (anchor: CommentAnchor | null, body: string): void | Promise<unknown> => {
+    if (dest === "github") {
+      return ghCommentMut.mutateAsync({ dir, anchor: anchor ?? undefined, body });
+    }
     createMut.mutate({ dir, base, anchor: anchor ?? undefined, author: "user", body, pending: true });
-  const reply = (root: Comment, body: string) =>
+  };
+  const reply = (root: Comment, body: string): void | Promise<unknown> => {
+    if (root.source === "github") {
+      return ghReplyMut.mutateAsync({ dir, rootId: root.ghRootId, body });
+    }
     createMut.mutate({ dir, base, parentId: root.id, author: "user", body, pending: true });
-  const resolve = (root: Comment, resolved: boolean) =>
+  };
+  const resolve = (root: Comment, resolved: boolean) => {
+    if (root.source === "github") {
+      if (root.ghThreadId != null) ghResolveMut.mutate({ dir, threadId: root.ghThreadId, resolved });
+      return;
+    }
     patchMut.mutate({ id: root.id, patch: { resolved } });
+  };
 
   const [mode, setModeState] = useState<DiffMode>(() => initialMode(params));
   const setMode = (m: DiffMode) => {
@@ -320,9 +387,15 @@ export function Review() {
     }
   };
 
+  // GitHub threads become synthetic comments and merge into the same thread
+  // list; `source: "github"` routes their reply/resolve to the gh mutations.
+  const ghComments = useMemo(
+    () => (githubQ.data?.available ? githubToComments(githubQ.data, base) : []),
+    [githubQ.data, base],
+  );
   const allThreads = useMemo(
-    () => buildThreads(commentsQ.data?.comments ?? []),
-    [commentsQ.data],
+    () => buildThreads([...(commentsQ.data?.comments ?? []), ...ghComments]),
+    [commentsQ.data, ghComments],
   );
 
   // Route threads by file: to their file's DiffFile (which places them on
@@ -839,6 +912,19 @@ export function Review() {
               merge-base {shortSha(diffQ.data.mergeBase)}
             </span>
           )}
+          {ghPr && (
+            <a
+              href={ghPr.url}
+              target="_blank"
+              rel="noreferrer"
+              title={`${ghPr.title} — open on GitHub`}
+              className="hidden shrink-0 items-center gap-1.5 rounded-sm border border-edge px-1.5 py-px font-mono text-[11px] text-mute transition-colors duration-150 hover:border-reviewer/50 hover:text-fg sm:inline-flex"
+            >
+              <GithubMark className="size-[11px] shrink-0" />
+              #{ghPr.number}
+              {ghPr.isDraft && <span className="text-faint">draft</span>}
+            </a>
+          )}
           {/* baseBehind is null only when base has no remote at all; a remote-
               tracking base reads 0 forever, so gate the button on fetchability,
               not on the count. */}
@@ -1047,6 +1133,8 @@ export function Review() {
                 onCreateComment={(anchor, body) => createComment(anchor, body)}
                 onReply={reply}
                 onResolve={resolve}
+                commentDest={ghPr ? dest : undefined}
+                onCommentDest={ghPr ? setDest : undefined}
                 sectionRef={(el) => {
                   if (el) sectionEls.current.set(f.path, el);
                   else sectionEls.current.delete(f.path);
@@ -1085,6 +1173,8 @@ export function Review() {
               <Composer
                 placeholder="Add a review-level note…"
                 submitLabel="Add note"
+                destination={ghPr ? dest : undefined}
+                onDestination={ghPr ? setDest : undefined}
                 onSubmit={(body) => createComment(null, body)}
               />
             </section>

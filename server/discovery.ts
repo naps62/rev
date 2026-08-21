@@ -134,14 +134,14 @@ function nameFor(dir: string, mainDir: string, isWorktree: boolean): string {
 }
 
 /**
- * Host and owner from a git remote URL. Handles https (with optional
- * credentials) and scp-like ssh (git@host:owner/repo.git).
+ * Host, owner and repo name from a git remote URL. Handles https (with
+ * optional credentials) and scp-like ssh (git@host:owner/repo.git).
  */
-function parseRemote(url: string): { host: string; owner: string } | null {
-  const ssh = /^(?:ssh:\/\/)?(?:[\w.-]+@)?([\w.-]+)[:/]([^/:]+)\/[^/]+?(?:\.git)?\/?$/;
-  const http = /^https?:\/\/(?:[^@/]+@)?([\w.-]+)(?::\d+)?\/([^/]+)\/[^/]+?(?:\.git)?\/?$/;
+export function parseRemote(url: string): { host: string; owner: string; repo: string } | null {
+  const ssh = /^(?:ssh:\/\/)?(?:[\w.-]+@)?([\w.-]+)[:/]([^/:]+)\/([^/]+?)(?:\.git)?\/?$/;
+  const http = /^https?:\/\/(?:[^@/]+@)?([\w.-]+)(?::\d+)?\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/;
   const m = http.exec(url) ?? ssh.exec(url);
-  return m ? { host: m[1]!, owner: m[2]! } : null;
+  return m ? { host: m[1]!, owner: m[2]!, repo: m[3]! } : null;
 }
 
 /** Grouping bucket: "personal" for personal-host or missing remotes, else the remote owner org. */

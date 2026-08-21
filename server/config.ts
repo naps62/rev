@@ -22,4 +22,11 @@ export const config = {
     ?? [...TUNING.PERSONAL_HOSTS],
   personalOwners: process.env.REV_PERSONAL_OWNERS?.split(",").map((o) => o.trim().toLowerCase()).filter(Boolean)
     ?? [...TUNING.PERSONAL_OWNERS],
+  /**
+   * Opt-in: mirror synced GitHub PR comments into the comment store so the
+   * watcher delivers them to the agent, and forward the agent's replies on
+   * those threads back to GitHub. Sync still only runs when something hits
+   * /api/github (the open review page polls it).
+   */
+  githubToAgent: process.env.REV_GITHUB_TO_AGENT === "1",
 };

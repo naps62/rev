@@ -54,6 +54,29 @@ describe("resolveInRepo", () => {
   });
 });
 
+describe("github routes", () => {
+  test("GET /github validates dir and soft-fails on non-github repos", async () => {
+    expect((await app.request("/github")).status).toBe(400);
+    expect((await app.request(`/github?dir=${encodeURIComponent("/etc")}`)).status).toBe(400);
+    const dir = makeRepo("gh-route");
+    const res = await app.request(`/github?dir=${encodeURIComponent(dir)}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { available: boolean; reason?: string };
+    expect(body.available).toBe(false);
+    expect(["not-github", "gh-missing"]).toContain(body.reason);
+  });
+
+  test("POST /github/reply|comment|resolve validate their bodies", async () => {
+    expect((await json("POST", "/github/reply", { dir: "x" })).status).toBe(400);
+    expect((await json("POST", "/github/reply", { dir: "x", body: "hi", rootId: "nope" })).status).toBe(400);
+    expect((await json("POST", "/github/comment", { dir: "x", body: " " })).status).toBe(400);
+    expect((await json("POST", "/github/resolve", { dir: "x", threadId: "t" })).status).toBe(400);
+    // known repo without a PR: upstream failure surfaces as 502, not a crash
+    const dir = makeRepo("gh-route-mut");
+    expect((await json("POST", "/github/reply", { dir, body: "hi" })).status).toBe(502);
+  });
+});
+
 describe("routes", () => {
   test("GET /health", async () => {
     const res = await app.request("/health");
