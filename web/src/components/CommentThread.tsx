@@ -3,7 +3,6 @@ import type { Comment } from "#shared/types";
 import { Markdown } from "../markdown";
 import { cx, relativeTime, type Thread } from "../util";
 import { Composer } from "./Composer";
-import { Reveal } from "./Reveal";
 
 export function GithubMark({ className }: { className?: string }) {
   return (
@@ -137,9 +136,6 @@ export function CommentThread({
   const [override, setOverride] = useState<boolean | null>(null);
   const expanded = override ?? !resolved;
   useEffect(() => setOverride(null), [resolved]);
-  const [replying, setReplying] = useState(false);
-  // True while the reply composer slides shut; it unmounts when Reveal exits.
-  const [replyClosing, setReplyClosing] = useState(false);
 
   if (resolved && !expanded) {
     return (
@@ -191,15 +187,6 @@ export function CommentThread({
         ))}
       </div>
       <div className="flex items-center gap-3 border-t border-edge-soft bg-panel px-3 py-1.5">
-        {!replying && (
-          <button
-            type="button"
-            onClick={() => setReplying(true)}
-            className="text-[12px] text-mute transition-colors duration-150 hover:text-fg"
-          >
-            Reply
-          </button>
-        )}
         {canResolve && (
           <button
             type="button"
@@ -226,30 +213,15 @@ export function CommentThread({
           </button>
         )}
       </div>
-      {replying && (
-        <Reveal
-          open={!replyClosing}
-          onExited={() => {
-            setReplying(false);
-            setReplyClosing(false);
-          }}
-        >
-          <div className="border-t border-edge-soft">
-            <Composer
-              placeholder="Reply…"
-              submitLabel="Reply"
-              autoFocus
-              busy={busy}
-              onSubmit={(body) => {
-                const r = onReply(body);
-                if (r instanceof Promise) return r.then(() => setReplyClosing(true));
-                setReplying(false);
-              }}
-              onCancel={() => setReplyClosing(true)}
-            />
-          </div>
-        </Reveal>
-      )}
+      <div className="border-t border-edge-soft p-2">
+        <Composer
+          placeholder="Reply…"
+          submitLabel="Reply"
+          compact
+          busy={busy}
+          onSubmit={onReply}
+        />
+      </div>
     </div>
   );
 }
