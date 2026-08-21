@@ -37,7 +37,16 @@ export const TUNING = {
   WATCH_DEBOUNCE_MS: 150,
 
   /** Dir names never watched or diffed: churn without review value. */
-  WATCH_IGNORE: ["node_modules", ".git", "dist", "build", "target", ".next", ".turbo", "coverage"],
+  WATCH_IGNORE: [
+    "node_modules",
+    ".git",
+    "dist",
+    "build",
+    "target",
+    ".next",
+    ".turbo",
+    "coverage",
+  ],
 
   /**
    * Dir names skipped when found directly in the user's home. The installed

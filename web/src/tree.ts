@@ -16,7 +16,7 @@ export interface DirNode {
   children: TreeNode[];
 }
 
-export interface FileNode {
+interface FileNode {
   type: "file";
   file: FileSummary;
 }

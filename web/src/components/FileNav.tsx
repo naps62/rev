@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import type { FileSummary } from "#shared/types";
-import { CLASS_LABEL, type ClassSection, type FileClass } from "../semantic/classify.ts";
+import {
+  CLASS_LABEL,
+  type ClassSection,
+  type FileClass,
+} from "../semantic/classify.ts";
 import type { DirNode, TreeNode } from "../tree";
 import { flattenTree } from "../tree";
 import { cx } from "../util";
@@ -57,7 +61,9 @@ export function FileNav({
   // only in the section that actually holds it.
   useEffect(() => {
     if (!currentPath) return;
-    const cls = sections?.find((s) => s.files.some((f) => f.path === currentPath))?.cls ?? null;
+    const cls =
+      sections?.find((s) => s.files.some((f) => f.path === currentPath))?.cls ??
+      null;
     setCollapsed((prev) => {
       const next = [...prev].filter((key) => {
         const k = parseKey(key);
@@ -114,7 +120,9 @@ export function FileNav({
                   <Checkbox
                     checked={allSeen}
                     indeterminate={someSeen && !allSeen}
-                    title={allSeen ? "Mark section unseen" : "Mark section seen"}
+                    title={
+                      allSeen ? "Mark section unseen" : "Mark section seen"
+                    }
                     onChange={(checked) => {
                       for (const f of s.files) onToggleSeen(f, checked);
                     }}
@@ -179,7 +187,7 @@ interface LevelProps {
 }
 
 function TreeLevel(props: LevelProps) {
-  const { nodes, depth, collapsed, toggleDir } = props;
+  const { nodes } = props;
   return (
     <>
       {nodes.map((node) =>
@@ -197,11 +205,21 @@ function DirRow(props: LevelProps & { node: DirNode }) {
   // MUST NOT spread `props` (it carries `node`) into children — a later
   // node= would be overwritten back to this dir, recursing forever.
   const { node, ...level } = props;
-  const { depth, keyPrefix, collapsed, toggleDir, unresolvedByFile, onToggleSeen } = level;
+  const {
+    depth,
+    keyPrefix,
+    collapsed,
+    toggleDir,
+    unresolvedByFile,
+    onToggleSeen,
+  } = level;
   const key = keyPrefix + node.path;
   const isCollapsed = collapsed.has(key);
   const files = flattenTree(node.children);
-  const open = files.reduce((n, f) => n + (unresolvedByFile.get(f.path) ?? 0), 0);
+  const open = files.reduce(
+    (n, f) => n + (unresolvedByFile.get(f.path) ?? 0),
+    0,
+  );
   const stale = files.some((f) => f.stale);
   const allSeen = files.length > 0 && files.every((f) => f.seen);
   const someSeen = files.some((f) => f.seen);
@@ -258,7 +276,10 @@ function DirRow(props: LevelProps & { node: DirNode }) {
         {isCollapsed && (
           <>
             {stale && (
-              <span title="changed since seen" className="size-1.5 shrink-0 rounded-full bg-accent" />
+              <span
+                title="changed since seen"
+                className="size-1.5 shrink-0 rounded-full bg-accent"
+              />
             )}
             {open > 0 && (
               <span className="shrink-0 rounded-sm bg-accent-soft px-1 font-mono text-[10.5px] leading-4 text-accent">
@@ -271,14 +292,23 @@ function DirRow(props: LevelProps & { node: DirNode }) {
           </>
         )}
       </div>
-      {!isCollapsed && <TreeLevel {...level} nodes={node.children} depth={depth + 1} />}
+      {!isCollapsed && (
+        <TreeLevel {...level} nodes={node.children} depth={depth + 1} />
+      )}
     </>
   );
 }
 
 function FileRow(props: LevelProps & { file: FileSummary }) {
-  const { file: f, depth, unresolvedByFile, symbolFiles, currentPath, onSelect, onToggleSeen } =
-    props;
+  const {
+    file: f,
+    depth,
+    unresolvedByFile,
+    symbolFiles,
+    currentPath,
+    onSelect,
+    onToggleSeen,
+  } = props;
   const name = f.path.slice(f.path.lastIndexOf("/") + 1);
   const open = unresolvedByFile.get(f.path) ?? 0;
   const current = currentPath === f.path;
@@ -291,7 +321,9 @@ function FileRow(props: LevelProps & { file: FileSummary }) {
       onClick={() => onSelect(f.path)}
       className={cx(
         "group flex cursor-pointer items-center gap-2 border-l py-1 pr-2",
-        current ? "border-accent bg-raise" : "border-transparent hover:bg-raise/50",
+        current
+          ? "border-accent bg-raise"
+          : "border-transparent hover:bg-raise/50",
       )}
       style={{ paddingLeft: 8 + depth * 14 }}
     >
@@ -313,7 +345,9 @@ function FileRow(props: LevelProps & { file: FileSummary }) {
         title={f.path}
         className="min-w-0 flex-1 truncate text-left font-mono text-[11.5px]"
       >
-        <span className={cx(f.seen && !f.stale ? "text-mute" : "text-fg")}>{name}</span>
+        <span className={cx(f.seen && !f.stale ? "text-mute" : "text-fg")}>
+          {name}
+        </span>
       </button>
       {hasSymbol && (
         <span
@@ -322,7 +356,10 @@ function FileRow(props: LevelProps & { file: FileSummary }) {
         />
       )}
       {f.stale && (
-        <span title="changed since seen" className="size-1.5 shrink-0 rounded-full bg-accent" />
+        <span
+          title="changed since seen"
+          className="size-1.5 shrink-0 rounded-full bg-accent"
+        />
       )}
       {open > 0 && (
         <span className="shrink-0 rounded-sm bg-accent-soft px-1 font-mono text-[10.5px] leading-4 text-accent">

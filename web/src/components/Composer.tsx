@@ -25,7 +25,7 @@ interface FormatResult {
 
 /** Pure text transform: wrap the [start,end) selection of `value` in `fmt`
  * markdown, or insert empty syntax at the caret with the caret placed inside. */
-export function applyFormat(
+function applyFormat(
   fmt: Format,
   value: string,
   start: number,
@@ -45,16 +45,24 @@ export function applyFormat(
         end: urlStart + 3,
       };
     }
-    return { next: `${before}[](url)${after}`, start: start + 1, end: start + 1 };
+    return {
+      next: `${before}[](url)${after}`,
+      start: start + 1,
+      end: start + 1,
+    };
   }
 
   if (fmt === "codeblock") {
     // Fences need their own lines; only add newlines the text doesn't have.
     const open = before === "" || before.endsWith("\n") ? "```\n" : "\n```\n";
-    const close = "\n```" + (after === "" || after.startsWith("\n") ? "" : "\n");
+    const close = `\n\`\`\`${after === "" || after.startsWith("\n") ? "" : "\n"}`;
     if (sel) {
       const s = start + open.length;
-      return { next: before + open + sel + close + after, start: s, end: s + sel.length };
+      return {
+        next: before + open + sel + close + after,
+        start: s,
+        end: s + sel.length,
+      };
     }
     // open + close renders "```\n\n```"; caret lands on the empty middle line.
     const s = start + open.length;
@@ -108,7 +116,7 @@ interface ComposerProps {
    * an error shown on rejection (GitHub posts can fail), cleared on success.
    * A void return clears immediately (local comments are fire-and-forget).
    */
-  onSubmit: (body: string) => void | Promise<unknown>;
+  onSubmit: (body: string) => undefined | Promise<unknown>;
   onCancel?: () => void;
   /** When set (with onDestination), a local/GitHub destination toggle renders. */
   destination?: "local" | "github";
@@ -163,9 +171,9 @@ export function Composer({
     if (r instanceof Promise) {
       setError(null);
       setSending(true);
-      r.then(done, (e: unknown) => setError((e as Error)?.message ?? "failed to post")).finally(
-        () => setSending(false),
-      );
+      r.then(done, (e: unknown) =>
+        setError((e as Error)?.message ?? "failed to post"),
+      ).finally(() => setSending(false));
     } else {
       done();
     }
@@ -230,13 +238,18 @@ export function Composer({
       }}
       onBlur={(e) => {
         if (!onCancel || busy || body.trim() || pointerIn.current) return;
-        if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget)) return;
+        if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget))
+          return;
         onCancel();
       }}
     >
       <div className="flex h-6 items-center gap-1">
         <div className="flex items-center gap-0.5">
-          <button type="button" onClick={showWrite} className={tabCls(tab === "write")}>
+          <button
+            type="button"
+            onClick={showWrite}
+            className={tabCls(tab === "write")}
+          >
             Write
           </button>
           <button
@@ -249,7 +262,10 @@ export function Composer({
         </div>
         {tab === "write" && (
           <div className="ml-auto flex items-center gap-0.5">
-            <ToolButton label={`Bold (${MOD_KEY}B)`} onApply={() => runFormat("bold")}>
+            <ToolButton
+              label={`Bold (${MOD_KEY}B)`}
+              onApply={() => runFormat("bold")}
+            >
               <span className="text-[12px] font-bold">B</span>
             </ToolButton>
             <ToolButton
@@ -264,8 +280,17 @@ export function Composer({
             >
               <span className="font-mono text-[11px]">{"<>"}</span>
             </ToolButton>
-            <ToolButton label="Code block" onApply={() => runFormat("codeblock")}>
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <ToolButton
+              label="Code block"
+              onApply={() => runFormat("codeblock")}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                aria-hidden
+              >
                 <rect
                   x="1.5"
                   y="2.5"
@@ -284,8 +309,17 @@ export function Composer({
                 />
               </svg>
             </ToolButton>
-            <ToolButton label={`Link (${MOD_KEY}K)`} onApply={() => runFormat("link")}>
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <ToolButton
+              label={`Link (${MOD_KEY}K)`}
+              onApply={() => runFormat("link")}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                aria-hidden
+              >
                 <path
                   d="M6.75 9.25l2.5-2.5M7.5 4.75 8.75 3.5a2.475 2.475 0 0 1 3.5 3.5L11 8.25M8.75 11.25 7.5 12.5a2.475 2.475 0 0 1-3.5-3.5l1.25-1.25"
                   stroke="currentColor"
@@ -358,7 +392,11 @@ export function Composer({
           disabled={!canSubmit}
           className="rounded-sm bg-accent px-2.5 py-1 text-[12px] font-medium text-bg transition-colors duration-150 hover:bg-accent/85 disabled:cursor-default disabled:bg-raise disabled:text-faint"
         >
-          {busy || sending ? "Saving…" : destination === "github" ? `${submitLabel} on GitHub` : submitLabel}
+          {busy || sending
+            ? "Saving…"
+            : destination === "github"
+              ? `${submitLabel} on GitHub`
+              : submitLabel}
         </button>
         {onCancel && (
           <button
@@ -372,7 +410,9 @@ export function Composer({
         {destination !== undefined && onDestination !== undefined && (
           <button
             type="button"
-            onClick={() => onDestination(destination === "local" ? "github" : "local")}
+            onClick={() =>
+              onDestination(destination === "local" ? "github" : "local")
+            }
             title={
               destination === "local"
                 ? "Posting locally (to the agent) — click to post to the GitHub PR instead"
@@ -388,7 +428,9 @@ export function Composer({
             → {destination === "github" ? "GitHub PR" : "local"}
           </button>
         )}
-        <span className="ml-auto text-[11px] text-faint">{MOD_KEY}↵ to send</span>
+        <span className="ml-auto text-[11px] text-faint">
+          {MOD_KEY}↵ to send
+        </span>
       </div>
     </div>
   );

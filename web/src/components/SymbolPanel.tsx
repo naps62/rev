@@ -29,7 +29,8 @@ export function SymbolPanel({
 }: SymbolPanelProps) {
   const groups = useMemo(() => {
     const byPath = new Map<string, Occurrence[]>();
-    for (const o of occurrences) byPath.set(o.path, [...(byPath.get(o.path) ?? []), o]);
+    for (const o of occurrences)
+      byPath.set(o.path, [...(byPath.get(o.path) ?? []), o]);
     const order = new Map(fileOrder.map((p, i) => [p, i]));
     return [...byPath.entries()].sort(
       ([a], [b]) => (order.get(a) ?? Infinity) - (order.get(b) ?? Infinity),
@@ -92,9 +93,17 @@ export function SymbolPanel({
                   <span
                     className={cx(
                       "w-8 shrink-0 text-right font-mono text-[10.5px] tabular-nums",
-                      o.kind === "add" ? "text-add" : o.kind === "del" ? "text-del" : "text-faint",
+                      o.kind === "add"
+                        ? "text-add"
+                        : o.kind === "del"
+                          ? "text-del"
+                          : "text-faint",
                     )}
-                    title={o.side === "old" ? "old side (removed context)" : undefined}
+                    title={
+                      o.side === "old"
+                        ? "old side (removed context)"
+                        : undefined
+                    }
                   >
                     {o.side === "old" ? `−${o.line}` : o.line}
                   </span>

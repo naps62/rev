@@ -21,7 +21,10 @@ export function App() {
             <p className="font-mono text-[13px] text-del">404</p>
             <p className="mt-1 text-[12px] text-mute">
               No such page.{" "}
-              <Link href={api.href("/")} className="text-accent hover:underline">
+              <Link
+                href={api.href("/")}
+                className="text-accent hover:underline"
+              >
                 Repo list
               </Link>
             </p>

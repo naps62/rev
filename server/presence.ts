@@ -47,8 +47,3 @@ export function presence(dir: string): { viewers: number; lastSeen: number } {
   const e = entries.get(dir);
   return { viewers: e?.viewers ?? 0, lastSeen: e?.lastSeen ?? 0 };
 }
-
-/** Tests only. */
-export function reset(): void {
-  entries.clear();
-}

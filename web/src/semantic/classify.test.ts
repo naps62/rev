@@ -73,6 +73,9 @@ describe("buildClassSections", () => {
       sections.map((s) => s.cls),
       ["code", "tests", "docs", "generated"],
     );
-    assert.deepEqual(sections[0]!.files.map((f) => f.path), ["server/git.ts"]);
+    assert.deepEqual(
+      sections[0]!.files.map((f) => f.path),
+      ["server/git.ts"],
+    );
   });
 });

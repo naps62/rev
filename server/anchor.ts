@@ -14,13 +14,17 @@ import type { Comment, CommentAnchor } from "#shared/types";
  * context score → candidate nearest the original line. Null when the snippet
  * no longer exists anywhere (orphaned).
  */
-export function resolveAnchor(lines: string[], anchor: CommentAnchor): number | null {
+export function resolveAnchor(
+  lines: string[],
+  anchor: CommentAnchor,
+): number | null {
   const target = anchor.snippet.trim();
   const at = (i: number) => lines[i]?.trim();
   if (at(anchor.line - 1) === target) return anchor.line;
 
   const candidates: number[] = [];
-  for (let i = 0; i < lines.length; i++) if (at(i) === target) candidates.push(i);
+  for (let i = 0; i < lines.length; i++)
+    if (at(i) === target) candidates.push(i);
   if (candidates.length === 0) return null;
   if (candidates.length === 1) return candidates[0]! + 1;
 
@@ -31,14 +35,16 @@ export function resolveAnchor(lines: string[], anchor: CommentAnchor): number | 
     for (const i of candidates) {
       let score = 0;
       for (let k = 0; k < ctx.before.length; k++) {
-        if (at(i - 1 - k) === ctx.before[ctx.before.length - 1 - k]?.trim()) score++;
+        if (at(i - 1 - k) === ctx.before[ctx.before.length - 1 - k]?.trim())
+          score++;
       }
       for (let k = 0; k < ctx.after.length; k++) {
         if (at(i + 1 + k) === ctx.after[k]?.trim()) score++;
       }
       const better =
         score > bestScore ||
-        (score === bestScore && Math.abs(i + 1 - anchor.line) < Math.abs(best + 1 - anchor.line));
+        (score === bestScore &&
+          Math.abs(i + 1 - anchor.line) < Math.abs(best + 1 - anchor.line));
       if (better) {
         best = i;
         bestScore = score;
@@ -49,7 +55,8 @@ export function resolveAnchor(lines: string[], anchor: CommentAnchor): number | 
 
   let nearest = candidates[0]!;
   for (const i of candidates) {
-    if (Math.abs(i + 1 - anchor.line) < Math.abs(nearest + 1 - anchor.line)) nearest = i;
+    if (Math.abs(i + 1 - anchor.line) < Math.abs(nearest + 1 - anchor.line))
+      nearest = i;
   }
   return nearest + 1;
 }
@@ -60,7 +67,10 @@ export function resolveAnchor(lines: string[], anchor: CommentAnchor): number | 
  * their stored line (the old side only moves when the merge-base does);
  * unreadable/deleted files orphan their anchors (null).
  */
-export async function resolveComments(dir: string, comments: Comment[]): Promise<void> {
+export async function resolveComments(
+  dir: string,
+  comments: Comment[],
+): Promise<void> {
   const byFile = new Map<string, Comment[]>();
   for (const c of comments) {
     if (c.parentId !== null || c.anchor === null) continue;

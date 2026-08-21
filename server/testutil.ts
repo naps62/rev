@@ -21,14 +21,21 @@ export function git(dir: string, ...args: string[]): string {
   return proc.stdout;
 }
 
-export function write(dir: string, rel: string, content: string | Uint8Array): void {
+export function write(
+  dir: string,
+  rel: string,
+  content: string | Uint8Array,
+): void {
   const p = join(dir, rel);
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, content);
 }
 
 /** git init -b main + local identity + one commit of the given files. */
-export function makeRepo(prefix: string, files: Record<string, string> = { "a.txt": "one\ntwo\nthree\n" }): string {
+export function makeRepo(
+  prefix: string,
+  files: Record<string, string> = { "a.txt": "one\ntwo\nthree\n" },
+): string {
   const dir = tmpdir(prefix);
   git(dir, "init", "-b", "main");
   git(dir, "config", "user.email", "test@rev.local");

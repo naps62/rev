@@ -31,17 +31,22 @@ export function validBranch(branch: string): boolean {
 
 /** Split a template into argv tokens; '…' and "…" group whole tokens, no escapes. */
 export function splitTemplate(template: string): string[] {
-  if ((template.match(/'/g) ?? []).length % 2 || (template.match(/"/g) ?? []).length % 2) {
+  if (
+    (template.match(/'/g) ?? []).length % 2 ||
+    (template.match(/"/g) ?? []).length % 2
+  ) {
     throw new CommandError("unbalanced quote in template");
   }
   const tokens: string[] = [];
   const re = /'([^']*)'|"([^"]*)"|([^\s'"]+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(template)) !== null) tokens.push(m[1] ?? m[2] ?? m[3]!);
+  for (const m of template.matchAll(re)) tokens.push(m[1] ?? m[2] ?? m[3]!);
   return tokens;
 }
 
-export function substitute(tokens: string[], vars: Record<string, string>): string[] {
+export function substitute(
+  tokens: string[],
+  vars: Record<string, string>,
+): string[] {
   return tokens.map((t) =>
     t.replace(/\{(\w+)\}/g, (whole, name: string) => vars[name] ?? whole),
   );
@@ -59,7 +64,8 @@ export function worktreeCommand(): string {
 export function setWorktreeCommand(template: string): void {
   const tokens = splitTemplate(template.trim());
   if (tokens.length === 0) throw new CommandError("empty command");
-  if (!template.includes("{branch}")) throw new CommandError("template must use {branch}");
+  if (!template.includes("{branch}"))
+    throw new CommandError("template must use {branch}");
   setSetting(WORKTREE_CMD_KEY, template.trim());
 }
 
@@ -91,17 +97,29 @@ export async function runSessionSpawnCommand(dir: string, branch: string | null)
 
 function exec(argv: string[], cwd: string, timeout: number = TUNING.WORKTREE_CMD_TIMEOUT_MS): Promise<void> {
   return new Promise((res, rej) => {
-    execFile(argv[0]!, argv.slice(1), { cwd, timeout }, (err, stdout, stderr) => {
-      if (err) {
-        const detail = (stderr || stdout || err.message).trim().split("\n").slice(-3).join(" ");
-        rej(new CommandError(`${argv[0]} failed: ${detail}`));
-      } else res();
-    });
+    execFile(
+      argv[0]!,
+      argv.slice(1),
+      { cwd, timeout },
+      (err, stdout, stderr) => {
+        if (err) {
+          const detail = (stderr || stdout || err.message)
+            .trim()
+            .split("\n")
+            .slice(-3)
+            .join(" ");
+          rej(new CommandError(`${argv[0]} failed: ${detail}`));
+        } else res();
+      },
+    );
   });
 }
 
 /** Worktree dir currently on `branch`, from `git worktree list` in mainDir. */
-async function worktreeFor(mainDir: string, branch: string): Promise<string | null> {
+async function worktreeFor(
+  mainDir: string,
+  branch: string,
+): Promise<string | null> {
   const out = await run(mainDir, ["worktree", "list", "--porcelain"]);
   let dir: string | null = null;
   for (const line of out.split("\n")) {
@@ -121,7 +139,8 @@ export async function runWorktreeCommand(
   branch: string,
   remoteUrl: string | null,
 ): Promise<{ dir: string | null }> {
-  if (!validBranch(branch)) throw new CommandError(`invalid branch name: ${branch}`);
+  if (!validBranch(branch))
+    throw new CommandError(`invalid branch name: ${branch}`);
   const argv = substitute(splitTemplate(worktreeCommand()), {
     dir: mainDir,
     branch,

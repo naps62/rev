@@ -139,7 +139,12 @@ export function parseUnifiedDiff(text: string): ParsedFileDiff[] {
           hunkLines.push({ kind: "del", oldLine: oldLine++, text: l.slice(1) });
           deletions++;
         } else if (c === " ") {
-          hunkLines.push({ kind: "context", oldLine: oldLine++, newLine: newLine++, text: l.slice(1) });
+          hunkLines.push({
+            kind: "context",
+            oldLine: oldLine++,
+            newLine: newLine++,
+            text: l.slice(1),
+          });
         } else if (c === "\\") {
           // "\ No newline at end of file" — metadata, not content
         } else {
@@ -147,12 +152,26 @@ export function parseUnifiedDiff(text: string): ParsedFileDiff[] {
         }
         i++;
       }
-      hunks.push({ oldStart, oldLines, newStart, newLines, header: m[5] ?? "", lines: hunkLines });
+      hunks.push({
+        oldStart,
+        oldLines,
+        newStart,
+        newLines,
+        header: m[5] ?? "",
+        lines: hunkLines,
+      });
     }
 
     const path = status === "deleted" ? oldPath : (newPath ?? oldPath);
     if (path === undefined) continue; // unparseable entry; skip rather than crash
-    const file: ParsedFileDiff = { path, status, binary, hunks, additions, deletions };
+    const file: ParsedFileDiff = {
+      path,
+      status,
+      binary,
+      hunks,
+      additions,
+      deletions,
+    };
     if (status === "renamed" && oldPath !== undefined) file.oldPath = oldPath;
     files.push(file);
   }

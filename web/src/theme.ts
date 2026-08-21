@@ -12,7 +12,10 @@ export type ThemePref = "light" | "dark" | "auto";
 export type Scheme = "light" | "dark";
 
 const KEY = "rev.theme";
-const META_COLOR: Record<Scheme, string> = { dark: "#0e1115", light: "#f4f5f7" };
+const META_COLOR: Record<Scheme, string> = {
+  dark: "#0e1115",
+  light: "#f4f5f7",
+};
 
 const media = window.matchMedia("(prefers-color-scheme: light)");
 
@@ -41,7 +44,7 @@ function apply() {
 
 function notify() {
   apply();
-  listeners.forEach((l) => l());
+  for (const l of listeners) l();
 }
 
 media.addEventListener("change", () => {

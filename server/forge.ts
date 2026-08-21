@@ -9,16 +9,20 @@
  * homepage doesn't hammer an unreachable forge.
  */
 
-import type { PrInfo } from "#shared/types";
 import { TUNING } from "#shared/tuning";
+import type { PrInfo } from "#shared/types";
 import { config } from "./config.ts";
 
 export type ForgePr = Omit<PrInfo, "checkoutDir">;
 
 /** Host, owner and repo name from an https or scp-like ssh remote URL. */
-export function parseRemoteRepo(url: string): { host: string; owner: string; repo: string } | null {
-  const ssh = /^(?:ssh:\/\/)?(?:[\w.-]+@)?([\w.-]+)[:/]([^/:]+)\/([^/]+?)(?:\.git)?\/?$/;
-  const http = /^https?:\/\/(?:[^@/]+@)?([\w.-]+)(?::\d+)?\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/;
+export function parseRemoteRepo(
+  url: string,
+): { host: string; owner: string; repo: string } | null {
+  const ssh =
+    /^(?:ssh:\/\/)?(?:[\w.-]+@)?([\w.-]+)[:/]([^/:]+)\/([^/]+?)(?:\.git)?\/?$/;
+  const http =
+    /^https?:\/\/(?:[^@/]+@)?([\w.-]+)(?::\d+)?\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/;
   const m = http.exec(url) ?? ssh.exec(url);
   return m ? { host: m[1]!, owner: m[2]!, repo: m[3]! } : null;
 }
@@ -44,7 +48,11 @@ export function mapPrs(raw: unknown, ownerRepo: string): ForgePr[] {
     const branch = p.head?.ref;
     if (typeof p.number !== "number" || typeof branch !== "string") continue;
     const headRepo = p.head?.repo?.full_name;
-    if (typeof headRepo === "string" && headRepo.toLowerCase() !== ownerRepo.toLowerCase()) continue;
+    if (
+      typeof headRepo === "string" &&
+      headRepo.toLowerCase() !== ownerRepo.toLowerCase()
+    )
+      continue;
     out.push({
       number: p.number,
       title: typeof p.title === "string" ? p.title : "",
@@ -65,11 +73,19 @@ async function fetchPrs(remoteUrl: string): Promise<ForgePr[] | null> {
   const url = github
     ? `https://api.github.com/repos/${owner}/${repo}/pulls?state=open&per_page=100`
     : `https://${host}/api/v1/repos/${owner}/${repo}/pulls?state=open&limit=100`;
-  const headers: Record<string, string> = { accept: "application/json", "user-agent": "rev" };
-  if (github && config.ghToken) headers.authorization = `Bearer ${config.ghToken}`;
-  if (!github && config.giteaToken) headers.authorization = `token ${config.giteaToken}`;
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    "user-agent": "rev",
+  };
+  if (github && config.ghToken)
+    headers.authorization = `Bearer ${config.ghToken}`;
+  if (!github && config.giteaToken)
+    headers.authorization = `token ${config.giteaToken}`;
   try {
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) });
+    const res = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!res.ok) return null;
     return mapPrs(await res.json(), `${owner}/${repo}`);
   } catch {
@@ -81,7 +97,9 @@ const cache = new Map<string, { at: number; prs: ForgePr[] | null }>();
 const inFlight = new Map<string, Promise<ForgePr[] | null>>();
 
 /** Cached per remote for PR_CACHE_TTL_MS; null when the forge can't be queried. */
-export async function listOpenPrs(remoteUrl: string): Promise<ForgePr[] | null> {
+export async function listOpenPrs(
+  remoteUrl: string,
+): Promise<ForgePr[] | null> {
   const hit = cache.get(remoteUrl);
   if (hit && Date.now() - hit.at < TUNING.PR_CACHE_TTL_MS) return hit.prs;
   let p = inFlight.get(remoteUrl);

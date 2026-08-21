@@ -71,7 +71,10 @@ export function StackStrip({
             </span>
             {s.checkoutDir !== null && s.checkoutDir !== stack.dir && (
               <a
-                href={api.href("/review", { dir: s.checkoutDir, base: s.parent })}
+                href={api.href("/review", {
+                  dir: s.checkoutDir,
+                  base: s.parent,
+                })}
                 title={`Open ${s.branch}'s own review vs ${s.parent} (its checkout)`}
                 className="text-[11px] text-faint hover:text-accent"
               >

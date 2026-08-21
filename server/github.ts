@@ -10,6 +10,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { TUNING } from "#shared/tuning";
 import type {
   CommentAnchor,
   GithubComment,
@@ -18,7 +19,6 @@ import type {
   GithubThread,
   GithubUnavailableReason,
 } from "#shared/types";
-import { TUNING } from "#shared/tuning";
 import { resolveAnchor } from "./anchor.ts";
 import { config } from "./config.ts";
 import { mirrorGithubComment, stampGithubId } from "./db.ts";
@@ -33,11 +33,15 @@ export class GhError extends Error {}
 let availability: Promise<boolean> | null = null;
 
 /** Whether the gh binary runs; probed once per process, logged when absent. */
-export function ghAvailable(): Promise<boolean> {
+function ghAvailable(): Promise<boolean> {
   availability ??= new Promise((res) => {
-    const proc = spawn(GH_BIN, ["--version"], { stdio: ["ignore", "pipe", "ignore"] });
+    const proc = spawn(GH_BIN, ["--version"], {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
     let out = "";
-    proc.stdout.setEncoding("utf8").on("data", (chunk: string) => (out += chunk));
+    proc.stdout
+      .setEncoding("utf8")
+      .on("data", (chunk: string) => (out += chunk));
     proc.on("error", () => {
       console.log(`github conversations disabled: ${GH_BIN} not found`);
       res(false);
@@ -52,22 +56,30 @@ export function ghAvailable(): Promise<boolean> {
 
 function runGh(dir: string, args: string[]): Promise<string> {
   return new Promise((res, rej) => {
-    const proc = spawn(GH_BIN, args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn(GH_BIN, args, {
+      cwd: dir,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let out = "";
     let err = "";
     const timer = setTimeout(() => {
       proc.kill("SIGKILL");
       rej(new Error(`gh timed out after ${TUNING.GITHUB_TIMEOUT_MS}ms`));
     }, TUNING.GITHUB_TIMEOUT_MS);
-    proc.stdout.setEncoding("utf8").on("data", (chunk: string) => (out += chunk));
-    proc.stderr.setEncoding("utf8").on("data", (chunk: string) => (err += chunk));
+    proc.stdout
+      .setEncoding("utf8")
+      .on("data", (chunk: string) => (out += chunk));
+    proc.stderr
+      .setEncoding("utf8")
+      .on("data", (chunk: string) => (err += chunk));
     proc.on("error", (e) => {
       clearTimeout(timer);
       rej(e);
     });
     proc.on("close", (code) => {
       clearTimeout(timer);
-      if (code !== 0) rej(new Error(err.trim() || `gh ${args[0]} failed (exit ${code})`));
+      if (code !== 0)
+        rej(new Error(err.trim() || `gh ${args[0]} failed (exit ${code})`));
       else res(out);
     });
   });
@@ -119,7 +131,10 @@ function resolveThreads(dir: string, threads: GithubThread[]): void {
       continue;
     }
     let list = byFile.get(t.anchor.file);
-    if (!list) byFile.set(t.anchor.file, (list = []));
+    if (!list) {
+      list = [];
+      byFile.set(t.anchor.file, list);
+    }
     list.push(t);
   }
   for (const [file, list] of byFile) {
@@ -129,7 +144,8 @@ function resolveThreads(dir: string, threads: GithubThread[]): void {
     } catch {
       // deleted locally or unreadable: every thread in it is orphaned
     }
-    for (const t of list) t.resolvedLine = lines ? resolveAnchor(lines, t.anchor!) : null;
+    for (const t of list)
+      t.resolvedLine = lines ? resolveAnchor(lines, t.anchor!) : null;
   }
 }
 
@@ -204,7 +220,10 @@ export function invalidateGithub(dir: string): void {
 }
 
 /** GitHub conversations for dir, cached for GITHUB_TTL_MS. */
-export function githubConvos(dir: string, refresh = false): Promise<GithubConvosResponse> {
+export function githubConvos(
+  dir: string,
+  refresh = false,
+): Promise<GithubConvosResponse> {
   const hit = cache.get(dir);
   if (!refresh && hit && Date.now() - hit.at < TUNING.GITHUB_TTL_MS) {
     return Promise.resolve(hit.res);
@@ -222,7 +241,10 @@ export function githubConvos(dir: string, refresh = false): Promise<GithubConvos
   return p;
 }
 
-function unavailable(dir: string, reason: GithubUnavailableReason): GithubConvosResponse {
+function unavailable(
+  dir: string,
+  reason: GithubUnavailableReason,
+): GithubConvosResponse {
   return {
     dir,
     available: false,
@@ -236,11 +258,13 @@ function unavailable(dir: string, reason: GithubUnavailableReason): GithubConvos
 }
 
 /** Origin's owner/repo when it points at github.com, else null. */
-async function githubSlug(dir: string): Promise<{ owner: string; repo: string } | null> {
+async function githubSlug(
+  dir: string,
+): Promise<{ owner: string; repo: string } | null> {
   const remote = await remoteUrl(dir);
   if (!remote) return null;
   const parsed = parseRemote(remote);
-  if (!parsed || parsed.host !== "github.com") return null;
+  if (parsed?.host !== "github.com") return null;
   return { owner: parsed.owner, repo: parsed.repo };
 }
 
@@ -322,7 +346,9 @@ async function computeConvos(dir: string): Promise<GithubConvosResponse> {
     const truncated =
       rawPr.reviewThreads.nodes.length >= THREADS_PAGE ||
       rawPr.comments.nodes.length >= DISCUSSION_PAGE ||
-      rawPr.reviewThreads.nodes.some((t) => t.comments.nodes.length >= THREAD_COMMENTS_PAGE);
+      rawPr.reviewThreads.nodes.some(
+        (t) => t.comments.nodes.length >= THREAD_COMMENTS_PAGE,
+      );
 
     return {
       dir,
@@ -359,7 +385,8 @@ function mirrorForAgent(
   threads: GithubThread[],
   discussion: GithubComment[],
 ): void {
-  const label = (c: GithubComment) => `**@${c.login}** (GitHub PR #${pr.number}):\n\n${c.body}`;
+  const label = (c: GithubComment) =>
+    `**@${c.login}** (GitHub PR #${pr.number}):\n\n${c.body}`;
   let added = 0;
   const base = pr.baseRefName;
   try {
@@ -436,7 +463,12 @@ export async function forwardAgentReply(
           "-f",
           `body=${body}`,
         ]
-      : ["api", `repos/${owner}/${repo}/issues/${pr.number}/comments`, "-f", `body=${body}`],
+      : [
+          "api",
+          `repos/${owner}/${repo}/issues/${pr.number}/comments`,
+          "-f",
+          `body=${body}`,
+        ],
   );
   const created = JSON.parse(out) as { id?: number };
   if (created.id != null) stampGithubId(localId, `${m[1]}:${created.id}`);
@@ -472,7 +504,11 @@ async function mutate(dir: string, args: string[]): Promise<string> {
 }
 
 /** Reply under a review thread (rootId = thread root's databaseId), or to the conversation. */
-export async function githubReply(dir: string, rootId: number | undefined, body: string): Promise<void> {
+export async function githubReply(
+  dir: string,
+  rootId: number | undefined,
+  body: string,
+): Promise<void> {
   const { owner, repo, pr } = await prContext(dir);
   if (rootId !== undefined) {
     await mutate(dir, [
@@ -524,7 +560,11 @@ mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { id
 const UNRESOLVE_MUTATION = `
 mutation($id: ID!) { unresolveReviewThread(input: { threadId: $id }) { thread { id } } }`;
 
-export async function githubResolve(dir: string, threadId: string, resolved: boolean): Promise<void> {
+export async function githubResolve(
+  dir: string,
+  threadId: string,
+  resolved: boolean,
+): Promise<void> {
   await prContext(dir);
   await mutate(dir, [
     "api",
