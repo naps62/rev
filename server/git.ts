@@ -8,7 +8,7 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, type Stats, statSync } from "node:fs";
+import { readFileSync, type Stats, statSync } from "node:fs";
 import { readFile as readFileBytes } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { TUNING } from "#shared/tuning";
@@ -109,7 +109,7 @@ async function hashWorkingFile(dir: string, path: string): Promise<string> {
   }
 }
 
-export function isBinaryBytes(bytes: Uint8Array): boolean {
+function isBinaryBytes(bytes: Uint8Array): boolean {
   const n = Math.min(bytes.length, 8000);
   for (let i = 0; i < n; i++) if (bytes[i] === 0) return true;
   return false;
@@ -417,76 +417,6 @@ export async function computeFileDiff(
   const contentHash =
     parsed.status === "deleted" ? "" : await hashWorkingFile(dir, path);
   return { ...parsed, contentHash, seen: false, stale: false };
-}
-
-/**
- * Diff arbitrary old content against the working-tree file at `path`
- * (missing file diffs against /dev/null). Only hunks/counts are taken from
- * git; identity fields are filled by the caller's knowledge of the file.
- */
-export async function diffBlobVsWorkingFile(
-  dir: string,
-  path: string,
-  oldContent: string,
-): Promise<{
-  hunks: FileDiff["hunks"];
-  additions: number;
-  deletions: number;
-  binary: boolean;
-}> {
-  const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
-  const tmp = await mkdtemp(join(tmpdir(), "rev-interdiff-"));
-  const oldFile = join(tmp, "old");
-  await writeFile(oldFile, oldContent);
-  try {
-    const current = join(dir, path);
-    const newFile = existsSync(current) ? current : "/dev/null";
-    const out = await new Promise<string>((res, rej) => {
-      const proc = spawn(
-        "git",
-        [
-          "diff",
-          "--no-index",
-          "--no-color",
-          `-U${TUNING.DIFF_CONTEXT_LINES}`,
-          "--",
-          oldFile,
-          newFile,
-        ],
-        { cwd: dir, stdio: ["ignore", "pipe", "pipe"] },
-      );
-      let stdout = "";
-      let stderr = "";
-      proc.stdout.setEncoding("utf8").on("data", (c: string) => (stdout += c));
-      proc.stderr.setEncoding("utf8").on("data", (c: string) => (stderr += c));
-      proc.on("error", rej);
-      // --no-index exits 1 when the files differ; only >1 is an error
-      proc.on("close", (code) => {
-        if (code !== null && code > 1) {
-          rej(
-            new GitError(
-              stderr.trim() || `git diff --no-index failed (exit ${code})`,
-              "diff --no-index",
-            ),
-          );
-        } else {
-          res(stdout);
-        }
-      });
-    });
-    const parsed = parseUnifiedDiff(out)[0];
-    if (!parsed)
-      return { hunks: [], additions: 0, deletions: 0, binary: false };
-    return {
-      hunks: parsed.hunks,
-      additions: parsed.additions,
-      deletions: parsed.deletions,
-      binary: parsed.binary,
-    };
-  } finally {
-    await rm(tmp, { recursive: true, force: true });
-  }
 }
 
 /** Read a file at a rev (null → working tree). 404s become GitError. */

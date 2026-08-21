@@ -212,13 +212,6 @@ export function DiffFile({
   }, [open]);
   const showBody = open || lingering;
 
-  // Stale files default to the interdiff: only what changed since the user
-  // last marked the file seen. "full" switches back to the whole diff.
-  const [view, setView] = useState<"delta" | "full">("delta");
-  useEffect(() => {
-    if (file.stale) setView("delta");
-  }, [file.stale]);
-
   // Hunks stream in per file: fetched only once expanded AND near the
   // viewport, so opening a huge review costs nothing up front.
   const ownRef = useRef<HTMLElement | null>(null);
@@ -235,35 +228,15 @@ export function DiffFile({
     return () => io.disconnect();
   }, [near, open]);
 
-  const wantDelta =
-    !image && file.stale && view === "delta" && expanded && near && !editing;
-  const interQ = useQuery({
-    queryKey: ["interdiff", dir, currentBase, file.path, file.contentHash],
-    queryFn: () => api.getInterdiff(dir, currentBase, file.path),
-    enabled: wantDelta,
-    staleTime: Infinity,
-    // 404 = no snapshot (pre-feature seen rows): fall back to the full diff
-    retry: (count, err) => (err as api.ApiError).status !== 404 && count < 2,
-  });
-  const noSnapshot =
-    interQ.isError && (interQ.error as api.ApiError).status === 404;
-  const deltaActive = wantDelta && !noSnapshot;
-
   const hunksQ = useQuery({
     queryKey: ["diff-file", dir, currentBase, file.path, file.contentHash],
     queryFn: () => api.getFileDiff(dir, currentBase, file.path, file.oldPath),
-    enabled: !image && canExpand && expanded && near && !deltaActive,
+    enabled: !image && canExpand && expanded && near,
     staleTime: Infinity,
   });
-  const activeFile = deltaActive ? interQ.data?.file : hunksQ.data?.file;
-  const activeError = deltaActive
-    ? interQ.isError
-      ? (interQ.error as Error)
-      : null
-    : hunksQ.isError
-      ? (hunksQ.error as Error)
-      : null;
-  const activeRetry = deltaActive ? interQ.refetch : hunksQ.refetch;
+  const activeFile = hunksQ.data?.file;
+  const activeError = hunksQ.isError ? (hunksQ.error as Error) : null;
+  const activeRetry = hunksQ.refetch;
   const hunks = useMemo(() => activeFile?.hunks ?? [], [activeFile]);
 
   const flat = useMemo(() => hunks.flatMap((h) => h.lines), [hunks]);
@@ -960,43 +933,6 @@ export function DiffFile({
 
       <div className="file-body" data-open={open || undefined}>
         <div className="min-h-0 overflow-hidden rounded-b-[5px] max-sm:rounded-none">
-          {showBody &&
-            !editing &&
-            !image &&
-            file.stale &&
-            interQ.data != null && (
-              <div className="flex items-baseline gap-2 border-b border-edge-soft bg-accent-soft/60 px-3 py-1 font-mono text-[11px] text-mute">
-                {deltaActive ? (
-                  <>
-                    <span>
-                      changes since last seen{" "}
-                      <DiffStat
-                        add={interQ.data.file.additions}
-                        del={interQ.data.file.deletions}
-                      />
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setView("full")}
-                      className="ml-auto text-accent hover:underline"
-                    >
-                      full diff
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span>full diff</span>
-                    <button
-                      type="button"
-                      onClick={() => setView("delta")}
-                      className="ml-auto text-accent hover:underline"
-                    >
-                      changes since last seen
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
           {editing ? (
             <QuickEditPanel
               dir={dir}
@@ -1023,7 +959,7 @@ export function DiffFile({
               }
             />
           ) : !showBody ? null : activeFile == null ? (
-            activeError && !noSnapshot ? (
+            activeError ? (
               <div className="flex items-center gap-3 px-4 py-3">
                 <p className="font-mono text-[12px] text-del">
                   {activeError.message}
@@ -1035,23 +971,10 @@ export function DiffFile({
                 >
                   Retry
                 </button>
-                {deltaActive && (
-                  <button
-                    type="button"
-                    onClick={() => setView("full")}
-                    className="text-[12px] text-mute hover:text-fg"
-                  >
-                    Show full diff
-                  </button>
-                )}
               </div>
             ) : (
               <HunkSkeleton changed={changed} />
             )
-          ) : deltaActive && hunks.length === 0 ? (
-            <p className="px-3 py-2 font-mono text-[12px] text-faint">
-              no changes since you last reviewed this file
-            </p>
           ) : (
             <table
               className={cx("w-full border-collapse", split && "table-fixed")}
