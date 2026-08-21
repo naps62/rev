@@ -872,20 +872,7 @@ function PrRow({ pr, dir }: { pr: PrInfo; dir: string }) {
       <span title={pr.title} className="min-w-0 truncate font-mono text-[12px] text-mute">
         {pr.branch}
       </span>
-      <a
-        href={pr.url}
-        target="_blank"
-        rel="noreferrer"
-        title={pr.title}
-        className="shrink-0 font-mono text-[10.5px] text-faint transition-colors duration-150 hover:text-fg"
-      >
-        #{pr.number}
-      </a>
-      {pr.draft && (
-        <span className="shrink-0 rounded-sm bg-raise px-1 py-px font-mono text-[10px] text-faint">
-          draft
-        </span>
-      )}
+      <PrPill pr={pr} />
       <span className="ml-auto flex shrink-0 items-center gap-2">
         {create.isError && (
           <span title={(create.error as Error).message} className="font-mono text-[10.5px] text-del">
@@ -946,6 +933,34 @@ function RemoveWorktree({ dir, cardDir }: { dir: string; cardDir: string }) {
   );
 }
 
+/**
+ * PR-number pill link, GitHub's color language: gray draft, green open,
+ * purple merged, red closed — no text label, the tooltip names the state.
+ */
+function PrPill({ pr }: { pr: PrInfo }) {
+  const draft = pr.state === "open" && pr.draft;
+  return (
+    <a
+      href={pr.url}
+      target="_blank"
+      rel="noreferrer"
+      title={`${draft ? "draft" : pr.state}: ${pr.title}`}
+      className={cx(
+        "relative z-10 shrink-0 rounded-sm px-1 py-px font-mono text-[10.5px] font-medium transition-opacity duration-150 hover:opacity-80",
+        draft
+          ? "bg-raise text-mute"
+          : pr.state === "open"
+            ? "bg-add-soft text-add"
+            : pr.state === "merged"
+              ? "bg-reviewer-soft text-reviewer"
+              : "bg-del-soft text-del",
+      )}
+    >
+      #{pr.number}
+    </a>
+  );
+}
+
 function WorktreeRow({
   repo: r,
   dim,
@@ -990,30 +1005,8 @@ function WorktreeRow({
       {!removable && <Drift repo={r} />}
       <span className="ml-auto flex shrink-0 items-center gap-2">
         {reservePr && (
-          <span className="flex w-24 shrink-0 items-center gap-1.5">
-            {pr && (
-              <>
-                <a
-                  href={pr.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  title={pr.title}
-                  className="relative z-10 w-9 shrink-0 text-right font-mono text-[10.5px] text-faint transition-colors duration-150 hover:text-fg"
-                >
-                  #{pr.number}
-                </a>
-                {pr.state !== "open" && (
-                  <span
-                    className={cx(
-                      "shrink-0 rounded-sm px-1 py-px font-mono text-[10px] font-medium",
-                      pr.state === "merged" ? "bg-add-soft text-add" : "bg-del-soft text-del",
-                    )}
-                  >
-                    {pr.state}
-                  </span>
-                )}
-              </>
-            )}
+          <span className="flex w-12 shrink-0 justify-end">
+            {pr && <PrPill pr={pr} />}
           </span>
         )}
         <span className="flex w-14 shrink-0 justify-end">

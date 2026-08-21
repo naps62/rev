@@ -19,6 +19,7 @@
   --color-del-hi: rgb(239 110 88 / 0.28);
   --color-agent: #85bcd9;
   --color-reviewer: #b48ead;
+  --color-reviewer-soft: rgb(180 142 173 / 0.14);
 
   --shadow-pop: 0 8px 28px rgb(0 0 0 / 0.5);
 
@@ -50,6 +51,8 @@
   --color-del-soft: rgb(177 52 31 / 0.07);
   --color-del-hi: rgb(177 52 31 / 0.18);
   --color-agent: #276f90;
+  --color-reviewer: #6d3fa9;
+  --color-reviewer-soft: rgb(109 63 169 / 0.1);
   --shadow-pop: 0 8px 28px rgb(23 32 45 / 0.16);
 }
 
