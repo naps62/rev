@@ -4,13 +4,11 @@ import { basename, join } from "node:path";
 import { before as beforeAll, describe, test } from "node:test";
 import { expect } from "expect";
 
-
 import {
   DEFAULT_WORKTREE_CMD,
   DEFAULT_WORKTREE_REMOVE_CMD,
 } from "#shared/commands";
 import { TUNING } from "#shared/tuning";
-
 
 import type {
   Comment,
@@ -21,8 +19,6 @@ import type {
   PresenceResponse,
   ServerMessage,
 } from "#shared/types";
-
-
 
 import { config } from "./config.ts";
 import { closeDb, openDb } from "./db.ts";
@@ -599,7 +595,7 @@ describe("commands", () => {
         })
       ).status,
     ).toBe(400);
-    expect((await json("PUT", "/commands", )).status).toBe(400);
+    expect((await json("PUT", "/commands", {})).status).toBe(400);
     expect(
       (await json("PUT", "/commands", { sessionSpawn: "echo no-dir" })).status,
     ).toBe(400);
@@ -813,7 +809,10 @@ describe("DELETE /worktrees", () => {
     await json("PUT", "/commands", { worktreeCreate: DEFAULT_WORKTREE_CMD });
     const main = makeRepo(name);
     git(main, "branch", "feat-y");
-    const res = await json("POST", "/worktrees", { dir: main, branch: "feat-y" });
+    const res = await json("POST", "/worktrees", {
+      dir: main,
+      branch: "feat-y",
+    });
     expect(res.status).toBe(201);
     const { dir } = (await res.json()) as { dir: string };
     return { main, dir };
@@ -821,16 +820,27 @@ describe("DELETE /worktrees", () => {
 
   test("validates dir: missing, unknown, and main checkouts are rejected", async () => {
     const main = makeRepo("wtrm-validate");
-    expect((await app.request("/worktrees", { method: "DELETE" })).status).toBe(400);
-    expect((await app.request("/worktrees?dir=/nope", { method: "DELETE" })).status).toBe(400);
-    const res = await app.request(`/worktrees?dir=${encodeURIComponent(main)}`, { method: "DELETE" });
+    expect((await app.request("/worktrees", { method: "DELETE" })).status).toBe(
+      400,
+    );
+    expect(
+      (await app.request("/worktrees?dir=/nope", { method: "DELETE" })).status,
+    ).toBe(400);
+    const res = await app.request(
+      `/worktrees?dir=${encodeURIComponent(main)}`,
+      { method: "DELETE" },
+    );
     expect(res.status).toBe(400);
   });
 
   test("removes a worktree with the default command", async () => {
     const { dir } = await setup("wtrm-default");
-    await json("PUT", "/commands", { worktreeRemove: DEFAULT_WORKTREE_REMOVE_CMD });
-    const res = await app.request(`/worktrees?dir=${encodeURIComponent(dir)}`, { method: "DELETE" });
+    await json("PUT", "/commands", {
+      worktreeRemove: DEFAULT_WORKTREE_REMOVE_CMD,
+    });
+    const res = await app.request(`/worktrees?dir=${encodeURIComponent(dir)}`, {
+      method: "DELETE",
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ dir });
     expect(existsSync(dir)).toBe(false);
@@ -841,7 +851,9 @@ describe("DELETE /worktrees", () => {
     const { dir } = await setup("wtrm-fallback");
     // A session-closing command that never touches the worktree itself.
     await json("PUT", "/commands", { worktreeRemove: "echo closed {dir}" });
-    const res = await app.request(`/worktrees?dir=${encodeURIComponent(dir)}`, { method: "DELETE" });
+    const res = await app.request(`/worktrees?dir=${encodeURIComponent(dir)}`, {
+      method: "DELETE",
+    });
     expect(res.status).toBe(200);
     expect(existsSync(dir)).toBe(false);
   });
@@ -850,7 +862,9 @@ describe("DELETE /worktrees", () => {
     const { dir } = await setup("wtrm-dirty");
     writeFileSync(join(dir, "dirty.txt"), "x\n"); // untracked file: git refuses to remove
     await json("PUT", "/commands", { worktreeRemove: "false {dir}" });
-    const res = await app.request(`/worktrees?dir=${encodeURIComponent(dir)}`, { method: "DELETE" });
+    const res = await app.request(`/worktrees?dir=${encodeURIComponent(dir)}`, {
+      method: "DELETE",
+    });
     expect(res.status).toBe(400);
     expect(existsSync(dir)).toBe(true);
   });

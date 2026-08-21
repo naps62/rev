@@ -77,7 +77,6 @@ import {
 } from "./discovery.ts";
 import { listPrs } from "./forge.ts";
 
-
 import {
   baseBehind,
   computeDiff,
@@ -362,10 +361,11 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
   app.delete("/worktrees", async (c) => {
     const dir = c.req.query("dir");
     if (!dir) return c.json({ error: "dir is required" }, 400);
-    if (!(await isKnownRepo(dir))) return c.json({ error: `not a known repo: ${dir}` }, 400);
+    if (!(await isKnownRepo(dir)))
+      return c.json({ error: `not a known repo: ${dir}` }, 400);
     const repos = await listRepos();
     const me = repos.find((r) => r.dir === dir);
-    if (!me || !me.isWorktree || me.mainDir === dir) {
+    if (!me?.isWorktree || me.mainDir === dir) {
       return c.json({ error: `not a linked worktree: ${dir}` }, 400);
     }
     try {
@@ -406,7 +406,8 @@ export function buildApi(broadcast: (msg: ServerMessage) => void): Hono {
       if (hasRemove) setWorktreeRemoveCommand(b!.worktreeRemove as string);
       if (hasSpawn) setSessionSpawnCommand(b!.sessionSpawn as string);
     } catch (err) {
-      if (err instanceof CommandError) return c.json({ error: err.message }, 400);
+      if (err instanceof CommandError)
+        return c.json({ error: err.message }, 400);
       throw err;
     }
     return c.json(commands());

@@ -106,7 +106,9 @@ export async function createWorktree(
   });
 }
 
-export async function removeWorktree(dir: string): Promise<WorktreeRemoveResponse> {
+export async function removeWorktree(
+  dir: string,
+): Promise<WorktreeRemoveResponse> {
   if (isFixture()) return tick((await fx()).fxRemoveWorktree(dir));
   const q = new URLSearchParams({ dir });
   return request(`/api/worktrees?${q}`, { method: "DELETE" });

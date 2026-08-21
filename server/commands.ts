@@ -7,13 +7,11 @@
 
 import { execFile } from "node:child_process";
 
-
 import {
   DEFAULT_SESSION_SPAWN_CMD,
   DEFAULT_WORKTREE_CMD,
   DEFAULT_WORKTREE_REMOVE_CMD,
 } from "#shared/commands";
-
 
 import { TUNING } from "#shared/tuning";
 import { getSetting, setSetting } from "./db.ts";
@@ -233,6 +231,9 @@ export async function runWorktreeRemoveCommand(
   try {
     await run(mainDir, ["worktree", "remove", dir]);
   } catch (err) {
-    throw primary ?? new CommandError(`git worktree remove failed: ${(err as Error).message}`);
+    throw (
+      primary ??
+      new CommandError(`git worktree remove failed: ${(err as Error).message}`)
+    );
   }
 }
